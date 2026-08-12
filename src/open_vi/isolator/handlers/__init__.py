@@ -6,16 +6,19 @@ import logging
 from collections.abc import Sequence
 
 from open_vi.isolator.handlers.base import MessageHandler
+from open_vi.isolator.handlers.control import ControlHandler
 from open_vi.isolator.handlers.failsafe import FailsafeHandler
 from open_vi.isolator.handlers.flight_command import FlightCommandHandler
 from open_vi.isolator.handlers.heartbeat import HeartbeatHandler
 from open_vi.isolator.handlers.query import QueryHandler
 from open_vi.isolator.handlers.route import RouteHandler
 from open_vi.isolator.handlers.system_mgmt import SystemManagementHandler
+from open_vi.isolator.handlers.task import TaskHandler
 
 LOGGER = logging.getLogger(__name__)
 
 __all__ = [
+    "ControlHandler",
     "FailsafeHandler",
     "FlightCommandHandler",
     "HeartbeatHandler",
@@ -23,6 +26,7 @@ __all__ = [
     "QueryHandler",
     "RouteHandler",
     "SystemManagementHandler",
+    "TaskHandler",
     "collect_inbound_mts",
     "default_handlers",
 ]
@@ -37,6 +41,8 @@ def default_handlers() -> list[MessageHandler]:
         FailsafeHandler(),
         SystemManagementHandler(),
         QueryHandler(),
+        ControlHandler(),
+        TaskHandler(),
     ]
 
 

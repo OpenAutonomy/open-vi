@@ -98,9 +98,9 @@ required for the current Stub Isolator. Detail: [CODEC.md](CODEC.md).
 ### Isolator
 
 Owns identity, session state, the tick loop, and inbound dispatch to handlers.
-Handlers implement Core sequences (capability, flight commands, routes,
-heartbeat, contingencies, query, system management). The Isolator never
-imports vehicle protocols.
+Handlers implement Core sequences (capability, flight commands, control
+request, tasks, routes + validation, heartbeat, contingencies, query,
+system management). The Isolator never imports vehicle protocols.
 
 `COMPLIANCE_MODE=loose|strict` selects OPT status ladders (e.g.
 `QUEUED`→`PROCESSING`→`COMPLETED`) without forking the codebase.

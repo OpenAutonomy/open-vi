@@ -10,6 +10,7 @@ from open_vi.codec.notification import build_sample_ma_response
 from open_vi.codec.xmlutil import el, message_envelope, tostring
 from open_vi.config import IsolatorConfig
 from open_vi.isolator import Isolator
+from open_vi.isolator.handlers.control import MT_CONTROL_REQUEST
 from open_vi.isolator.handlers.failsafe import (
     MT_MA_RESPONSE,
     MT_SYSTEM_NOTIFICATION,
@@ -27,8 +28,10 @@ from open_vi.isolator.handlers.query import (
 from open_vi.isolator.handlers.route import (
     MT_ACTIVATION_COMMAND,
     MT_ROUTE_PLAN,
+    MT_ROUTE_VALIDATION_COMMAND,
 )
 from open_vi.isolator.handlers.system_mgmt import MT_SYSTEM_MGMT_REQUEST
+from open_vi.isolator.handlers.task import MT_TASK_COMMAND
 from open_vi.platform import StubPlatform
 
 _EXPECTED_INBOUND = frozenset(
@@ -39,9 +42,12 @@ _EXPECTED_INBOUND = frozenset(
         MT_SUBSYSTEM_STATUS_DATA_REQUEST,
         MT_ACTIVATION_COMMAND,
         MT_ROUTE_PLAN,
+        MT_ROUTE_VALIDATION_COMMAND,
         MT_MA_RESPONSE,
         MT_SYSTEM_MGMT_REQUEST,
         MT_QUERY_DATA_REQUEST,
+        MT_CONTROL_REQUEST,
+        MT_TASK_COMMAND,
     }
 )
 

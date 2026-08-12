@@ -7,8 +7,10 @@ from uuid import uuid4
 from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
 from open_vi.codec.route import (
+    build_sample_by_mission_plan_activation_command,
     build_sample_route_activation_command,
     build_sample_route_plan,
+    build_sample_route_validation_command,
     parse_route_activation_commands,
     parse_route_plan_id,
 )
@@ -21,6 +23,9 @@ from open_vi.isolator.handlers.route import (
     MT_FILE_LOCATION,
     MT_FILE_METADATA,
     MT_ROUTE_PLAN,
+    MT_ROUTE_VALIDATION,
+    MT_ROUTE_VALIDATION_COMMAND,
+    MT_ROUTE_VALIDATION_STATUS,
     MT_SYSTEM_NOTIFICATION,
 )
 from open_vi.platform import StubPlatform
@@ -45,6 +50,47 @@ def test_parse_route_activation_command() -> None:
     assert cmds[0].mission_plan_id == mission_id
     assert cmds[0].route_plan_id == route_id
     assert cmds[0].command_type == "PREPARE_FOR_UPLOAD"
+
+
+def test_parse_by_mission_plan_activation_command() -> None:
+    bus = InMemoryAsb()
+    iso = Isolator(bus, platform=StubPlatform())
+    command_id = uuid4()
+    mission_id = uuid4()
+    xml = build_sample_by_mission_plan_activation_command(
+        iso.identity,
+        command_id=command_id,
+        mission_plan_id=mission_id,
+        command_type="PREPARE_FOR_UPLOAD",
+    )
+    cmds = parse_route_activation_commands(xml)
+    assert len(cmds) == 1
+    assert cmds[0].command_id == command_id
+    assert cmds[0].mission_plan_id == mission_id
+    assert cmds[0].route_plan_id == mission_id
+    assert cmds[0].command_type == "PREPARE_FOR_UPLOAD"
+
+
+def test_by_mission_plan_activation_loose() -> None:
+    bus = InMemoryAsb()
+    iso = Isolator(
+        bus,
+        platform=StubPlatform(),
+        config=IsolatorConfig(tick_republish_status=False),
+    )
+    attach_isolator(iso)
+    bus.publish(
+        MT_ACTIVATION_COMMAND,
+        build_sample_by_mission_plan_activation_command(
+            iso.identity,
+            command_id=uuid4(),
+            mission_plan_id=uuid4(),
+            command_type="PREPARE_FOR_UPLOAD",
+        ),
+    )
+    assert len(bus.published[MT_ACTIVATION_STATUS]) == 2
+    assert "PROCESSING" in bus.published[MT_ACTIVATION_STATUS][0]
+    assert "COMPLETED" in bus.published[MT_ACTIVATION_STATUS][1]
 
 
 def test_convert_and_upload_route_loose() -> None:
@@ -229,3 +275,53 @@ def test_invalid_route_transition_rejected() -> None:
     assert len(bus.published[MT_ACTIVATION_STATUS]) == 1
     assert "REJECTED" in bus.published[MT_ACTIVATION_STATUS][0]
     assert "FAILED" in bus.published[MT_ACTIVATION_STATUS][0]
+
+
+def test_validate_stored_route_plan() -> None:
+    bus = InMemoryAsb()
+    platform = StubPlatform()
+    route_id = uuid4()
+    platform.prime_route(route_id, xml="<rp/>")
+    iso = Isolator(
+        bus,
+        platform=platform,
+        config=IsolatorConfig(tick_republish_status=False),
+    )
+    attach_isolator(iso)
+    command_id = uuid4()
+    bus.publish(
+        MT_ROUTE_VALIDATION_COMMAND,
+        build_sample_route_validation_command(
+            iso.identity,
+            command_id=command_id,
+            route_plan_id=route_id,
+        ),
+    )
+    validation = bus.published[MT_ROUTE_VALIDATION][-1]
+    assert local_name(parse_xml(validation)) == "RoutePlanValidation"
+    assert "VALID" in validation
+    statuses = list(bus.published[MT_ROUTE_VALIDATION_STATUS])
+    assert len(statuses) == 2
+    assert "PROCESSING" in statuses[0]
+    assert "COMPLETED" in statuses[1]
+    assert command_id.hex in statuses[1].replace("-", "")
+
+
+def test_validate_unknown_route_plan_invalid() -> None:
+    bus = InMemoryAsb()
+    iso = Isolator(
+        bus,
+        platform=StubPlatform(),
+        config=IsolatorConfig(tick_republish_status=False),
+    )
+    attach_isolator(iso)
+    bus.publish(
+        MT_ROUTE_VALIDATION_COMMAND,
+        build_sample_route_validation_command(
+            iso.identity,
+            command_id=uuid4(),
+            route_plan_id=uuid4(),
+        ),
+    )
+    assert "INVALID" in bus.published[MT_ROUTE_VALIDATION][-1]
+    assert "COMPLETED" in bus.published[MT_ROUTE_VALIDATION_STATUS][-1]

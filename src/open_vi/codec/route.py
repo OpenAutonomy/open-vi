@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from uuid import UUID
 
 from open_vi.codec.ns import SCHEMA_VERSION
@@ -30,7 +31,7 @@ from open_vi.platform.port import (
 def parse_route_activation_commands(
     xml: str | bytes,
 ) -> list[RouteActivationRequest]:
-    """Extract BySubPlan/RoutePlan activation commands from a message."""
+    """Extract BySubPlan/RoutePlan or ByMissionPlan activation commands."""
     root = parse_xml(xml)
     data = find_one(root, "MessageData")
     if data is None:
@@ -47,6 +48,7 @@ def parse_route_activation_commands(
         mission_plan_id = uuid_under(command_el, "MissionPlanID")
         if mission_plan_id is None:
             continue
+        found_route = False
         for route_el in command_el.iter():
             if local_name(route_el) != "RoutePlan":
                 continue
@@ -54,6 +56,7 @@ def parse_route_activation_commands(
             cmd_type = find_text(route_el, "CommandType")
             if route_plan_id is None or not cmd_type:
                 continue
+            found_route = True
             results.append(
                 RouteActivationRequest(
                     command_id=command_id,
@@ -63,7 +66,158 @@ def parse_route_activation_commands(
                     command_state=command_state,
                 )
             )
+        if found_route:
+            continue
+        # ByMissionPlan / ByExecutionPlanSet: ActivationCommand applies to
+        # the whole plan; Stub tracks it under the MissionPlanID.
+        cmd_type = find_text(command_el, "ActivationCommand")
+        if not cmd_type:
+            continue
+        results.append(
+            RouteActivationRequest(
+                command_id=command_id,
+                mission_plan_id=mission_plan_id,
+                route_plan_id=mission_plan_id,
+                command_type=cmd_type,
+                command_state=command_state,
+            )
+        )
     return results
+
+
+@dataclass(frozen=True)
+class RouteValidationCommand:
+    """Parsed RoutePlanValidationCommand."""
+
+    command_id: UUID
+    route_plan_id: UUID | None
+    command_state: str = "NEW"
+    for_planning_use_only: bool = False
+    request_frequency: str = "SINGLE"
+
+
+def parse_route_validation_command(
+    xml: str | bytes,
+) -> RouteValidationCommand | None:
+    """Extract CommandID + RoutePlanID; None if CommandID missing."""
+    root = parse_xml(xml)
+    if local_name(root) != "RoutePlanValidationCommand":
+        raise ValueError(
+            f"expected RoutePlanValidationCommand, got {local_name(root)}"
+        )
+    data = find_one(root, "MessageData")
+    if data is None:
+        raise ValueError("RoutePlanValidationCommand missing MessageData")
+    command_id = uuid_under(data, "CommandID")
+    if command_id is None:
+        return None
+    freq = find_text(data, "RequestFrequencyType") or "SINGLE"
+    planning = (find_text(data, "ForPlanningUseOnly") or "false").lower()
+    return RouteValidationCommand(
+        command_id=command_id,
+        route_plan_id=uuid_under(data, "RoutePlanID"),
+        command_state=find_text(data, "CommandState") or "NEW",
+        for_planning_use_only=planning in {"1", "true", "yes"},
+        request_frequency=freq,
+    )
+
+
+def build_route_plan_validation(
+    identity: SystemIdentity,
+    *,
+    validation_id: UUID,
+    route_plan_id: UUID,
+    validation_state: str,
+    schema_version: str = SCHEMA_VERSION,
+    mode: str = "SIMULATION",
+) -> bytes:
+    """Build RoutePlanValidation (VALID / INVALID)."""
+    data = el(
+        "MessageData",
+        id_type("RoutePlanValidationID", validation_id),
+        id_type("PlanID", route_plan_id),
+        el(
+            "Validator",
+            el("NonOperatorIdentifier", system_id(identity)),
+        ),
+        el("ValidationState", text=validation_state),
+    )
+    root = message_envelope(
+        "RoutePlanValidation",
+        identity,
+        data,
+        schema_version=schema_version,
+        mode=mode,
+        object_state="NEW",
+    )
+    return tostring(root)
+
+
+def build_route_plan_validation_command_status(
+    identity: SystemIdentity,
+    *,
+    command_id: UUID,
+    processing_state: str,
+    command_status: str | None = None,
+    validation_id: UUID | None = None,
+    schema_version: str = SCHEMA_VERSION,
+    mode: str = "SIMULATION",
+) -> bytes:
+    """Build RoutePlanValidationCommandStatus."""
+    children = [
+        id_type("CommandID", command_id),
+        el("CommandProcessingState", text=processing_state),
+    ]
+    if command_status is not None:
+        children.append(el("CommandStatus", text=command_status))
+    if validation_id is not None:
+        children.append(id_type("RoutePlanValidationID", validation_id))
+    data = el("MessageData", *children)
+    root = message_envelope(
+        "RoutePlanValidationCommandStatus",
+        identity,
+        data,
+        schema_version=schema_version,
+        mode=mode,
+    )
+    return tostring(root)
+
+
+def build_sample_route_validation_command(
+    identity: SystemIdentity,
+    *,
+    command_id: UUID,
+    route_plan_id: UUID,
+    planning_process_id: UUID | None = None,
+    schema_version: str = SCHEMA_VERSION,
+    mode: str = "SIMULATION",
+) -> bytes:
+    """Minimal RoutePlanValidationCommand for unit tests."""
+    process_id = planning_process_id or command_id
+    data = el(
+        "MessageData",
+        id_type("CommandID", command_id),
+        el("CommandState", text="NEW"),
+        el("ForPlanningUseOnly", text="false"),
+        el("RequestFrequencyType", text="SINGLE"),
+        el(
+            "Inputs",
+            id_type("PlanningProcessID", process_id),
+            el("ModifyToValidate", text="false"),
+            el(
+                "RoutePlanDetails",
+                id_type("RoutePlanID", route_plan_id),
+            ),
+        ),
+    )
+    root = message_envelope(
+        "RoutePlanValidationCommand",
+        identity,
+        data,
+        schema_version=schema_version,
+        mode=mode,
+    )
+    return tostring(root)
 
 
 def parse_route_plan_id(xml: str | bytes) -> UUID:
@@ -195,6 +349,45 @@ def build_file_location_for_route(
         schema_version=schema_version,
         mode=mode,
         object_state="NEW",
+    )
+    return tostring(root)
+
+
+def build_sample_by_mission_plan_activation_command(
+    identity: SystemIdentity,
+    *,
+    command_id: UUID,
+    mission_plan_id: UUID,
+    command_type: str,
+    command_state: str = "NEW",
+    schema_version: str = SCHEMA_VERSION,
+    mode: str = "SIMULATION",
+) -> bytes:
+    """Minimal ByMissionPlan activation command (harness CAL shape)."""
+    command = el(
+        "Command",
+        id_type("MissionPlanID", mission_plan_id),
+        el(
+            "ActivationDetails",
+            el(
+                "ByMissionPlan",
+                el("ActivationCommand", text=command_type),
+                el("CommandSubordinatePlans", text="true"),
+            ),
+        ),
+    )
+    data = el(
+        "MessageData",
+        id_type("CommandID", command_id),
+        el("CommandState", text=command_state),
+        command,
+    )
+    root = message_envelope(
+        "MA_MissionPlanActivationCommand",
+        identity,
+        data,
+        schema_version=schema_version,
+        mode=mode,
     )
     return tostring(root)
 

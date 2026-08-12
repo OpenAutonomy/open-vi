@@ -51,8 +51,10 @@ from open_vi.codec.command import parse_flight_commands
 | `status.py` | `ServiceStatus`, `SubsystemStatus`, `MA_Fault` |
 | `route.py` | Route plan / activation command + status, File* |
 | `notification.py` | `MA_SystemNotification`, `MA_Response` parse |
-| `query.py` | `QueryDataRequest` / status |
+| `query.py` | `QueryDataRequest` / status / `AirfieldReport` |
 | `system_mgmt.py` | `MA_SystemManagementRequest` / status |
+| `control.py` | `MA_ControlRequest` / status / `MA_ControlAssignment` |
+| `task.py` | `MA_TaskCommand` / status / `TaskStatus` / `MA_Task` |
 | `control_status.py` | `ControlStatus`, `ResponsePlanExecutionStatus` |
 | `xmlutil.py` / `ns.py` | Shared XML helpers and constants |
 
@@ -72,5 +74,7 @@ src/open_vi/codec/
   notification.py
   query.py
   system_mgmt.py
+  control.py
+  task.py
   control_status.py
 ```

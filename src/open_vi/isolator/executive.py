@@ -184,10 +184,13 @@ class Isolator:
     def _tick(self) -> None:
         """Refresh capability status and publish vehicle-state outs."""
         snap = self.ctx.platform.snapshot()
-        if self.ctx.state.last_availability != snap.readiness.availability:
+        if (
+            self.ctx.state.last_availability != snap.readiness.availability
+            or self.config.tick_republish_status
+        ):
+            # Republish offer+status so a late harness subscriber still sees
+            # control-mode authorization (not only the initial advertise).
             self._advertise_control()
-        elif self.config.tick_republish_status:
-            publishers.publish_capability_status(self.ctx)
         if self.config.publish_status_package:
             self.publish_status_package_once()
         if self.config.publish_vehicle_state:

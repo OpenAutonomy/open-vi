@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import logging
+from uuid import uuid4
 
 from open_vi.codec.command import (
     build_flight_activity,
     build_flight_command_status,
     parse_flight_commands,
 )
+from open_vi.codec.task import build_ma_task
 from open_vi.isolator.context import IsolatorContext
+from open_vi.isolator.handlers.task import MT_MA_TASK
 
 LOGGER = logging.getLogger(__name__)
 
@@ -51,6 +54,20 @@ class FlightCommandHandler:
                 cmd.command_id.hex,
                 result.processing_state,
             )
+            if result.processing_state == "REJECTED":
+                task_id = uuid4()
+                ctx.bus.publish(
+                    MT_MA_TASK,
+                    build_ma_task(
+                        ctx.identity,
+                        task_id=task_id,
+                        schema_version=ctx.schema_version,
+                        mode=ctx.message_mode,
+                    ),
+                )
+                LOGGER.info(
+                    "Published suggest %s task=%s", MT_MA_TASK, task_id.hex
+                )
             if (
                 result.processing_state == "ACCEPTED"
                 and result.activity_id is not None

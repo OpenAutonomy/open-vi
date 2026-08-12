@@ -56,6 +56,8 @@ src/open_vi/isolator/
     failsafe.py
     system_mgmt.py
     query.py
+    control.py
+    task.py
 ```
 
 Related: `asb/`, `codec/`, `platform/`, `identity.py`, `config.py`.
@@ -69,12 +71,14 @@ concern: parse → `PlatformPort` → publish.
 
 | Handler | Inbound | Outbound |
 | --- | --- | --- |
-| `flight_command` | `MA_FlightCommand` | `MA_FlightCommandStatus` (+ `MA_FlightActivity` if accepted) |
+| `flight_command` | `MA_FlightCommand` | `MA_FlightCommandStatus` (+ `MA_FlightActivity` if accepted; `MA_Task` Flight suggest if rejected) |
 | `heartbeat` | `ServiceStatus`, `ServiceStatusDataRequest`, `SubsystemStatusDataRequest` | Matching status / request-status (fault / capability status as needed) |
-| `route` | `MA_MissionPlanActivationCommand`, `MA_RoutePlan` | Activation status ladder; or notification + `FileLocation` + `FileMetadata` |
+| `route` | `MA_MissionPlanActivationCommand`, `MA_RoutePlan`, `RoutePlanValidationCommand` | Activation status ladder (`BySubPlan`/`RoutePlan` or `ByMissionPlan`); notification + `FileLocation` + `FileMetadata`; `RoutePlanValidation` + status |
 | `failsafe` | `MA_Response` | `MA_SystemNotification` |
 | `system_mgmt` | `MA_SystemManagementRequest` | `MA_SystemManagementRequestStatus` |
-| `query` | `QueryDataRequest` | `QueryDataRequestStatus` (loose/strict ladder) |
+| `query` | `QueryDataRequest` | `QueryDataRequestStatus` + native outs (`MA_FlightCapability`, File*/`MA_RoutePlan`, `AirfieldReport`) |
+| `control` | `MA_ControlRequest` | `MA_ControlRequestStatus` + `MA_ControlAssignment` (NEW / REMOVED) |
+| `task` | `MA_TaskCommand` | `MA_TaskCommandStatus` + `TaskStatus` |
 
 `COMPLIANCE_MODE=loose|strict` selects OPT status ladders on route and query.
 Advertise, TSPI, status package, and Stub contingencies are outbound-only

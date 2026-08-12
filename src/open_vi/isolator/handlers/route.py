@@ -10,8 +10,11 @@ from open_vi.codec.route import (
     build_file_location_for_route,
     build_file_metadata_for_route,
     build_route_activation_status,
+    build_route_plan_validation,
+    build_route_plan_validation_command_status,
     parse_route_activation_commands,
     parse_route_plan_id,
+    parse_route_validation_command,
 )
 from open_vi.isolator.compliance import status_ladder
 from open_vi.isolator.context import IsolatorContext
@@ -25,21 +28,30 @@ MT_ROUTE_PLAN = "MA_RoutePlan"
 MT_SYSTEM_NOTIFICATION = "MA_SystemNotification"
 MT_FILE_LOCATION = "FileLocation"
 MT_FILE_METADATA = "FileMetadata"
+MT_ROUTE_VALIDATION_COMMAND = "RoutePlanValidationCommand"
+MT_ROUTE_VALIDATION = "RoutePlanValidation"
+MT_ROUTE_VALIDATION_STATUS = "RoutePlanValidationCommandStatus"
 
 
 class RouteHandler:
     """Loose/Strict route prepare/activate/deactivate + RoutePlan upload."""
 
-    inbound_mts = (MT_ACTIVATION_COMMAND, MT_ROUTE_PLAN)
+    inbound_mts = (
+        MT_ACTIVATION_COMMAND,
+        MT_ROUTE_PLAN,
+        MT_ROUTE_VALIDATION_COMMAND,
+    )
 
     def handles(self, message_type: str) -> bool:
-        return message_type in (MT_ACTIVATION_COMMAND, MT_ROUTE_PLAN)
+        return message_type in self.inbound_mts
 
     def handle(self, message_type: str, xml: str, ctx: IsolatorContext) -> None:
         if message_type == MT_ACTIVATION_COMMAND:
             self._handle_activation(xml, ctx)
         elif message_type == MT_ROUTE_PLAN:
             self._handle_route_plan(xml, ctx)
+        elif message_type == MT_ROUTE_VALIDATION_COMMAND:
+            self._handle_validation(xml, ctx)
 
     def _handle_activation(self, xml: str, ctx: IsolatorContext) -> None:
         try:
@@ -111,7 +123,17 @@ class RouteHandler:
             LOGGER.exception("Failed to parse %s", MT_ROUTE_PLAN)
             return
         body = xml if isinstance(xml, str) else xml.decode("utf-8")
+        already = ctx.platform.get_stored_route(route_plan_id) is not None
         stored = ctx.platform.store_route_plan(route_plan_id, body)
+        if route_plan_id not in ctx.state.stored_route_ids:
+            ctx.state.stored_route_ids.append(route_plan_id)
+        if already:
+            LOGGER.info(
+                "Updated stored %s %s (no File* re-emit)",
+                MT_ROUTE_PLAN,
+                route_plan_id.hex,
+            )
+            return
         service = ctx.platform.get_service_status()
         schema = ctx.schema_version
         mode = ctx.message_mode
@@ -153,4 +175,65 @@ class RouteHandler:
             "Stored %s %s → Notification + FileLocation + FileMetadata",
             MT_ROUTE_PLAN,
             route_plan_id.hex,
+        )
+
+    def _handle_validation(self, xml: str, ctx: IsolatorContext) -> None:
+        try:
+            cmd = parse_route_validation_command(xml)
+        except ValueError:
+            LOGGER.exception("Failed to parse %s", MT_ROUTE_VALIDATION_COMMAND)
+            return
+        if cmd is None:
+            LOGGER.warning(
+                "%s missing CommandID; dropping", MT_ROUTE_VALIDATION_COMMAND
+            )
+            return
+        schema = ctx.schema_version
+        mode = ctx.message_mode
+        if cmd.route_plan_id is None:
+            ctx.bus.publish(
+                MT_ROUTE_VALIDATION_STATUS,
+                build_route_plan_validation_command_status(
+                    ctx.identity,
+                    command_id=cmd.command_id,
+                    processing_state="REJECTED",
+                    schema_version=schema,
+                    mode=mode,
+                ),
+            )
+            return
+        stored = ctx.platform.get_stored_route(cmd.route_plan_id)
+        validation_state = "VALID" if stored is not None else "INVALID"
+        validation_id = uuid4()
+        ctx.bus.publish(
+            MT_ROUTE_VALIDATION,
+            build_route_plan_validation(
+                ctx.identity,
+                validation_id=validation_id,
+                route_plan_id=cmd.route_plan_id,
+                validation_state=validation_state,
+                schema_version=schema,
+                mode=mode,
+            ),
+        )
+        processing = "ACCEPTED"
+        for command_status in status_ladder(ctx):
+            ctx.bus.publish(
+                MT_ROUTE_VALIDATION_STATUS,
+                build_route_plan_validation_command_status(
+                    ctx.identity,
+                    command_id=cmd.command_id,
+                    processing_state=processing,
+                    command_status=command_status,
+                    validation_id=validation_id,
+                    schema_version=schema,
+                    mode=mode,
+                ),
+            )
+        LOGGER.info(
+            "%s %s → %s validation=%s",
+            MT_ROUTE_VALIDATION_COMMAND,
+            cmd.route_plan_id.hex,
+            validation_state,
+            validation_id.hex,
         )

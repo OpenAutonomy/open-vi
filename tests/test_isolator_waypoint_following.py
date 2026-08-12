@@ -26,6 +26,7 @@ from open_vi.isolator.handlers.flight_command import (
     MT_FLIGHT_COMMAND,
     MT_FLIGHT_COMMAND_STATUS,
 )
+from open_vi.isolator.handlers.task import MT_MA_TASK
 from open_vi.platform import ControlReadiness, StubPlatform, Waypoint
 
 
@@ -125,6 +126,7 @@ def test_unknown_control_mode_rejected() -> None:
         MT_FLIGHT_ACTIVITY not in bus.published
         or not bus.published[MT_FLIGHT_ACTIVITY]
     )
+    assert local_name(parse_xml(bus.published[MT_MA_TASK][-1])) == "MA_Task"
 
 
 def test_unavailable_rejects() -> None:
@@ -148,3 +150,4 @@ def test_unavailable_rejects() -> None:
     )
     bus.publish(MT_FLIGHT_COMMAND, xml)
     assert "REJECTED" in bus.published[MT_FLIGHT_COMMAND_STATUS][-1]
+    assert MT_MA_TASK in bus.published

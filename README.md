@@ -23,6 +23,9 @@ open-vi                      # Stub on STOMP
 open-vi --platform px4       # PX4 SITL (udpin:127.0.0.1:14540)
 open-vi --memory --once      # in-memory advertise once
 pytest
+
+# Official A-GRA VI harness (Isolator + ASB already running)
+./scripts/run_official_vi.sh
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),

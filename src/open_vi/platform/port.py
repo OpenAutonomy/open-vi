@@ -148,7 +148,7 @@ class FaultSnapshot:
 
 @dataclass(frozen=True)
 class RouteActivationRequest:
-    """Internal route activation command (BySubPlan / RoutePlan)."""
+    """Internal route activation (BySubPlan or ByMissionPlan)."""
 
     command_id: UUID
     mission_plan_id: UUID
