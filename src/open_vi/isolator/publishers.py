@@ -1,0 +1,263 @@
+"""Outbound publish helpers used by Isolator lifecycle / tick / harness."""
+
+from __future__ import annotations
+
+import logging
+
+from open_vi.codec.capability import (
+    build_flight_capability,
+    build_flight_capability_status,
+)
+from open_vi.codec.command import build_flight_activity
+from open_vi.codec.control_status import (
+    build_control_status,
+    build_response_plan_execution_status,
+)
+from open_vi.codec.status import build_ma_fault, build_subsystem_status
+from open_vi.codec.vehicle_state import (
+    build_component_status,
+    build_navigation_report,
+    build_position_report_detailed,
+    build_weather_observation,
+)
+from open_vi.isolator.context import IsolatorContext
+from open_vi.isolator.handlers.flight_command import MT_FLIGHT_ACTIVITY
+from open_vi.isolator.handlers.heartbeat import MT_MA_FAULT, MT_SUBSYSTEM_STATUS
+from open_vi.platform.port import FlightActivitySnapshot
+
+LOGGER = logging.getLogger(__name__)
+
+MT_FLIGHT_CAPABILITY = "MA_FlightCapability"
+MT_FLIGHT_CAPABILITY_STATUS = "MA_FlightCapabilityStatus"
+MT_POSITION_REPORT_DETAILED = "MA_PositionReportDetailed"
+MT_WEATHER_OBSERVATION = "WeatherObservation"
+MT_NAVIGATION_REPORT = "NavigationReport"
+MT_COMPONENT_STATUS = "ComponentStatus"
+MT_CONTROL_STATUS = "ControlStatus"
+MT_RESPONSE_PLAN_EXECUTION_STATUS = "ResponsePlanExecutionStatus"
+
+
+def flight_activity_for_publish(ctx: IsolatorContext) -> FlightActivitySnapshot:
+    """Active flight activity, or an idle ENABLED placeholder."""
+    activity = ctx.platform.active_flight_activity()
+    if activity is not None:
+        return activity
+    return FlightActivitySnapshot(
+        activity_id=ctx.state.idle_activity_id,
+        capability_id=ctx.state.capability_id,
+        activity_state="ENABLED",
+        interactive=False,
+    )
+
+
+def advertise_control(ctx: IsolatorContext) -> None:
+    """Publish MA_FlightCapability then MA_FlightCapabilityStatus."""
+    snap = ctx.platform.snapshot()
+    ctx.bus.publish(
+        MT_FLIGHT_CAPABILITY,
+        build_flight_capability(
+            ctx.identity,
+            snap.offer,
+            capability_id=ctx.state.capability_id,
+            schema_version=ctx.schema_version,
+            mode=ctx.message_mode,
+        ),
+    )
+    ctx.bus.publish(
+        MT_FLIGHT_CAPABILITY_STATUS,
+        build_flight_capability_status(
+            ctx.identity,
+            snap.readiness,
+            capability_id=ctx.state.capability_id,
+            capability_label=snap.offer.capability_label,
+            schema_version=ctx.schema_version,
+            mode=ctx.message_mode,
+        ),
+    )
+    ctx.state.advertised = True
+    ctx.state.last_availability = snap.readiness.availability
+    LOGGER.info(
+        "Advertised %s then %s (%s)",
+        MT_FLIGHT_CAPABILITY,
+        MT_FLIGHT_CAPABILITY_STATUS,
+        snap.readiness.availability,
+    )
+
+
+def publish_capability_status(ctx: IsolatorContext) -> None:
+    """Republish MA_FlightCapabilityStatus only (tick refresh)."""
+    snap = ctx.platform.snapshot()
+    ctx.bus.publish(
+        MT_FLIGHT_CAPABILITY_STATUS,
+        build_flight_capability_status(
+            ctx.identity,
+            snap.readiness,
+            capability_id=ctx.state.capability_id,
+            capability_label=snap.offer.capability_label,
+            schema_version=ctx.schema_version,
+            mode=ctx.message_mode,
+        ),
+    )
+
+
+def publish_status_package(ctx: IsolatorContext) -> None:
+    """Publish ControlStatus, ResponsePlanExecutionStatus, SubsystemStatus."""
+    snap = ctx.platform.snapshot()
+    service = ctx.platform.get_service_status()
+    subsystem = ctx.platform.get_subsystem_status()
+    schema = ctx.schema_version
+    mode = ctx.message_mode
+    bus = ctx.bus
+    bus.publish(
+        MT_CONTROL_STATUS,
+        build_control_status(
+            ctx.identity,
+            capability_id=ctx.state.capability_id,
+            offer=snap.offer,
+            service=service,
+            schema_version=schema,
+            mode=mode,
+        ),
+    )
+    bus.publish(
+        MT_RESPONSE_PLAN_EXECUTION_STATUS,
+        build_response_plan_execution_status(
+            ctx.identity, schema_version=schema, mode=mode
+        ),
+    )
+    bus.publish(
+        MT_SUBSYSTEM_STATUS,
+        build_subsystem_status(
+            ctx.identity, subsystem, schema_version=schema, mode=mode
+        ),
+    )
+    LOGGER.info(
+        "Published status package: ControlStatus, "
+        "ResponsePlanExecutionStatus, SubsystemStatus"
+    )
+
+
+def publish_vehicle_state(ctx: IsolatorContext) -> None:
+    """Publish the five Receive Vehicle State Data outs (harness order)."""
+    activity = flight_activity_for_publish(ctx)
+    state = ctx.platform.get_vehicle_state()
+    identity = ctx.identity
+    schema = ctx.schema_version
+    mode = ctx.message_mode
+    bus = ctx.bus
+    bus.publish(
+        MT_FLIGHT_ACTIVITY,
+        build_flight_activity(
+            identity,
+            activity,
+            schema_version=schema,
+            mode=mode,
+            object_state="UPDATED",
+        ),
+    )
+    bus.publish(
+        MT_POSITION_REPORT_DETAILED,
+        build_position_report_detailed(
+            identity, state, schema_version=schema, mode=mode
+        ),
+    )
+    bus.publish(
+        MT_WEATHER_OBSERVATION,
+        build_weather_observation(
+            identity, state, schema_version=schema, mode=mode
+        ),
+    )
+    bus.publish(
+        MT_NAVIGATION_REPORT,
+        build_navigation_report(
+            identity, state, schema_version=schema, mode=mode
+        ),
+    )
+    bus.publish(
+        MT_COMPONENT_STATUS,
+        build_component_status(
+            identity, state, schema_version=schema, mode=mode
+        ),
+    )
+    LOGGER.info(
+        "Published vehicle state: Activity, PositionReportDetailed, "
+        "Weather, Navigation, ComponentStatus"
+    )
+
+
+def publish_contingency(ctx: IsolatorContext, kind: str) -> None:
+    """Inject a Stub contingency and publish Loose Direction1 outs.
+
+    Contingency injection is Stub/harness-only; vehicle backends drive
+    readiness via ``snapshot()`` instead.
+    """
+    inject = getattr(ctx.platform, "inject_contingency", None)
+    if inject is None:
+        raise TypeError(
+            "Platform does not support contingency injection "
+            "(StubPlatform-only harness API)"
+        )
+    inject(kind)
+    kind_u = kind.upper()
+    schema = ctx.schema_version
+    mode = ctx.message_mode
+    bus = ctx.bus
+    if kind_u == "MECHANICAL_DAMAGE":
+        bus.publish(
+            MT_MA_FAULT,
+            build_ma_fault(
+                ctx.identity,
+                ctx.platform.get_faults(),
+                schema_version=schema,
+                mode=mode,
+            ),
+        )
+    elif kind_u == "SENSOR_FAILURE":
+        bus.publish(
+            MT_SUBSYSTEM_STATUS,
+            build_subsystem_status(
+                ctx.identity,
+                ctx.platform.get_subsystem_status(),
+                schema_version=schema,
+                mode=mode,
+            ),
+        )
+        bus.publish(
+            MT_MA_FAULT,
+            build_ma_fault(
+                ctx.identity,
+                ctx.platform.get_faults(),
+                schema_version=schema,
+                mode=mode,
+            ),
+        )
+    elif kind_u == "COLLISION_AVOIDANCE":
+        snap = ctx.platform.snapshot()
+        # Harness order: Status then Capability.
+        bus.publish(
+            MT_FLIGHT_CAPABILITY_STATUS,
+            build_flight_capability_status(
+                ctx.identity,
+                snap.readiness,
+                capability_id=ctx.state.capability_id,
+                capability_label=snap.offer.capability_label,
+                schema_version=schema,
+                mode=mode,
+            ),
+        )
+        bus.publish(
+            MT_FLIGHT_CAPABILITY,
+            build_flight_capability(
+                ctx.identity,
+                snap.offer,
+                capability_id=ctx.state.capability_id,
+                schema_version=schema,
+                mode=mode,
+            ),
+        )
+        ctx.state.last_availability = snap.readiness.availability
+    elif kind_u == "CLEAR":
+        advertise_control(ctx)
+    else:
+        raise ValueError(f"Unknown contingency kind: {kind}")
+    LOGGER.info("Published contingency outs for %s", kind_u)

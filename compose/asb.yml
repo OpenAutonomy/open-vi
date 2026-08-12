@@ -1,0 +1,16 @@
+# Local Abstract Service Bus matching the official A-GRA test harness ports.
+# STOMP 61613 is what open-vi and the compliance harness use.
+services:
+  activemq:
+    image: apache/activemq-classic:6.1.2
+    container_name: open-vi-asb
+    ports:
+      - "8161:8161"     # web console
+      - "61616:61616"   # OpenWire
+      - "61613:61613"   # STOMP
+    # No credentials — matches the official A-GRA harness ASB compose.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8161"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
