@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from open_vi.codec.geo import deg_to_rad, format_uci_angle, rad_to_deg
 from open_vi.codec.ns import SCHEMA_VERSION
 from open_vi.codec.xmlutil import (
     el,
@@ -88,6 +89,7 @@ def parse_flight_commands(xml: str | bytes) -> list[FlightCommandRequest]:
 
 
 def _parse_waypoints(node) -> tuple[Waypoint, ...]:
+    """Extract Point2D-style positions; UCI lat/lon are radians on the wire."""
     points: list[Waypoint] = []
     for candidate in node.iter():
         lat_text = None
@@ -106,8 +108,8 @@ def _parse_waypoints(node) -> tuple[Waypoint, ...]:
             continue
         points.append(
             Waypoint(
-                latitude_deg=float(lat_text),
-                longitude_deg=float(lon_text),
+                latitude_deg=rad_to_deg(float(lat_text)),
+                longitude_deg=rad_to_deg(float(lon_text)),
                 altitude_m=float(alt_text) if alt_text else None,
             )
         )
@@ -244,8 +246,11 @@ def build_sample_waypoint_command(
     ]
     for index, wp in enumerate(waypoints, start=1):
         point_kids = [
-            el("Latitude", text=str(wp.latitude_deg)),
-            el("Longitude", text=str(wp.longitude_deg)),
+            el("Latitude", text=format_uci_angle(deg_to_rad(wp.latitude_deg))),
+            el(
+                "Longitude",
+                text=format_uci_angle(deg_to_rad(wp.longitude_deg)),
+            ),
         ]
         if wp.altitude_m is not None:
             point_kids.append(el("Altitude", text=str(wp.altitude_m)))
@@ -322,8 +327,14 @@ def build_sample_curve_following_command(
             "CenterReference",
             el(
                 "Point2D",
-                el("Latitude", text="0.678"),
-                el("Longitude", text="-1.344"),
+                el(
+                    "Latitude",
+                    text=format_uci_angle(deg_to_rad(38.8895)),
+                ),
+                el(
+                    "Longitude",
+                    text=format_uci_angle(deg_to_rad(-77.0353)),
+                ),
             ),
         ),
         *control_points,

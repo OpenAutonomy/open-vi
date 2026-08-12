@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import math
 from uuid import UUID
 from xml.etree import ElementTree as ET
 
+from open_vi.codec.geo import deg_to_rad, format_uci_angle
 from open_vi.codec.ns import SCHEMA_VERSION
 from open_vi.codec.xmlutil import (
     el,
@@ -20,7 +20,7 @@ from open_vi.platform.port import TsipSnapshot
 
 
 def _num(value: float) -> str:
-    return f"{value:.9g}"
+    return format_uci_angle(value)
 
 
 def _cov_pp() -> ET.Element:
@@ -71,8 +71,8 @@ def build_position_report_detailed(
 ) -> bytes:
     """Build MA_PositionReportDetailed (radians + NED + covariances)."""
     now = utc_now()
-    lat = math.radians(state.latitude_deg)
-    lon = math.radians(state.longitude_deg)
+    lat = deg_to_rad(state.latitude_deg)
+    lon = deg_to_rad(state.longitude_deg)
     absolute = el(
         "AbsolutePoint",
         el("Latitude", text=_num(lat)),
@@ -182,8 +182,8 @@ def build_weather_observation(
 ) -> bytes:
     """Build WeatherObservation with platform wind (Source=OTHER)."""
     now = utc_now()
-    lat = math.radians(state.latitude_deg)
-    lon = math.radians(state.longitude_deg)
+    lat = deg_to_rad(state.latitude_deg)
+    lon = deg_to_rad(state.longitude_deg)
     point = el(
         "ObservationPoint",
         el("Latitude", text=_num(lat)),

@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from uuid import UUID, uuid4
 
+import pytest
+
 from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
 from open_vi.codec.command import (
     build_sample_waypoint_command,
     parse_flight_commands,
 )
+from open_vi.codec.geo import deg_to_rad, format_uci_angle, rad_to_deg
 from open_vi.codec.xmlutil import (
     el,
     id_type,
@@ -30,6 +33,11 @@ from open_vi.isolator.handlers.task import MT_MA_TASK
 from open_vi.platform import ControlReadiness, StubPlatform, Waypoint
 
 
+def test_geo_angle_round_trip() -> None:
+    assert rad_to_deg(deg_to_rad(38.8895)) == pytest.approx(38.8895)
+    assert format_uci_angle(deg_to_rad(10.0)).startswith("0.174532")
+
+
 def test_parse_sample_waypoint_command() -> None:
     identity = SystemIdentity.named("1")
     command_id = uuid4()
@@ -43,6 +51,8 @@ def test_parse_sample_waypoint_command() -> None:
             Waypoint(11.0, 21.0, 60.0),
         ),
     )
+    # Wire format is UCI radians, not degrees.
+    assert b"0.174532" in xml
     cmds = parse_flight_commands(xml)
     assert len(cmds) == 1
     assert cmds[0].command_id == command_id
@@ -50,7 +60,9 @@ def test_parse_sample_waypoint_command() -> None:
     assert cmds[0].mode == "WAYPOINT_FOLLOWING"
     assert cmds[0].command_state == "NEW"
     assert len(cmds[0].waypoints) == 2
-    assert cmds[0].waypoints[0].latitude_deg == 10.0
+    assert cmds[0].waypoints[0].latitude_deg == pytest.approx(10.0)
+    assert cmds[0].waypoints[0].longitude_deg == pytest.approx(20.0)
+    assert cmds[0].waypoints[1].latitude_deg == pytest.approx(11.0)
 
 
 def test_waypoint_command_accepted_publishes_status_and_activity() -> None:

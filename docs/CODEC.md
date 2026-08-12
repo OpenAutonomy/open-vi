@@ -38,6 +38,7 @@ from open_vi.codec.command import parse_flight_commands
 | Schema version | `005.0a` (`SCHEMA_VERSION`) |
 | Envelopes | Shared helpers in `xmlutil` (`message_envelope`, IDs, security) |
 | Structs | Platform DTOs and small request/result types — not generated XSD classes |
+| Angles | UCI `Point2D` / TSPI lat/lon are **radians** on the wire; platform DTOs (`Waypoint`, `TsipSnapshot`) stay in **degrees**. Convert at the codec boundary (`geo.py`) |
 
 ---
 
@@ -56,7 +57,7 @@ from open_vi.codec.command import parse_flight_commands
 | `control.py` | `MA_ControlRequest` / status / `MA_ControlAssignment` |
 | `task.py` | `MA_TaskCommand` / status / `TaskStatus` / `MA_Task` |
 | `control_status.py` | `ControlStatus`, `ResponsePlanExecutionStatus` |
-| `xmlutil.py` / `ns.py` | Shared XML helpers and constants |
+| `xmlutil.py` / `ns.py` / `geo.py` | Shared XML helpers, constants, angle conversion |
 
 ---
 
@@ -66,6 +67,7 @@ from open_vi.codec.command import parse_flight_commands
 src/open_vi/codec/
   ns.py
   xmlutil.py
+  geo.py
   capability.py
   command.py
   vehicle_state.py

@@ -39,7 +39,10 @@ class PlatformSnapshot:
 
 @dataclass(frozen=True)
 class Waypoint:
-    """Simplified geodetic waypoint extracted from a FlightCommand route."""
+    """Geodetic waypoint for the platform (degrees / meters).
+
+    UCI XML carries lat/lon in radians; the codec converts at the boundary.
+    """
 
     latitude_deg: float
     longitude_deg: float
