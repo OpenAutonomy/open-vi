@@ -89,7 +89,105 @@ def parse_flight_commands(xml: str | bytes) -> list[FlightCommandRequest]:
 
 
 def _parse_waypoints(node) -> tuple[Waypoint, ...]:
-    """Extract Point2D-style positions; UCI lat/lon are radians on the wire."""
+    """Extract waypoints; UCI lat/lon are radians on the wire.
+
+    A-GRA PathSegment lists are not necessarily in flight order. Walk
+    ``FirstInPathSegmentID`` / ``NextPathSegment`` when present (MA's
+    ``EndPoint`` / ``Point2D`` layout). Fall back to document-order
+    ``Position`` / ``Point2D`` for older sample XML.
+    """
+    chained = _waypoints_from_path_links(node)
+    if chained:
+        return chained
+    return _waypoints_document_order(node)
+
+
+def _hex_id(text: str | None) -> str | None:
+    if not text:
+        return None
+    return text.replace("-", "").strip().lower()
+
+
+def _direct_named(node, *names):
+    wanted = set(names)
+    return [child for child in list(node) if local_name(child) in wanted]
+
+
+def _waypoints_from_path_links(node) -> tuple[Waypoint, ...]:
+    points: list[Waypoint] = []
+    for path in (child for child in node.iter() if local_name(child) == "Path"):
+        points.extend(_path_segment_waypoints(path))
+    return tuple(points)
+
+
+def _path_segment_waypoints(path) -> list[Waypoint]:
+    segs = _direct_named(path, "PathSegment", "Segment")
+    if not segs:
+        return []
+    by_id: dict[str, object] = {}
+    for seg in segs:
+        sid_node = find_one(seg, "PathSegmentID")
+        sid = _hex_id(
+            find_text(sid_node, "UUID") if sid_node is not None else None
+        )
+        if sid:
+            by_id[sid] = seg
+    start = None
+    for child in list(path):
+        if local_name(child) == "FirstInPathSegmentID":
+            start = _hex_id(find_text(child, "UUID"))
+            break
+    ordered: list = []
+    seen: set[str] = set()
+    cur = start
+    while cur and cur not in seen:
+        seen.add(cur)
+        seg = by_id.get(cur)
+        if seg is None:
+            break
+        ordered.append(seg)
+        nxt = None
+        for child in list(seg):
+            if local_name(child) == "NextPathSegment":
+                nxt = child
+                break
+        cur = None
+        if nxt is not None:
+            nid_node = find_one(nxt, "PathSegmentID")
+            nid = find_text(nid_node, "UUID") if nid_node is not None else None
+            cur = _hex_id(nid)
+    if not ordered:
+        ordered = segs
+    points: list[Waypoint] = []
+    for seg in ordered:
+        wp = _waypoint_from_segment(seg)
+        if wp is not None:
+            points.append(wp)
+    return points
+
+
+def _waypoint_from_segment(seg) -> Waypoint | None:
+    point = None
+    for candidate in seg.iter():
+        if local_name(candidate) in {"Point2D", "Position"}:
+            point = candidate
+            break
+    if point is None:
+        return None
+    lat_text = find_text(point, "Latitude")
+    lon_text = find_text(point, "Longitude")
+    if not lat_text or not lon_text:
+        return None
+    alt_text = find_text(point, "Altitude")
+    return Waypoint(
+        latitude_deg=rad_to_deg(float(lat_text)),
+        longitude_deg=rad_to_deg(float(lon_text)),
+        altitude_m=float(alt_text) if alt_text else None,
+    )
+
+
+def _waypoints_document_order(node) -> tuple[Waypoint, ...]:
+    """Scan nested Position/Point2D when no PathSegment chain exists."""
     points: list[Waypoint] = []
     for candidate in node.iter():
         lat_text = None

@@ -119,14 +119,18 @@ class Px4MavlinkAdapter(PlatformPort):
         connection_url: str | None = None,
         *,
         autoconnect: bool = True,
-        heartbeat_timeout_s: float = 10.0,
+        heartbeat_timeout_s: float | None = None,
         connection: Any | None = None,
         takeoff_alt_m: float = 30.0,
     ) -> None:
         self.connection_url = connection_url or os.environ.get(
             "PX4_MAVLINK_URL", DEFAULT_MAVLINK_URL
         )
-        self._heartbeat_timeout_s = heartbeat_timeout_s
+        self._heartbeat_timeout_s = (
+            heartbeat_timeout_s
+            if heartbeat_timeout_s is not None
+            else float(os.environ.get("PX4_HEARTBEAT_TIMEOUT_S", "10"))
+        )
         self._takeoff_alt_m = takeoff_alt_m
         self._conn: Any | None = connection
         self._offer = ControlOffer(
@@ -475,22 +479,55 @@ class Px4MavlinkAdapter(PlatformPort):
                 self._cache.pitch_rad = float(msg.pitch)
                 self._cache.yaw_rad = float(msg.yaw)
             elif mtype == "VFR_HUD":
-                self._cache.airspeed_mps = float(msg.airspeed)
-                self._cache.groundspeed_mps = float(msg.groundspeed)
+                airspeed = float(msg.airspeed)
+                groundspeed = float(msg.groundspeed)
+                self._cache.airspeed_mps = (
+                    airspeed if math.isfinite(airspeed) else 0.0
+                )
+                self._cache.groundspeed_mps = (
+                    groundspeed if math.isfinite(groundspeed) else 0.0
+                )
                 self._cache.heading_deg = float(msg.heading)
             elif mtype == "SYS_STATUS":
                 rem = int(getattr(msg, "battery_remaining", -1))
                 self._cache.battery_remaining = rem if rem >= 0 else None
 
+    def _home_hae_m(self) -> float | None:
+        """Home HAE from GLOBAL_POSITION_INT: AMSL minus relative-to-home."""
+        with self._lock:
+            alt = self._cache.alt_m
+            rel = self._cache.relative_alt_m
+        if alt == 0.0 and rel == 0.0:
+            return None
+        return alt - rel
+
+    def _mission_rel_alt_m(self, altitude_m: float | None) -> float:
+        """A-GRA Point2D altitude is HAE; PX4 mission items are relative to home."""
+        floor = self._takeoff_alt_m
+        if altitude_m is None:
+            return floor
+        home = self._home_hae_m()
+        if home is None:
+            return max(floor, float(altitude_m))
+        return max(floor, float(altitude_m) - home)
+
     def _execute_waypoint_following(
         self, waypoints: tuple[Waypoint, ...]
     ) -> None:
         """Upload mission (takeoff + WPs), arm, start MISSION mode."""
-        takeoff_alt = self._takeoff_alt_m
-        if waypoints and waypoints[0].altitude_m is not None:
-            takeoff_alt = max(takeoff_alt, float(waypoints[0].altitude_m))
+        takeoff_alt = self._mission_rel_alt_m(
+            waypoints[0].altitude_m if waypoints else None
+        )
+        rel_wps = tuple(
+            Waypoint(
+                latitude_deg=wp.latitude_deg,
+                longitude_deg=wp.longitude_deg,
+                altitude_m=self._mission_rel_alt_m(wp.altitude_m),
+            )
+            for wp in waypoints
+        )
         with self._io_lock:
-            self._upload_waypoints_locked(waypoints, takeoff_alt_m=takeoff_alt)
+            self._upload_waypoints_locked(rel_wps, takeoff_alt_m=takeoff_alt)
             self._arm_locked(force=True)
             self._start_mission_locked()
             self._wait_airborne_locked(takeoff_alt)

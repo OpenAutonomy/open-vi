@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from uuid import UUID
 from xml.etree import ElementTree as ET
 
@@ -20,7 +21,17 @@ from open_vi.platform.port import TsipSnapshot
 
 
 def _num(value: float) -> str:
+    if not math.isfinite(value):
+        return "0"
     return format_uci_angle(value)
+
+
+def _angle(value: float) -> str:
+    """A-GRA AngleType is [-π, π]."""
+    if not math.isfinite(value):
+        return "0"
+    wrapped = (value + math.pi) % (2 * math.pi) - math.pi
+    return format_uci_angle(wrapped)
 
 
 def _cov_pp() -> ET.Element:
@@ -111,12 +122,12 @@ def build_position_report_detailed(
         ),
         el(
             "Orientation",
-            el("Yaw", text=_num(state.yaw_rad)),
-            el("Pitch", text=_num(state.pitch_rad)),
-            el("Roll", text=_num(state.roll_rad)),
+            el("Yaw", text=_angle(state.yaw_rad)),
+            el("Pitch", text=_angle(state.pitch_rad)),
+            el("Roll", text=_angle(state.roll_rad)),
         ),
-        el("WanderAngle", text=_num(state.wander_angle_rad)),
-        el("MagneticHeading", text=_num(state.magnetic_heading_rad)),
+        el("WanderAngle", text=_angle(state.wander_angle_rad)),
+        el("MagneticHeading", text=_angle(state.magnetic_heading_rad)),
         el(
             "OrientationRate",
             el("YawRate", text=_num(state.yaw_rate_rps)),

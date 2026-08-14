@@ -147,6 +147,27 @@ def test_px4_rejects_hsa_csa() -> None:
     plat.close()
 
 
+def test_mission_rel_alt_subtracts_home_hae() -> None:
+    plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=473980000,
+            lon=85460000,
+            alt=420_000,
+            relative_alt=0,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=0,
+        )
+    )
+    rel = plat._mission_rel_alt_m(470.0)  # pylint: disable=protected-access
+    assert rel == 50.0
+    floor = plat._mission_rel_alt_m(10.0)  # pylint: disable=protected-access
+    assert floor == 30.0
+
+
 def test_px4_waypoint_execute_accepts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

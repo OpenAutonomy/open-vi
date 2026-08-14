@@ -63,6 +63,10 @@ Accepted `WAYPOINT_FOLLOWING` → upload mission → arm → start MISSION → w
 until relative altitude shows climb. Rejects if the link is down, the mode
 is not `WAYPOINT_FOLLOWING`, or waypoints are missing.
 
+A-GRA `Point2D` altitude is HAE. PX4 mission items are relative to home.
+Home HAE is `GLOBAL_POSITION_INT.alt − relative_alt`. The adapter subtracts
+that from each waypoint; it does not guess from a 50 m threshold.
+
 ```mermaid
 sequenceDiagram
   participant Iso as Isolator
