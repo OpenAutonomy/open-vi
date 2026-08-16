@@ -325,9 +325,7 @@ def test_px4_cancel_ignores_later_mission_reached(
 
     conn.recv_match = fake_recv_match  # type: ignore[method-assign]
     pytest.importorskip("pymavlink")
-    monkeypatch.setattr(
-        plat, "_wait_command_ack_locked", lambda *a, **k: None
-    )
+    monkeypatch.setattr(plat, "_wait_command_ack_locked", lambda *a, **k: None)
     plat.submit_flight_command(
         FlightCommandRequest(
             command_id=command_id,

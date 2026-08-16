@@ -82,15 +82,19 @@ def advance_mission_waypoints(
         we, wn = _enu_m(
             here[0], here[1], kept[0].latitude_deg, kept[0].longitude_deg
         )
-        captured = _horiz_m(
-            here[0], here[1], kept[0].latitude_deg, kept[0].longitude_deg
-        ) < capture_m
+        captured = (
+            _horiz_m(
+                here[0], here[1], kept[0].latitude_deg, kept[0].longitude_deg
+            )
+            < capture_m
+        )
         behind = (we * ge + wn * gn) < 0.0
         if captured or behind:
             kept.pop(0)
             continue
         break
     return tuple(kept)
+
 
 DEFAULT_MAVLINK_URL = "udpin:127.0.0.1:14540"
 _HEARTBEAT_STALE_S = 10.0
@@ -587,9 +591,7 @@ class Px4MavlinkAdapter(PlatformPort):
         activity_id = None
         if self._activity is not None:
             activity_id = self._activity.activity_id
-            self._activity = replace(
-                self._activity, activity_state="COMPLETED"
-            )
+            self._activity = replace(self._activity, activity_state="COMPLETED")
         self._pending_updates.append(
             (
                 cid,
@@ -613,7 +615,7 @@ class Px4MavlinkAdapter(PlatformPort):
         return alt - rel
 
     def _mission_rel_alt_m(self, altitude_m: float | None) -> float:
-        """A-GRA Point2D altitude is HAE; PX4 mission items are relative to home."""
+        """A-GRA Point2D altitude is HAE; PX4 items are relative to home."""
         floor = self._takeoff_alt_m
         if altitude_m is None:
             return floor

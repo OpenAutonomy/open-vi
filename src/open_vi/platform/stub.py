@@ -182,9 +182,7 @@ class StubPlatform(PlatformPort):
         activity_id = None
         if self._activity is not None:
             activity_id = self._activity.activity_id
-            self._activity = replace(
-                self._activity, activity_state="COMPLETED"
-            )
+            self._activity = replace(self._activity, activity_state="COMPLETED")
         self._pending_updates.append(
             (
                 cid,

@@ -65,7 +65,8 @@ class FlightCommandRequest:
 class CommandResult:
     """Accept/reject decision from the platform."""
 
-    processing_state: str  # ACCEPTED | REJECTED | CANCELED | RECEIVED | COMPLETED
+    # ACCEPTED | REJECTED | CANCELED | RECEIVED | COMPLETED
+    processing_state: str
     activity_id: UUID | None = None
     new_activity: bool = True
     reason: str | None = None
