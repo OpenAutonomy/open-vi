@@ -8,7 +8,7 @@ import math
 import os
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -31,6 +31,66 @@ from open_vi.platform.port import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+
+_EARTH_M = 6_378_137.0
+# Must match open_ma OmplPathPlanner._PATH_CLEARANCE_M.
+_PATH_CLEARANCE_M = 15.0
+
+
+def _horiz_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in meters."""
+    p1 = math.radians(lat1)
+    p2 = math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    chord = (
+        math.sin(dp / 2.0) ** 2
+        + math.cos(p1) * math.cos(p2) * math.sin(dl / 2.0) ** 2
+    )
+    return 2.0 * _EARTH_M * math.asin(min(1.0, math.sqrt(chord)))
+
+
+def _enu_m(
+    lat0: float, lon0: float, lat: float, lon: float
+) -> tuple[float, float]:
+    """East/north meters from ``(lat0, lon0)``."""
+    lat0_rad = math.radians(lat0)
+    east = math.radians(lon - lon0) * _EARTH_M * math.cos(lat0_rad)
+    north = math.radians(lat - lat0) * _EARTH_M
+    return east, north
+
+
+def advance_mission_waypoints(
+    waypoints: tuple[Waypoint, ...],
+    here: tuple[float, float],
+    *,
+    capture_m: float = _PATH_CLEARANCE_M,
+) -> tuple[Waypoint, ...]:
+    """Drop prefix WPs already captured or behind the vehicle toward the goal.
+
+    A mid-flight replan often starts with the current pose, then an RRT
+    vertex behind the aircraft. Uploading that prefix makes PX4 turn
+    around. Keep the goal.
+    """
+    if len(waypoints) <= 1:
+        return waypoints
+    goal = waypoints[-1]
+    ge, gn = _enu_m(here[0], here[1], goal.latitude_deg, goal.longitude_deg)
+    kept = list(waypoints)
+    while len(kept) > 1:
+        we, wn = _enu_m(
+            here[0], here[1], kept[0].latitude_deg, kept[0].longitude_deg
+        )
+        captured = _horiz_m(
+            here[0], here[1], kept[0].latitude_deg, kept[0].longitude_deg
+        ) < capture_m
+        behind = (we * ge + wn * gn) < 0.0
+        if captured or behind:
+            kept.pop(0)
+            continue
+        break
+    return tuple(kept)
 
 DEFAULT_MAVLINK_URL = "udpin:127.0.0.1:14540"
 _HEARTBEAT_STALE_S = 10.0
@@ -139,6 +199,9 @@ class Px4MavlinkAdapter(PlatformPort):
         )
         self._activity: FlightActivitySnapshot | None = None
         self._commands: dict[UUID, str] = {}
+        self._pending_updates: list[tuple[UUID, CommandResult]] = []
+        self._active_command_id: UUID | None = None
+        self._mission_last_seq: int | None = None
         self._routes: dict[UUID, _RouteRecord] = {}
         self._service_id = uuid4()
         self._subsystem_id = uuid4()
@@ -183,6 +246,7 @@ class Px4MavlinkAdapter(PlatformPort):
             self._conn.target_system,
             self._conn.target_component,
         )
+        self._apply_nav_params()
         self._stop.clear()
         self._thread = threading.Thread(
             target=self._reader_loop,
@@ -234,8 +298,17 @@ class Px4MavlinkAdapter(PlatformPort):
             )
         if cmd.command_state == "CANCEL":
             if cmd.command_id in self._commands:
-                self._commands[cmd.command_id] = "CANCELED"
-                self._activity = None
+                with self._lock:
+                    self._commands[cmd.command_id] = "CANCELED"
+                    self._activity = None
+                    if self._active_command_id == cmd.command_id:
+                        self._active_command_id = None
+                        self._mission_last_seq = None
+                    self._pending_updates = [
+                        item
+                        for item in self._pending_updates
+                        if item[0] != cmd.command_id
+                    ]
                 return CommandResult(processing_state="CANCELED")
             return CommandResult(
                 processing_state="REJECTED",
@@ -267,18 +340,26 @@ class Px4MavlinkAdapter(PlatformPort):
                 reason_description=f"Waypoint execution failed: {exc}",
             )
         activity_id = uuid4()
-        self._activity = FlightActivitySnapshot(
-            activity_id=activity_id,
-            capability_id=cmd.capability_id,
-            activity_state="ACTIVE_UNCONSTRAINED",
-            interactive=True,
-        )
-        self._commands[cmd.command_id] = "ACCEPTED"
+        with self._lock:
+            self._activity = FlightActivitySnapshot(
+                activity_id=activity_id,
+                capability_id=cmd.capability_id,
+                activity_state="ACTIVE_UNCONSTRAINED",
+                interactive=True,
+            )
+            self._commands[cmd.command_id] = "ACCEPTED"
+            self._active_command_id = cmd.command_id
         return CommandResult(
             processing_state="ACCEPTED",
             activity_id=activity_id,
             new_activity=True,
         )
+
+    def poll_command_updates(self) -> list[tuple[UUID, CommandResult]]:
+        with self._lock:
+            updates = list(self._pending_updates)
+            self._pending_updates.clear()
+            return updates
 
     def active_flight_activity(self) -> FlightActivitySnapshot | None:
         return self._activity
@@ -491,6 +572,36 @@ class Px4MavlinkAdapter(PlatformPort):
             elif mtype == "SYS_STATUS":
                 rem = int(getattr(msg, "battery_remaining", -1))
                 self._cache.battery_remaining = rem if rem >= 0 else None
+            elif mtype == "MISSION_ITEM_REACHED":
+                seq = int(getattr(msg, "seq", -1))
+                self._maybe_complete_mission_locked(seq)
+
+    def _maybe_complete_mission_locked(self, seq: int) -> None:
+        cid = self._active_command_id
+        last = self._mission_last_seq
+        if cid is None or last is None or seq < last:
+            return
+        if self._commands.get(cid) != "ACCEPTED":
+            return
+        self._commands[cid] = "COMPLETED"
+        activity_id = None
+        if self._activity is not None:
+            activity_id = self._activity.activity_id
+            self._activity = replace(
+                self._activity, activity_state="COMPLETED"
+            )
+        self._pending_updates.append(
+            (
+                cid,
+                CommandResult(
+                    processing_state="COMPLETED",
+                    activity_id=activity_id,
+                ),
+            )
+        )
+        self._active_command_id = None
+        self._mission_last_seq = None
+        LOGGER.info("PX4 mission complete cmd=%s seq=%s", cid.hex, seq)
 
     def _home_hae_m(self) -> float | None:
         """Home HAE from GLOBAL_POSITION_INT: AMSL minus relative-to-home."""
@@ -511,39 +622,127 @@ class Px4MavlinkAdapter(PlatformPort):
             return max(floor, float(altitude_m))
         return max(floor, float(altitude_m) - home)
 
+    def _flight_rel_alt_m(self) -> float:
+        """One AGL for every mission item so PX4 3D capture can succeed.
+
+        C2 cruise is first-pose HAE + 50 m (`CRUISE_AGL_M` in the C2
+        client). This still flattens every item to current AGL so SIH
+        3D capture can succeed if a later command arrives at a different HAE.
+        """
+        rel = self._relative_alt_m()
+        if rel >= 2.0:
+            return rel
+        return self._takeoff_alt_m
+
+    def _apply_nav_params(self) -> None:
+        """Set MC acceptance to the planner disk so edge-hug WPs are flown."""
+        # pylint: disable-next=import-outside-toplevel
+        from pymavlink import mavutil
+
+        conn = self._conn
+        if conn is None or not hasattr(conn.mav, "param_set_send"):
+            return
+        for name, value in (
+            ("NAV_ACC_RAD", _PATH_CLEARANCE_M),
+            ("NAV_MC_ALT_RAD", _PATH_CLEARANCE_M),
+        ):
+            conn.mav.param_set_send(
+                conn.target_system,
+                conn.target_component,
+                name.encode("ascii"),
+                float(value),
+                mavutil.mavlink.MAV_PARAM_TYPE_REAL32,
+            )
+        LOGGER.info(
+            "PX4 nav capture NAV_ACC_RAD=%.0f NAV_MC_ALT_RAD=%.0f",
+            _PATH_CLEARANCE_M,
+            _PATH_CLEARANCE_M,
+        )
+
     def _execute_waypoint_following(
         self, waypoints: tuple[Waypoint, ...]
     ) -> None:
-        """Upload mission (takeoff + WPs), arm, start MISSION mode."""
-        takeoff_alt = self._mission_rel_alt_m(
-            waypoints[0].altitude_m if waypoints else None
-        )
+        """Upload mission, arm, start MISSION mode.
+
+        A replacement while airborne must not restart NAV_TAKEOFF at the
+        planner start — that is how a mid-mission replan (zone arrives
+        after the first command) leaves SIH holding at an intermediate
+        vertex. Drop waypoints already under the vehicle and start at the
+        next remaining item.
+        """
+        remaining = self._remaining_waypoints(waypoints)
+        if len(remaining) < len(waypoints):
+            LOGGER.info(
+                "PX4 skipped %d prefix WPs (kept %d, capture=%.0fm)",
+                len(waypoints) - len(remaining),
+                len(remaining),
+                _PATH_CLEARANCE_M,
+            )
+        airborne = self._relative_alt_m() >= 2.0
+        hold_alt = self._flight_rel_alt_m()
         rel_wps = tuple(
             Waypoint(
                 latitude_deg=wp.latitude_deg,
                 longitude_deg=wp.longitude_deg,
-                altitude_m=self._mission_rel_alt_m(wp.altitude_m),
+                altitude_m=hold_alt,
             )
-            for wp in waypoints
+            for wp in remaining
         )
         with self._io_lock:
-            self._upload_waypoints_locked(rel_wps, takeoff_alt_m=takeoff_alt)
+            if airborne:
+                self._hold_locked()
+            last_seq = self._upload_waypoints_locked(
+                rel_wps,
+                takeoff_alt_m=hold_alt,
+                include_takeoff=not airborne,
+            )
             self._arm_locked(force=True)
             self._start_mission_locked()
-            self._wait_airborne_locked(takeoff_alt)
+            if not airborne:
+                self._wait_airborne_locked(hold_alt)
+        with self._lock:
+            self._mission_last_seq = last_seq
         LOGGER.info(
-            "PX4 waypoint mission executing (%s WPs, takeoff=%.1fm)",
-            len(waypoints),
-            takeoff_alt,
+            "PX4 waypoint mission executing (%s WPs, takeoff=%s last_seq=%s)",
+            len(remaining),
+            "skip" if airborne else f"{hold_alt:.1f}m",
+            last_seq,
         )
+
+    def _remaining_waypoints(
+        self, waypoints: tuple[Waypoint, ...]
+    ) -> tuple[Waypoint, ...]:
+        """Drop prefix waypoints already under or behind the vehicle."""
+        if not waypoints:
+            return waypoints
+        here = self._current_ll()
+        if here is None:
+            return waypoints
+        return advance_mission_waypoints(waypoints, here)
+
+    def _current_ll(self) -> tuple[float, float] | None:
+        with self._lock:
+            lat = self._cache.lat_deg
+            lon = self._cache.lon_deg
+        if lat == 0.0 and lon == 0.0:
+            return None
+        return lat, lon
+
+    def _hold_locked(self) -> None:
+        """Leave MISSION before replacing items. Holds ``_io_lock``."""
+        for name in ("HOLD", "AUTO.LOITER", "LOITER"):
+            if self._set_mode_locked(name):
+                LOGGER.info("PX4 hold before mission replace (%s)", name)
+                return
 
     def _upload_waypoints_locked(
         self,
         waypoints: tuple[Waypoint, ...],
         *,
         takeoff_alt_m: float,
-    ) -> None:
-        """Upload NAV_TAKEOFF + NAV_WAYPOINT items. Holds ``_io_lock``."""
+        include_takeoff: bool = True,
+    ) -> int:
+        """Upload mission items. Returns last seq. Holds ``_io_lock``."""
         # pylint: disable-next=import-outside-toplevel
         from pymavlink import mavutil
 
@@ -553,15 +752,18 @@ class Px4MavlinkAdapter(PlatformPort):
         target_component = conn.target_component
         # Standalone NAV_TAKEOFF / TAKEOFF mode sits at MIS_TAKEOFF_ALT on
         # SIH; embedding takeoff as mission item 0 then MISSION_START works.
-        first = waypoints[0]
-        items: list[tuple[int, float, float, float]] = [
-            (
-                mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-                first.latitude_deg,
-                first.longitude_deg,
-                float(takeoff_alt_m),
+        # Skip takeoff when already airborne — a replan must not restart it.
+        items: list[tuple[int, float, float, float]] = []
+        if include_takeoff:
+            first = waypoints[0]
+            items.append(
+                (
+                    mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+                    first.latitude_deg,
+                    first.longitude_deg,
+                    float(takeoff_alt_m),
+                )
             )
-        ]
         for wp in waypoints:
             items.append(
                 (
@@ -571,9 +773,16 @@ class Px4MavlinkAdapter(PlatformPort):
                     float(wp.altitude_m if wp.altitude_m is not None else 50.0),
                 )
             )
+        if items:
+            _, lat, lon, alt = items[-1]
+            items.append(
+                (mavutil.mavlink.MAV_CMD_NAV_LOITER_UNLIM, lat, lon, alt)
+            )
         count = len(items)
+        last_wp_seq = count - 2 if count >= 2 else count - 1
         mav.mission_count_send(target_system, target_component, count)
         frame = mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT
+        waypoint_cmd = mavutil.mavlink.MAV_CMD_NAV_WAYPOINT
         for seq, (command, lat, lon, alt) in enumerate(items):
             msg = conn.recv_match(
                 type=["MISSION_REQUEST", "MISSION_REQUEST_INT"],
@@ -582,6 +791,8 @@ class Px4MavlinkAdapter(PlatformPort):
             )
             if msg is None:
                 raise TimeoutError(f"No MISSION_REQUEST for seq {seq}")
+            is_last = seq == count - 1
+            accept_m = _PATH_CLEARANCE_M if command == waypoint_cmd else 0.0
             mav.mission_item_int_send(
                 target_system,
                 target_component,
@@ -589,9 +800,9 @@ class Px4MavlinkAdapter(PlatformPort):
                 frame,
                 command,
                 1 if seq == 0 else 0,  # current
-                1,  # autocontinue
+                0 if is_last else 1,  # stop on the last item
                 0,
-                0,
+                accept_m,
                 0,
                 0,
                 int(lat * 1e7),
@@ -604,9 +815,20 @@ class Px4MavlinkAdapter(PlatformPort):
         if int(getattr(ack, "type", -1)) != 0:
             ack_type = getattr(ack, "type", None)
             raise RuntimeError(f"MISSION_ACK type={ack_type}")
+        first, last = waypoints[0], waypoints[-1]
         LOGGER.info(
-            "Uploaded PX4 mission: takeoff + %s waypoints", len(waypoints)
+            "Uploaded PX4 mission: %s + %s waypoints (last_seq=%s) "
+            "first=%.5f,%.5f last=%.5f,%.5f alt=%.1fm",
+            "takeoff" if include_takeoff else "no-takeoff",
+            len(waypoints),
+            last_wp_seq,
+            first.latitude_deg,
+            first.longitude_deg,
+            last.latitude_deg,
+            last.longitude_deg,
+            float(last.altitude_m if last.altitude_m is not None else 50.0),
         )
+        return last_wp_seq
 
     def _arm_locked(self, *, force: bool = False) -> None:
         """Arm motors. Caller must hold ``_io_lock``."""

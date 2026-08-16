@@ -54,6 +54,7 @@ class _FakeConn:
         return {
             "TAKEOFF": (29, 4, 2),
             "MISSION": (29, 4, 4),
+            "HOLD": (29, 4, 3),
         }
 
     def set_mode(self, *args: object) -> None:
@@ -228,3 +229,146 @@ def test_px4_waypoint_execute_accepts(
     assert result.processing_state == "ACCEPTED"
     assert plat.active_flight_activity() is not None
     plat.close()
+
+
+def test_px4_mission_reached_completes_last_waypoint() -> None:
+    conn = _FakeConn()
+    plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg("HEARTBEAT", base_mode=128)
+    )
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=0,
+            lon=0,
+            alt=500000,
+            relative_alt=30000,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=0,
+        )
+    )
+    command_id = uuid4()
+
+    def fake_recv_match(**kwargs: object) -> object | None:
+        types = kwargs.get("type")
+        if types == "MISSION_ACK":
+            return _FakeMsg("MISSION_ACK", type=0)
+        if isinstance(types, list) and "MISSION_REQUEST" in types:
+            return _FakeMsg("MISSION_REQUEST", seq=0)
+        return None
+
+    conn.recv_match = fake_recv_match  # type: ignore[method-assign]
+    pytest.importorskip("pymavlink")
+
+    def fake_wait(command: int, timeout: float = 5.0) -> None:
+        del command, timeout
+
+    plat._wait_command_ack_locked = fake_wait  # type: ignore[method-assign]
+    result = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=command_id,
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="WAYPOINT_FOLLOWING",
+            waypoints=(Waypoint(10.0, 20.0, 40.0),),
+        )
+    )
+    assert result.processing_state == "ACCEPTED"
+    # Already airborne: takeoff is omitted, so the only item is seq 0.
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg("MISSION_ITEM_REACHED", seq=0)
+    )
+    updates = plat.poll_command_updates()
+    assert len(updates) == 1
+    assert updates[0][0] == command_id
+    assert updates[0][1].processing_state == "COMPLETED"
+    assert plat.active_flight_activity() is not None
+    assert plat.active_flight_activity().activity_state == "COMPLETED"
+    assert plat.poll_command_updates() == []
+    plat.close()
+
+
+def test_px4_cancel_ignores_later_mission_reached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = _FakeConn()
+    plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg("HEARTBEAT", base_mode=128)
+    )
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=0,
+            lon=0,
+            alt=500000,
+            relative_alt=30000,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=0,
+        )
+    )
+    command_id = uuid4()
+    capability_id = uuid4()
+
+    def fake_recv_match(**kwargs: object) -> object | None:
+        types = kwargs.get("type")
+        if types == "MISSION_ACK":
+            return _FakeMsg("MISSION_ACK", type=0)
+        if isinstance(types, list) and "MISSION_REQUEST" in types:
+            return _FakeMsg("MISSION_REQUEST", seq=0)
+        return None
+
+    conn.recv_match = fake_recv_match  # type: ignore[method-assign]
+    pytest.importorskip("pymavlink")
+    monkeypatch.setattr(
+        plat, "_wait_command_ack_locked", lambda *a, **k: None
+    )
+    plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=command_id,
+            capability_id=capability_id,
+            command_state="NEW",
+            mode="WAYPOINT_FOLLOWING",
+            waypoints=(Waypoint(10.0, 20.0, 40.0),),
+        )
+    )
+    canceled = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=command_id,
+            capability_id=capability_id,
+            command_state="CANCEL",
+            mode="WAYPOINT_FOLLOWING",
+        )
+    )
+    assert canceled.processing_state == "CANCELED"
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg("MISSION_ITEM_REACHED", seq=1)
+    )
+    assert plat.poll_command_updates() == []
+    plat.close()
+
+
+def test_advance_skips_captured_and_behind_waypoints() -> None:
+    from open_vi.platform.px4 import advance_mission_waypoints
+
+    here = (47.3980, 8.5400)
+    behind = Waypoint(47.3980, 8.5420, 50.0)  # east of here, goal is west
+    captured = Waypoint(47.3980, 8.5401, 50.0)
+    ahead = Waypoint(47.3980, 8.5360, 50.0)
+    goal = Waypoint(47.3980, 8.5300, 50.0)
+    kept = advance_mission_waypoints((behind, captured, ahead, goal), here)
+    assert kept == (ahead, goal)
+
+
+def test_advance_keeps_goal_when_all_prefix_is_behind() -> None:
+    from open_vi.platform.px4 import advance_mission_waypoints
+
+    here = (47.3980, 8.5400)
+    behind = Waypoint(47.3980, 8.5450, 50.0)
+    goal = Waypoint(47.3980, 8.5300, 50.0)
+    assert advance_mission_waypoints((behind, goal), here) == (goal,)

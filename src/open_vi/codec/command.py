@@ -289,11 +289,13 @@ def _capability_shell(
     command_id: UUID,
     capability_id: UUID,
     flight_control_mode,
+    *,
+    command_state: str = "NEW",
 ):
     return el(
         "Capability",
         id_type("CommandID", command_id),
-        el("CommandState", text="NEW"),
+        el("CommandState", text=command_state),
         id_type("CapabilityID", capability_id, "flight-capability"),
         el(
             "Ranking",
@@ -333,6 +335,7 @@ def build_sample_waypoint_command(
     waypoints: tuple[Waypoint, ...] = (
         Waypoint(latitude_deg=38.0, longitude_deg=-77.0, altitude_m=100.0),
     ),
+    command_state: str = "NEW",
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
 ) -> bytes:
@@ -367,7 +370,10 @@ def build_sample_waypoint_command(
         el("Path", *path_children),
     )
     capability = _capability_shell(
-        command_id, capability_id, el("WaypointFollowing", route)
+        command_id,
+        capability_id,
+        el("WaypointFollowing", route),
+        command_state=command_state,
     )
     return _flight_command_bytes(
         identity, capability, schema_version=schema_version, mode=mode

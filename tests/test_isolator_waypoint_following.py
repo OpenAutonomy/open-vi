@@ -163,3 +163,69 @@ def test_unavailable_rejects() -> None:
     bus.publish(MT_FLIGHT_COMMAND, xml)
     assert "REJECTED" in bus.published[MT_FLIGHT_COMMAND_STATUS][-1]
     assert MT_MA_TASK in bus.published
+
+
+def test_completed_command_publishes_status_and_activity() -> None:
+    bus = InMemoryAsb()
+    platform = StubPlatform()
+    iso = Isolator(
+        bus,
+        platform=platform,
+        config=IsolatorConfig(tick_republish_status=False),
+    )
+    attach_isolator(iso)
+    command_id = uuid4()
+    bus.publish(
+        MT_FLIGHT_COMMAND,
+        build_sample_waypoint_command(
+            iso.identity,
+            command_id=command_id,
+            capability_id=iso.ctx.state.capability_id,
+        ),
+    )
+    assert "ACCEPTED" in bus.published[MT_FLIGHT_COMMAND_STATUS][-1]
+    assert platform.complete_flight_command(command_id) == command_id
+    iso.publish_command_updates_once()
+    status = bus.published[MT_FLIGHT_COMMAND_STATUS][-1]
+    assert "COMPLETED" in status
+    assert command_id.hex in status.replace("-", "")
+    activity = bus.published[MT_FLIGHT_ACTIVITY][-1]
+    assert "COMPLETED" in activity
+    assert platform.active_flight_activity() is not None
+    assert platform.active_flight_activity().activity_state == "COMPLETED"
+    iso.publish_command_updates_once()
+    assert bus.published[MT_FLIGHT_COMMAND_STATUS][-1] == status
+
+
+def test_cancel_does_not_complete() -> None:
+    bus = InMemoryAsb()
+    platform = StubPlatform()
+    iso = Isolator(
+        bus,
+        platform=platform,
+        config=IsolatorConfig(tick_republish_status=False),
+    )
+    attach_isolator(iso)
+    command_id = uuid4()
+    cap_id = iso.ctx.state.capability_id
+    bus.publish(
+        MT_FLIGHT_COMMAND,
+        build_sample_waypoint_command(
+            iso.identity,
+            command_id=command_id,
+            capability_id=cap_id,
+        ),
+    )
+    bus.publish(
+        MT_FLIGHT_COMMAND,
+        build_sample_waypoint_command(
+            iso.identity,
+            command_id=command_id,
+            capability_id=cap_id,
+            command_state="CANCEL",
+        ),
+    )
+    assert "CANCELED" in bus.published[MT_FLIGHT_COMMAND_STATUS][-1]
+    assert platform.complete_flight_command(command_id) is None
+    iso.publish_command_updates_once()
+    assert "COMPLETED" not in bus.published[MT_FLIGHT_COMMAND_STATUS][-1]

@@ -90,6 +90,7 @@ class StubPlatform(PlatformPort):
         self._readiness = readiness or ControlReadiness()
         self._activity: FlightActivitySnapshot | None = None
         self._commands: dict[UUID, str] = {}
+        self._pending_updates: list[tuple[UUID, CommandResult]] = []
         self._routes: dict[UUID, _RouteRecord] = {}
         self._vehicle_state = vehicle_state or TsipSnapshot(
             component_id=uuid4()
@@ -127,6 +128,11 @@ class StubPlatform(PlatformPort):
             if cmd.command_id in self._commands:
                 self._commands[cmd.command_id] = "CANCELED"
                 self._activity = None
+                self._pending_updates = [
+                    item
+                    for item in self._pending_updates
+                    if item[0] != cmd.command_id
+                ]
                 return CommandResult(processing_state="CANCELED")
             return CommandResult(
                 processing_state="REJECTED",
@@ -155,6 +161,45 @@ class StubPlatform(PlatformPort):
             activity_id=activity_id,
             new_activity=True,
         )
+
+    def complete_flight_command(
+        self, command_id: UUID | None = None
+    ) -> UUID | None:
+        """Mark the live command COMPLETED for the next Isolator poll."""
+        cid = command_id
+        if cid is None:
+            cid = next(
+                (
+                    key
+                    for key, state in self._commands.items()
+                    if state == "ACCEPTED"
+                ),
+                None,
+            )
+        if cid is None or self._commands.get(cid) != "ACCEPTED":
+            return None
+        self._commands[cid] = "COMPLETED"
+        activity_id = None
+        if self._activity is not None:
+            activity_id = self._activity.activity_id
+            self._activity = replace(
+                self._activity, activity_state="COMPLETED"
+            )
+        self._pending_updates.append(
+            (
+                cid,
+                CommandResult(
+                    processing_state="COMPLETED",
+                    activity_id=activity_id,
+                ),
+            )
+        )
+        return cid
+
+    def poll_command_updates(self) -> list[tuple[UUID, CommandResult]]:
+        updates = list(self._pending_updates)
+        self._pending_updates.clear()
+        return updates
 
     def active_flight_activity(self) -> FlightActivitySnapshot | None:
         return self._activity

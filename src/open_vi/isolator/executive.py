@@ -170,6 +170,10 @@ class Isolator:
         """Publish the five Receive Vehicle State Data outs."""
         publishers.publish_vehicle_state(self.ctx)
 
+    def publish_command_updates_once(self) -> None:
+        """Publish FlightCommandStatus for commands the platform completed."""
+        publishers.publish_command_updates(self.ctx)
+
     def _advertise_control(self) -> None:
         publishers.advertise_control(self.ctx)
 
@@ -183,6 +187,7 @@ class Isolator:
 
     def _tick(self) -> None:
         """Refresh capability status and publish vehicle-state outs."""
+        self.publish_command_updates_once()
         snap = self.ctx.platform.snapshot()
         if (
             self.ctx.state.last_availability != snap.readiness.availability

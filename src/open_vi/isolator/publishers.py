@@ -8,7 +8,10 @@ from open_vi.codec.capability import (
     build_flight_capability,
     build_flight_capability_status,
 )
-from open_vi.codec.command import build_flight_activity
+from open_vi.codec.command import (
+    build_flight_activity,
+    build_flight_command_status,
+)
 from open_vi.codec.control_status import (
     build_control_status,
     build_response_plan_execution_status,
@@ -21,7 +24,10 @@ from open_vi.codec.vehicle_state import (
     build_weather_observation,
 )
 from open_vi.isolator.context import IsolatorContext
-from open_vi.isolator.handlers.flight_command import MT_FLIGHT_ACTIVITY
+from open_vi.isolator.handlers.flight_command import (
+    MT_FLIGHT_ACTIVITY,
+    MT_FLIGHT_COMMAND_STATUS,
+)
 from open_vi.isolator.handlers.heartbeat import MT_MA_FAULT, MT_SUBSYSTEM_STATUS
 from open_vi.platform.port import FlightActivitySnapshot
 
@@ -35,6 +41,41 @@ MT_NAVIGATION_REPORT = "NavigationReport"
 MT_COMPONENT_STATUS = "ComponentStatus"
 MT_CONTROL_STATUS = "ControlStatus"
 MT_RESPONSE_PLAN_EXECUTION_STATUS = "ResponsePlanExecutionStatus"
+
+
+def publish_command_updates(ctx: IsolatorContext) -> None:
+    """Publish FlightCommandStatus for platform-completed commands."""
+    for command_id, result in ctx.platform.poll_command_updates():
+        ctx.bus.publish(
+            MT_FLIGHT_COMMAND_STATUS,
+            build_flight_command_status(
+                ctx.identity,
+                command_id=command_id,
+                result=result,
+                schema_version=ctx.schema_version,
+                mode=ctx.message_mode,
+            ),
+        )
+        LOGGER.info(
+            "FlightCommand %s → %s",
+            command_id.hex,
+            result.processing_state,
+        )
+        if result.processing_state != "COMPLETED":
+            continue
+        activity = ctx.platform.active_flight_activity()
+        if activity is None:
+            continue
+        ctx.bus.publish(
+            MT_FLIGHT_ACTIVITY,
+            build_flight_activity(
+                ctx.identity,
+                activity,
+                schema_version=ctx.schema_version,
+                mode=ctx.message_mode,
+                object_state="UPDATED",
+            ),
+        )
 
 
 def flight_activity_for_publish(ctx: IsolatorContext) -> FlightActivitySnapshot:

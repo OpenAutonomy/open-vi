@@ -65,7 +65,7 @@ class FlightCommandRequest:
 class CommandResult:
     """Accept/reject decision from the platform."""
 
-    processing_state: str  # ACCEPTED | REJECTED | CANCELED | RECEIVED
+    processing_state: str  # ACCEPTED | REJECTED | CANCELED | RECEIVED | COMPLETED
     activity_id: UUID | None = None
     new_activity: bool = True
     reason: str | None = None
@@ -193,6 +193,15 @@ class PlatformPort(ABC):
     @abstractmethod
     def submit_flight_command(self, cmd: FlightCommandRequest) -> CommandResult:
         """Accept or reject a flight capability command."""
+
+    def poll_command_updates(self) -> list[tuple[UUID, CommandResult]]:
+        """Return newly reached terminal command states since the last poll.
+
+        Used by the Isolator tick to publish ``MA_FlightCommandStatus``
+        when a previously accepted command finishes (``COMPLETED``).
+        Default is no updates.
+        """
+        return []
 
     @abstractmethod
     def active_flight_activity(self) -> FlightActivitySnapshot | None:
