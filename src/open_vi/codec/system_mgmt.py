@@ -15,8 +15,8 @@ from open_vi.codec.xmlutil import (
     system_id,
     tostring,
 )
+from open_vi.domain import ServiceStatusSnapshot
 from open_vi.identity import SystemIdentity
-from open_vi.platform.port import ServiceStatusSnapshot
 
 
 def parse_qnh_setting_kpa(xml: str | bytes) -> float | None:

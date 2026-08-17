@@ -14,12 +14,12 @@ from open_vi.codec.xmlutil import (
     tostring,
     uuid_under,
 )
-from open_vi.identity import SystemIdentity, uuid_to_hex
-from open_vi.platform.port import (
+from open_vi.domain import (
     FaultSnapshot,
     ServiceStatusSnapshot,
     SubsystemStatusSnapshot,
 )
+from open_vi.identity import SystemIdentity, uuid_to_hex
 
 
 def service_id_element(status: ServiceStatusSnapshot) -> ET.Element:

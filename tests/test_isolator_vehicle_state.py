@@ -8,13 +8,13 @@ from open_vi.asb import InMemoryAsb
 from open_vi.codec.xmlutil import local_name, parse_xml
 from open_vi.config import IsolatorConfig
 from open_vi.isolator import Isolator
-from open_vi.isolator.executive import (
+from open_vi.isolator.handlers.flight_command import MT_FLIGHT_ACTIVITY
+from open_vi.isolator.publishers import (
     MT_COMPONENT_STATUS,
     MT_NAVIGATION_REPORT,
     MT_POSITION_REPORT_DETAILED,
     MT_WEATHER_OBSERVATION,
 )
-from open_vi.isolator.handlers.flight_command import MT_FLIGHT_ACTIVITY
 from open_vi.platform import StubPlatform
 
 

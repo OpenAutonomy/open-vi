@@ -1,7 +1,7 @@
 # Codec
 
 The codec package parses and builds UCI/A-GRA XML for Isolator handlers and
-publishers. It turns message-type XML into small Python structs (and the
+publishers. It turns message-type XML into `open_vi.domain` structs (and the
 reverse). It is not a full XSD binding and does not perform schema validation
 today.
 
@@ -15,9 +15,11 @@ Parent: [ARCHITECTURE.md](ARCHITECTURE.md).
 flowchart LR
   H["Handlers / publishers"]
   C["codec/"]
+  D["domain/"]
   XML["UCI XML bytes"]
 
   H <-->|"parse / build"| C
+  C <-->|"domain structs"| D
   C <--> XML
 ```
 
@@ -26,7 +28,10 @@ Handlers and publishers import builders/parsers from submodules, for example:
 ```python
 from open_vi.codec.capability import build_flight_capability
 from open_vi.codec.command import parse_flight_commands
+from open_vi.domain import FlightCommandRequest
 ```
+
+Codec speaks `open_vi.domain`, not `open_vi.platform`.
 
 ---
 
@@ -37,8 +42,8 @@ from open_vi.codec.command import parse_flight_commands
 | Namespace | Default `xmlns` = OAM URI in `ns.py` (CAL-friendly; no `uci:` prefix) |
 | Schema version | `005.0a` (`SCHEMA_VERSION`) |
 | Envelopes | Shared helpers in `xmlutil` (`message_envelope`, IDs, security) |
-| Structs | Platform DTOs and small request/result types — not generated XSD classes |
-| Angles | UCI `Point2D` / TSPI lat/lon are **radians** on the wire; platform DTOs (`Waypoint`, `TsipSnapshot`) stay in **degrees**. Convert at the codec boundary (`geo.py`) |
+| Structs | `open_vi.domain` types — not platform types, not generated XSD classes |
+| Angles | UCI `Point2D` / TSPI lat/lon are **radians** on the wire; domain DTOs (`Waypoint`, `TsipSnapshot`) stay in **degrees**. Convert at the codec boundary (`geo.py`) |
 
 ---
 
@@ -64,6 +69,7 @@ from open_vi.codec.command import parse_flight_commands
 ## Package
 
 ```text
+src/open_vi/domain/          # flight / tspi / status / route / control
 src/open_vi/codec/
   ns.py
   xmlutil.py

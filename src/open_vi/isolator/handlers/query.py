@@ -92,7 +92,7 @@ class QueryHandler:
             )
         if "route" in kinds:
             for route_id in ctx.state.stored_route_ids:
-                stored = ctx.platform.get_stored_route(route_id)
+                stored = ctx.routes.get(route_id)
                 if stored is None:
                     continue
                 file_metadata_id = uuid4()

@@ -96,21 +96,20 @@ def test_route_activation_strict_three_statuses() -> None:
 
 def test_route_deactivate_single_status_in_strict() -> None:
     bus = InMemoryAsb()
-    platform = StubPlatform()
     route_id = uuid4()
     mission_id = uuid4()
-    platform.prime_route(
-        route_id, mission_plan_id=mission_id, state="ACTIVATED", xml="<rp/>"
-    )
     iso = Isolator(
         bus,
-        platform=platform,
+        platform=StubPlatform(),
         config=IsolatorConfig(
             compliance_mode="strict",
             tick_republish_status=False,
             publish_vehicle_state=False,
             publish_status_package=False,
         ),
+    )
+    iso.ctx.routes.prime(
+        route_id, mission_plan_id=mission_id, state="ACTIVATED", xml="<rp/>"
     )
     attach_isolator(iso)
     bus.publish(

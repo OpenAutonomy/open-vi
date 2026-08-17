@@ -20,12 +20,12 @@ from open_vi.codec.xmlutil import (
     utc_now,
     uuid_under,
 )
-from open_vi.identity import SystemIdentity
-from open_vi.platform.port import (
+from open_vi.domain import (
     RouteActivationRequest,
     RouteActivationResult,
     StoredRoutePlan,
 )
+from open_vi.identity import SystemIdentity
 
 
 def parse_route_activation_commands(

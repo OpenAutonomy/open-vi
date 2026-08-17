@@ -6,8 +6,8 @@ from uuid import UUID
 
 from open_vi.codec.ns import SCHEMA_VERSION
 from open_vi.codec.xmlutil import el, id_type, message_envelope, tostring
+from open_vi.domain import ControlOffer, ControlReadiness
 from open_vi.identity import SystemIdentity
-from open_vi.platform.port import ControlOffer, ControlReadiness
 
 
 def build_flight_capability(

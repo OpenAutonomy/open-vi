@@ -16,9 +16,9 @@ from open_vi.codec.route import (
     parse_route_plan_id,
     parse_route_validation_command,
 )
+from open_vi.domain import RouteActivationRequest, RouteActivationResult
 from open_vi.isolator.compliance import status_ladder
 from open_vi.isolator.context import IsolatorContext
-from open_vi.platform.port import RouteActivationRequest, RouteActivationResult
 
 LOGGER = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ class RouteHandler:
             )
             return
         for req in commands:
-            result = ctx.platform.handle_route_activation(req)
+            result = ctx.routes.handle_activation(req)
             self._publish_statuses(ctx, req, result)
             LOGGER.info(
                 "Route %s %s → %s (%s)",
@@ -123,8 +123,8 @@ class RouteHandler:
             LOGGER.exception("Failed to parse %s", MT_ROUTE_PLAN)
             return
         body = xml if isinstance(xml, str) else xml.decode("utf-8")
-        already = ctx.platform.get_stored_route(route_plan_id) is not None
-        stored = ctx.platform.store_route_plan(route_plan_id, body)
+        already = ctx.routes.get(route_plan_id) is not None
+        stored = ctx.routes.ingest(route_plan_id, body)
         if route_plan_id not in ctx.state.stored_route_ids:
             ctx.state.stored_route_ids.append(route_plan_id)
         if already:
@@ -202,7 +202,7 @@ class RouteHandler:
                 ),
             )
             return
-        stored = ctx.platform.get_stored_route(cmd.route_plan_id)
+        stored = ctx.routes.get(cmd.route_plan_id)
         validation_state = "VALID" if stored is not None else "INVALID"
         validation_id = uuid4()
         ctx.bus.publish(

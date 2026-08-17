@@ -16,34 +16,11 @@ from open_vi.isolator.handlers import (
     collect_inbound_mts,
     default_handlers,
 )
-from open_vi.isolator.publishers import (
-    MT_COMPONENT_STATUS,
-    MT_CONTROL_STATUS,
-    MT_FLIGHT_CAPABILITY,
-    MT_FLIGHT_CAPABILITY_STATUS,
-    MT_NAVIGATION_REPORT,
-    MT_POSITION_REPORT_DETAILED,
-    MT_RESPONSE_PLAN_EXECUTION_STATUS,
-    MT_WEATHER_OBSERVATION,
-)
+from open_vi.isolator.routes import RouteStore
 from open_vi.isolator.state import IsolatorState
 from open_vi.platform.port import PlatformPort
-from open_vi.platform.stub import StubPlatform
 
 LOGGER = logging.getLogger(__name__)
-
-# Re-export publish MT names used by tests.
-__all__ = [
-    "Isolator",
-    "MT_COMPONENT_STATUS",
-    "MT_CONTROL_STATUS",
-    "MT_FLIGHT_CAPABILITY",
-    "MT_FLIGHT_CAPABILITY_STATUS",
-    "MT_NAVIGATION_REPORT",
-    "MT_POSITION_REPORT_DETAILED",
-    "MT_RESPONSE_PLAN_EXECUTION_STATUS",
-    "MT_WEATHER_OBSERVATION",
-]
 
 
 class Isolator:
@@ -53,7 +30,7 @@ class Isolator:
         self,
         bus: AsbPort,
         *,
-        platform: PlatformPort | None = None,
+        platform: PlatformPort,
         config: IsolatorConfig | None = None,
         identity: SystemIdentity | None = None,
         handlers: list[MessageHandler] | None = None,
@@ -67,10 +44,11 @@ class Isolator:
         )
         self.ctx = IsolatorContext(
             bus=bus,
-            platform=platform or StubPlatform(),
+            platform=platform,
             identity=self.identity,
             config=self.config,
             state=IsolatorState(),
+            routes=RouteStore(),
         )
         self._handlers: list[MessageHandler] = (
             list(handlers) if handlers is not None else default_handlers()

@@ -137,7 +137,7 @@ def test_convert_and_upload_route_loose() -> None:
     assert len(bus.published[MT_FILE_METADATA]) == 1
     meta = bus.published[MT_FILE_METADATA][-1]
     assert "SHA_2_Hash" in meta
-    assert platform.get_stored_route(route_id) is not None
+    assert iso.ctx.routes.get(route_id) is not None
 
     upload_id = uuid4()
     before = len(bus.published[MT_ACTIVATION_STATUS])
@@ -159,16 +159,15 @@ def test_convert_and_upload_route_loose() -> None:
 
 def test_prepare_for_route_activation() -> None:
     bus = InMemoryAsb()
-    platform = StubPlatform()
     route_id = uuid4()
     mission_id = uuid4()
-    platform.prime_route(
-        route_id, mission_plan_id=mission_id, state="UPLOADED", xml="<rp/>"
-    )
     iso = Isolator(
         bus,
-        platform=platform,
+        platform=StubPlatform(),
         config=IsolatorConfig(tick_republish_status=False),
+    )
+    iso.ctx.routes.prime(
+        route_id, mission_plan_id=mission_id, state="UPLOADED", xml="<rp/>"
     )
     attach_isolator(iso)
 
@@ -189,19 +188,18 @@ def test_prepare_for_route_activation() -> None:
 
 def test_activate_route() -> None:
     bus = InMemoryAsb()
-    platform = StubPlatform()
     route_id = uuid4()
     mission_id = uuid4()
-    platform.prime_route(
+    iso = Isolator(
+        bus,
+        platform=StubPlatform(),
+        config=IsolatorConfig(tick_republish_status=False),
+    )
+    iso.ctx.routes.prime(
         route_id,
         mission_plan_id=mission_id,
         state="READY_FOR_ACTIVATION",
         xml="<rp/>",
-    )
-    iso = Isolator(
-        bus,
-        platform=platform,
-        config=IsolatorConfig(tick_republish_status=False),
     )
     attach_isolator(iso)
 
@@ -222,16 +220,15 @@ def test_activate_route() -> None:
 
 def test_receive_deactivate_route_loose() -> None:
     bus = InMemoryAsb()
-    platform = StubPlatform()
     route_id = uuid4()
     mission_id = uuid4()
-    platform.prime_route(
-        route_id, mission_plan_id=mission_id, state="ACTIVATED", xml="<rp/>"
-    )
     iso = Isolator(
         bus,
-        platform=platform,
+        platform=StubPlatform(),
         config=IsolatorConfig(tick_republish_status=False),
+    )
+    iso.ctx.routes.prime(
+        route_id, mission_plan_id=mission_id, state="ACTIVATED", xml="<rp/>"
     )
     attach_isolator(iso)
 
@@ -279,14 +276,13 @@ def test_invalid_route_transition_rejected() -> None:
 
 def test_validate_stored_route_plan() -> None:
     bus = InMemoryAsb()
-    platform = StubPlatform()
     route_id = uuid4()
-    platform.prime_route(route_id, xml="<rp/>")
     iso = Isolator(
         bus,
-        platform=platform,
+        platform=StubPlatform(),
         config=IsolatorConfig(tick_republish_status=False),
     )
+    iso.ctx.routes.prime(route_id, xml="<rp/>")
     attach_isolator(iso)
     command_id = uuid4()
     bus.publish(

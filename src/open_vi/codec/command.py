@@ -18,13 +18,13 @@ from open_vi.codec.xmlutil import (
     parse_xml,
     tostring,
 )
-from open_vi.identity import SystemIdentity
-from open_vi.platform.port import (
+from open_vi.domain import (
     CommandResult,
     FlightActivitySnapshot,
     FlightCommandRequest,
     Waypoint,
 )
+from open_vi.identity import SystemIdentity
 
 _MODE_TAGS = {
     "WaypointFollowing": "WAYPOINT_FOLLOWING",

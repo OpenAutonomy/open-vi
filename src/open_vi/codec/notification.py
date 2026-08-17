@@ -17,8 +17,8 @@ from open_vi.codec.xmlutil import (
     utc_now,
     uuid_under,
 )
+from open_vi.domain import ServiceStatusSnapshot
 from open_vi.identity import SystemIdentity
-from open_vi.platform.port import ServiceStatusSnapshot
 
 
 def parse_response_id(xml: str | bytes) -> UUID | None:

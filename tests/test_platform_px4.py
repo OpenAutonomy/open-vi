@@ -7,12 +7,8 @@ from uuid import uuid4
 
 import pytest
 
-from open_vi.platform import (
-    ControlReadiness,
-    FlightCommandRequest,
-    Waypoint,
-    make_platform,
-)
+from open_vi.domain import ControlReadiness, FlightCommandRequest, Waypoint
+from open_vi.platform import make_platform
 from open_vi.platform.px4 import Px4MavlinkAdapter
 
 
@@ -64,14 +60,62 @@ class _FakeConn:
         self.closed = True
 
 
+def test_import_platform_package_does_not_load_px4() -> None:
+    import sys
+
+    sys.modules.pop("open_vi.platform.px4", None)
+    sys.modules.pop("open_vi.platform", None)
+    import open_vi.platform as platform
+
+    assert "open_vi.platform.px4" not in sys.modules
+    assert hasattr(platform, "make_platform")
+
+
 def test_make_platform_stub() -> None:
     plat = make_platform("stub")
     assert plat.snapshot().readiness.available
 
 
+def test_make_platform_stub_does_not_import_px4() -> None:
+    import sys
+
+    sys.modules.pop("open_vi.platform.px4", None)
+    make_platform("stub")
+    assert "open_vi.platform.px4" not in sys.modules
+
+
+def test_make_platform_px4_imports_lazily() -> None:
+    import sys
+
+    sys.modules.pop("open_vi.platform.px4", None)
+    plat = make_platform("px4", autoconnect=False)
+    assert "open_vi.platform.px4" in sys.modules
+    plat.close()
+
+
 def test_make_platform_unknown() -> None:
     with pytest.raises(ValueError, match="Unknown platform"):
         make_platform("xplane")
+
+
+def test_px4_path_clearance_constructor_overrides_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PX4_PATH_CLEARANCE_M", "12.5")
+    plat = Px4MavlinkAdapter(
+        connection=_FakeConn(),
+        autoconnect=False,
+        path_clearance_m=25.0,
+    )
+    assert plat._path_clearance_m == 25.0  # pylint: disable=protected-access
+    plat.close()
+
+
+def test_px4_path_clearance_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PX4_PATH_CLEARANCE_M", "12.5")
+    plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
+    assert plat._path_clearance_m == 12.5  # pylint: disable=protected-access
+    plat.close()
 
 
 def test_px4_telemetry_and_snapshot() -> None:

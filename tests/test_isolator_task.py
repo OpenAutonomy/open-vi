@@ -13,6 +13,7 @@ from open_vi.codec.task import (
 )
 from open_vi.codec.xmlutil import local_name, parse_xml
 from open_vi.config import IsolatorConfig
+from open_vi.domain import ControlReadiness
 from open_vi.isolator import Isolator
 from open_vi.isolator.handlers.flight_command import MT_FLIGHT_COMMAND
 from open_vi.isolator.handlers.task import (
@@ -21,7 +22,7 @@ from open_vi.isolator.handlers.task import (
     MT_TASK_COMMAND_STATUS,
     MT_TASK_STATUS,
 )
-from open_vi.platform import ControlReadiness, StubPlatform
+from open_vi.platform import StubPlatform
 
 
 def _iso(

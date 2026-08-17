@@ -2,7 +2,7 @@
 
 The Isolator is open-vi’s A-GRA **VI OMS Isolator** face: UCI XML on the ASB
 toward Mission Autonomy, and `PlatformPort` toward the vehicle. It is the only
-component that owns A-GRA sequences.
+component that owns A-GRA sequences, including the route ladder and File*.
 
 Parent: [ARCHITECTURE.md](ARCHITECTURE.md).
 
@@ -15,6 +15,7 @@ sequenceDiagram
   participant Bus as AsbPort
   participant Iso as Isolator
   participant H as Handlers
+  participant R as RouteStore
   participant P as PlatformPort
 
   Iso->>Bus: connect + subscribe handler inbound_mts
@@ -29,14 +30,18 @@ sequenceDiagram
 
   Bus-->>Iso: inbound MT xml
   Iso->>H: dispatch
-  H->>P: command / query
+  H->>P: snapshot / flight command / TSPI / QNH
+  H->>R: ingest / activate / File*
   H->>Bus: publish replies
 ```
 
+`Isolator.__init__` requires `platform: PlatformPort`. The CLI passes one via
+`make_platform()`. There is no default Stub and Isolator does not import Stub.
+
 `Isolator.attach()` connects the bus, registers `dispatch`, and subscribes each
 handler’s `inbound_mts`. `start()` attaches, advertises control, and runs the
-tick loop. Handlers parse with `codec/`, call `PlatformPort`, and publish
-replies. Missing request/response IDs are dropped.
+tick loop. Handlers parse with `codec/`, call `RouteStore` and/or
+`PlatformPort`, and publish replies. Missing request/response IDs are dropped.
 
 ---
 
@@ -47,8 +52,9 @@ src/open_vi/isolator/
   executive.py      # Isolator lifecycle + dispatch
   publishers.py     # advertise, TSPI, status package, contingency outs
   compliance.py     # loose vs strict status ladders
-  context.py        # bus, platform, identity, config, state
+  context.py        # bus, platform, identity, config, state, routes
   state.py          # capability / activity session
+  routes.py         # RouteStore — A-GRA ladder + stored plan bytes
   handlers/
     flight_command.py
     heartbeat.py
@@ -60,14 +66,29 @@ src/open_vi/isolator/
     task.py
 ```
 
-Related: `asb/`, `codec/`, `platform/`, `identity.py`, `config.py`.
+Related: `asb/`, `codec/`, `domain/`, `platform/`, `identity.py`, `config.py`.
+
+---
+
+## RouteStore
+
+`routes.py` sits next to `state.py`. It is the only owner of A-GRA route
+sequences:
+
+- ingest / retain opaque `MA_RoutePlan` bytes + sha256
+- upload → prepare → activate → deactivate
+- `prime(...)` for tests
+
+`IsolatorState.stored_route_ids` lists plans the query handler may emit.
+Handlers `route.py` and `query.py` read and write `ctx.routes`, not
+`ctx.platform`. ACTIVATE does not call the vehicle.
 
 ---
 
 ## Handlers
 
 Each handler declares `inbound_mts` (subscribed at `attach`) and maps one
-concern: parse → `PlatformPort` → publish.
+concern: parse → `RouteStore` and/or `PlatformPort` → publish.
 
 | Handler | Inbound | Outbound |
 | --- | --- | --- |

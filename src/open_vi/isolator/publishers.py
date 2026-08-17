@@ -23,13 +23,13 @@ from open_vi.codec.vehicle_state import (
     build_position_report_detailed,
     build_weather_observation,
 )
+from open_vi.domain import FlightActivitySnapshot
 from open_vi.isolator.context import IsolatorContext
 from open_vi.isolator.handlers.flight_command import (
     MT_FLIGHT_ACTIVITY,
     MT_FLIGHT_COMMAND_STATUS,
 )
 from open_vi.isolator.handlers.heartbeat import MT_MA_FAULT, MT_SUBSYSTEM_STATUS
-from open_vi.platform.port import FlightActivitySnapshot
 
 LOGGER = logging.getLogger(__name__)
 

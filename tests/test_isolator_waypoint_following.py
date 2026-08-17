@@ -22,6 +22,7 @@ from open_vi.codec.xmlutil import (
     tostring,
 )
 from open_vi.config import IsolatorConfig
+from open_vi.domain import ControlReadiness, Waypoint
 from open_vi.identity import SystemIdentity
 from open_vi.isolator import Isolator
 from open_vi.isolator.handlers.flight_command import (
@@ -30,7 +31,7 @@ from open_vi.isolator.handlers.flight_command import (
     MT_FLIGHT_COMMAND_STATUS,
 )
 from open_vi.isolator.handlers.task import MT_MA_TASK
-from open_vi.platform import ControlReadiness, StubPlatform, Waypoint
+from open_vi.platform import StubPlatform
 
 
 def test_geo_angle_round_trip() -> None:

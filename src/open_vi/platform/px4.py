@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import math
 import os
@@ -12,30 +11,27 @@ from dataclasses import dataclass, replace
 from typing import Any
 from uuid import UUID, uuid4
 
-from open_vi.platform.port import (
+from open_vi.domain import (
     CommandResult,
     ControlOffer,
     ControlReadiness,
     FaultSnapshot,
     FlightActivitySnapshot,
     FlightCommandRequest,
-    PlatformPort,
     PlatformSnapshot,
-    RouteActivationRequest,
-    RouteActivationResult,
     ServiceStatusSnapshot,
-    StoredRoutePlan,
     SubsystemStatusSnapshot,
     TsipSnapshot,
     Waypoint,
 )
+from open_vi.platform.port import PlatformPort
 
 LOGGER = logging.getLogger(__name__)
 
 
 _EARTH_M = 6_378_137.0
-# Must match open_ma OmplPathPlanner._PATH_CLEARANCE_M.
-_PATH_CLEARANCE_M = 15.0
+# Adapter acceptance radius (NAV_ACC_RAD / capture). Not an MA constant.
+DEFAULT_PATH_CLEARANCE_M = 15.0
 
 
 def _horiz_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -65,7 +61,7 @@ def advance_mission_waypoints(
     waypoints: tuple[Waypoint, ...],
     here: tuple[float, float],
     *,
-    capture_m: float = _PATH_CLEARANCE_M,
+    capture_m: float = DEFAULT_PATH_CLEARANCE_M,
 ) -> tuple[Waypoint, ...]:
     """Drop prefix WPs already captured or behind the vehicle toward the goal.
 
@@ -99,51 +95,6 @@ def advance_mission_waypoints(
 DEFAULT_MAVLINK_URL = "udpin:127.0.0.1:14540"
 _HEARTBEAT_STALE_S = 10.0
 _ACCEPTED_MODES = frozenset({"WAYPOINT_FOLLOWING"})
-
-# Same route SM as Stub for Isolator sequences; vehicle push is later.
-_ROUTE_TRANSITIONS: dict[
-    str, tuple[frozenset[str | None], str | None, str, bool]
-] = {
-    "PREPARE_FOR_UPLOAD": (
-        frozenset({None, "INACTIVE", "DEACTIVATED", "READY_FOR_UPLOAD"}),
-        "PREPARING_FOR_UPLOAD",
-        "READY_FOR_UPLOAD",
-        True,
-    ),
-    "UPLOAD": (
-        frozenset({"READY_FOR_UPLOAD"}),
-        "UPLOADING",
-        "UPLOADED",
-        True,
-    ),
-    "PREPARE_FOR_ACTIVATION": (
-        frozenset({"UPLOADED"}),
-        "PREPARING_FOR_ACTIVATION",
-        "READY_FOR_ACTIVATION",
-        True,
-    ),
-    "ACTIVATE": (
-        frozenset({"READY_FOR_ACTIVATION"}),
-        "ACTIVATING",
-        "ACTIVATED",
-        True,
-    ),
-    "DEACTIVATE": (
-        frozenset({"READY_FOR_ACTIVATION", "ACTIVATED"}),
-        None,
-        "DEACTIVATED",
-        False,
-    ),
-}
-
-
-@dataclass
-class _RouteRecord:
-    route_plan_id: UUID
-    mission_plan_id: UUID | None = None
-    state: str = "INACTIVE"
-    xml: str | None = None
-    sha256_hex: str | None = None
 
 
 @dataclass
@@ -186,6 +137,7 @@ class Px4MavlinkAdapter(PlatformPort):
         heartbeat_timeout_s: float | None = None,
         connection: Any | None = None,
         takeoff_alt_m: float = 30.0,
+        path_clearance_m: float | None = None,
     ) -> None:
         self.connection_url = connection_url or os.environ.get(
             "PX4_MAVLINK_URL", DEFAULT_MAVLINK_URL
@@ -194,6 +146,15 @@ class Px4MavlinkAdapter(PlatformPort):
             heartbeat_timeout_s
             if heartbeat_timeout_s is not None
             else float(os.environ.get("PX4_HEARTBEAT_TIMEOUT_S", "10"))
+        )
+        self._path_clearance_m = (
+            float(path_clearance_m)
+            if path_clearance_m is not None
+            else float(
+                os.environ.get(
+                    "PX4_PATH_CLEARANCE_M", str(DEFAULT_PATH_CLEARANCE_M)
+                )
+            )
         )
         self._takeoff_alt_m = takeoff_alt_m
         self._conn: Any | None = connection
@@ -206,7 +167,6 @@ class Px4MavlinkAdapter(PlatformPort):
         self._pending_updates: list[tuple[UUID, CommandResult]] = []
         self._active_command_id: UUID | None = None
         self._mission_last_seq: int | None = None
-        self._routes: dict[UUID, _RouteRecord] = {}
         self._service_id = uuid4()
         self._subsystem_id = uuid4()
         self._fault_id = uuid4()
@@ -422,96 +382,6 @@ class Px4MavlinkAdapter(PlatformPort):
         self._kollsman_hpa = float(qnh_kpa) * 10.0
         return "COMPLETED"
 
-    def handle_route_activation(
-        self, req: RouteActivationRequest
-    ) -> RouteActivationResult:
-        transition = _ROUTE_TRANSITIONS.get(req.command_type)
-        if transition is None:
-            return RouteActivationResult(
-                processing_state="REJECTED",
-                plan_state="INACTIVE",
-                emit_pair=False,
-                reason="INVALID_INPUT_PARAMETER",
-                reason_description=(
-                    f"Unsupported CommandType {req.command_type}"
-                ),
-            )
-        allowed, mid, terminal, emit_pair = transition
-        record = self._routes.get(req.route_plan_id)
-        current = record.state if record is not None else None
-        if current not in allowed:
-            return RouteActivationResult(
-                processing_state="REJECTED",
-                plan_state=current or "INACTIVE",
-                emit_pair=False,
-                reason="INVALID_INPUT_PARAMETER",
-                reason_description=(
-                    f"Cannot {req.command_type} from state {current}"
-                ),
-            )
-        if req.command_type == "UPLOAD" and (
-            record is None or record.xml is None
-        ):
-            return RouteActivationResult(
-                processing_state="REJECTED",
-                plan_state=current or "INACTIVE",
-                emit_pair=False,
-                reason="INVALID_INPUT_PARAMETER",
-                reason_description="No stored MA_RoutePlan for UPLOAD",
-            )
-        if record is None:
-            record = _RouteRecord(
-                route_plan_id=req.route_plan_id,
-                mission_plan_id=req.mission_plan_id,
-            )
-            self._routes[req.route_plan_id] = record
-        record.mission_plan_id = req.mission_plan_id
-        record.state = terminal
-        return RouteActivationResult(
-            processing_state="ACCEPTED",
-            plan_state=terminal,
-            progress_state=mid,
-            emit_pair=emit_pair,
-        )
-
-    def store_route_plan(
-        self,
-        route_plan_id: UUID,
-        xml: str,
-        *,
-        mission_plan_id: UUID | None = None,
-    ) -> StoredRoutePlan:
-        digest = hashlib.sha256(xml.encode("utf-8")).hexdigest()
-        record = self._routes.get(route_plan_id)
-        if record is None:
-            record = _RouteRecord(route_plan_id=route_plan_id)
-            self._routes[route_plan_id] = record
-        if mission_plan_id is not None:
-            record.mission_plan_id = mission_plan_id
-        record.xml = xml
-        record.sha256_hex = digest
-        if record.state in (None, "INACTIVE", "DEACTIVATED"):
-            record.state = "READY_FOR_UPLOAD"
-        return StoredRoutePlan(
-            route_plan_id=route_plan_id,
-            xml=xml,
-            sha256_hex=digest,
-            mission_plan_id=record.mission_plan_id,
-            plan_state=record.state,
-        )
-
-    def get_stored_route(self, route_plan_id: UUID) -> StoredRoutePlan | None:
-        record = self._routes.get(route_plan_id)
-        if record is None or record.xml is None or record.sha256_hex is None:
-            return None
-        return StoredRoutePlan(
-            route_plan_id=record.route_plan_id,
-            xml=record.xml,
-            sha256_hex=record.sha256_hex,
-            mission_plan_id=record.mission_plan_id,
-            plan_state=record.state,
-        )
-
     def _link_ok(self) -> bool:
         if self._conn is None:
             return False
@@ -644,9 +514,10 @@ class Px4MavlinkAdapter(PlatformPort):
         conn = self._conn
         if conn is None or not hasattr(conn.mav, "param_set_send"):
             return
+        clearance = self._path_clearance_m
         for name, value in (
-            ("NAV_ACC_RAD", _PATH_CLEARANCE_M),
-            ("NAV_MC_ALT_RAD", _PATH_CLEARANCE_M),
+            ("NAV_ACC_RAD", clearance),
+            ("NAV_MC_ALT_RAD", clearance),
         ):
             conn.mav.param_set_send(
                 conn.target_system,
@@ -657,8 +528,8 @@ class Px4MavlinkAdapter(PlatformPort):
             )
         LOGGER.info(
             "PX4 nav capture NAV_ACC_RAD=%.0f NAV_MC_ALT_RAD=%.0f",
-            _PATH_CLEARANCE_M,
-            _PATH_CLEARANCE_M,
+            clearance,
+            clearance,
         )
 
     def _execute_waypoint_following(
@@ -678,7 +549,7 @@ class Px4MavlinkAdapter(PlatformPort):
                 "PX4 skipped %d prefix WPs (kept %d, capture=%.0fm)",
                 len(waypoints) - len(remaining),
                 len(remaining),
-                _PATH_CLEARANCE_M,
+                self._path_clearance_m,
             )
         airborne = self._relative_alt_m() >= 2.0
         hold_alt = self._flight_rel_alt_m()
@@ -720,7 +591,9 @@ class Px4MavlinkAdapter(PlatformPort):
         here = self._current_ll()
         if here is None:
             return waypoints
-        return advance_mission_waypoints(waypoints, here)
+        return advance_mission_waypoints(
+            waypoints, here, capture_m=self._path_clearance_m
+        )
 
     def _current_ll(self) -> tuple[float, float] | None:
         with self._lock:
@@ -794,7 +667,9 @@ class Px4MavlinkAdapter(PlatformPort):
             if msg is None:
                 raise TimeoutError(f"No MISSION_REQUEST for seq {seq}")
             is_last = seq == count - 1
-            accept_m = _PATH_CLEARANCE_M if command == waypoint_cmd else 0.0
+            accept_m = (
+                self._path_clearance_m if command == waypoint_cmd else 0.0
+            )
             mav.mission_item_int_send(
                 target_system,
                 target_component,

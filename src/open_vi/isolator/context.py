@@ -8,6 +8,7 @@ from open_vi.asb.port import AsbPort
 from open_vi.codec.ns import SCHEMA_VERSION
 from open_vi.config import IsolatorConfig
 from open_vi.identity import SystemIdentity
+from open_vi.isolator.routes import RouteStore
 from open_vi.isolator.state import IsolatorState
 from open_vi.platform.port import PlatformPort
 
@@ -21,6 +22,7 @@ class IsolatorContext:
     identity: SystemIdentity
     config: IsolatorConfig
     state: IsolatorState
+    routes: RouteStore
 
     @property
     def schema_version(self) -> str:

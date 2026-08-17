@@ -2,76 +2,27 @@
 
 from __future__ import annotations
 
-import hashlib
 import time
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from uuid import UUID, uuid4
 
-from open_vi.platform.port import (
+from open_vi.domain import (
     CommandResult,
     ControlOffer,
     ControlReadiness,
     FaultSnapshot,
     FlightActivitySnapshot,
     FlightCommandRequest,
-    PlatformPort,
     PlatformSnapshot,
-    RouteActivationRequest,
-    RouteActivationResult,
     ServiceStatusSnapshot,
-    StoredRoutePlan,
     SubsystemStatusSnapshot,
     TsipSnapshot,
 )
+from open_vi.platform.port import PlatformPort
 
 _ACCEPTED_MODES = frozenset(
     {"WAYPOINT_FOLLOWING", "HSA_CSA", "CURVE_FOLLOWING"}
 )
-
-# command_type → (allowed from-states, mid-state, terminal-state, emit_pair)
-_ROUTE_TRANSITIONS: dict[
-    str, tuple[frozenset[str | None], str | None, str, bool]
-] = {
-    "PREPARE_FOR_UPLOAD": (
-        frozenset({None, "INACTIVE", "DEACTIVATED", "READY_FOR_UPLOAD"}),
-        "PREPARING_FOR_UPLOAD",
-        "READY_FOR_UPLOAD",
-        True,
-    ),
-    "UPLOAD": (
-        frozenset({"READY_FOR_UPLOAD"}),
-        "UPLOADING",
-        "UPLOADED",
-        True,
-    ),
-    "PREPARE_FOR_ACTIVATION": (
-        frozenset({"UPLOADED"}),
-        "PREPARING_FOR_ACTIVATION",
-        "READY_FOR_ACTIVATION",
-        True,
-    ),
-    "ACTIVATE": (
-        frozenset({"READY_FOR_ACTIVATION"}),
-        "ACTIVATING",
-        "ACTIVATED",
-        True,
-    ),
-    "DEACTIVATE": (
-        frozenset({"READY_FOR_ACTIVATION", "ACTIVATED"}),
-        None,
-        "DEACTIVATED",
-        False,
-    ),
-}
-
-
-@dataclass
-class _RouteRecord:
-    route_plan_id: UUID
-    mission_plan_id: UUID | None = None
-    state: str = "INACTIVE"
-    xml: str | None = None
-    sha256_hex: str | None = None
 
 
 class StubPlatform(PlatformPort):
@@ -91,7 +42,6 @@ class StubPlatform(PlatformPort):
         self._activity: FlightActivitySnapshot | None = None
         self._commands: dict[UUID, str] = {}
         self._pending_updates: list[tuple[UUID, CommandResult]] = []
-        self._routes: dict[UUID, _RouteRecord] = {}
         self._vehicle_state = vehicle_state or TsipSnapshot(
             component_id=uuid4()
         )
@@ -266,113 +216,3 @@ class StubPlatform(PlatformPort):
             self._vehicle_state, kollsman_hpa=float(qnh_kpa) * 10.0
         )
         return "COMPLETED"
-
-    def prime_route(
-        self,
-        route_plan_id: UUID,
-        *,
-        mission_plan_id: UUID | None = None,
-        state: str = "READY_FOR_ACTIVATION",
-        xml: str | None = None,
-    ) -> None:
-        """Test helper: place a route into a lifecycle state."""
-        digest = None
-        if xml is not None:
-            digest = hashlib.sha256(xml.encode("utf-8")).hexdigest()
-        self._routes[route_plan_id] = _RouteRecord(
-            route_plan_id=route_plan_id,
-            mission_plan_id=mission_plan_id,
-            state=state,
-            xml=xml,
-            sha256_hex=digest,
-        )
-
-    def handle_route_activation(
-        self, req: RouteActivationRequest
-    ) -> RouteActivationResult:
-        transition = _ROUTE_TRANSITIONS.get(req.command_type)
-        if transition is None:
-            return RouteActivationResult(
-                processing_state="REJECTED",
-                plan_state="INACTIVE",
-                emit_pair=False,
-                reason="INVALID_INPUT_PARAMETER",
-                reason_description=(
-                    f"Unsupported CommandType {req.command_type}"
-                ),
-            )
-        allowed, mid, terminal, emit_pair = transition
-        record = self._routes.get(req.route_plan_id)
-        current = record.state if record is not None else None
-        if current not in allowed:
-            return RouteActivationResult(
-                processing_state="REJECTED",
-                plan_state=current or "INACTIVE",
-                emit_pair=False,
-                reason="INVALID_INPUT_PARAMETER",
-                reason_description=(
-                    f"Cannot {req.command_type} from state {current}"
-                ),
-            )
-        if req.command_type == "UPLOAD" and (
-            record is None or record.xml is None
-        ):
-            return RouteActivationResult(
-                processing_state="REJECTED",
-                plan_state=current or "INACTIVE",
-                emit_pair=False,
-                reason="INVALID_INPUT_PARAMETER",
-                reason_description="No stored MA_RoutePlan for UPLOAD",
-            )
-        if record is None:
-            record = _RouteRecord(
-                route_plan_id=req.route_plan_id,
-                mission_plan_id=req.mission_plan_id,
-            )
-            self._routes[req.route_plan_id] = record
-        record.mission_plan_id = req.mission_plan_id
-        record.state = terminal
-        return RouteActivationResult(
-            processing_state="ACCEPTED",
-            plan_state=terminal,
-            progress_state=mid,
-            emit_pair=emit_pair,
-        )
-
-    def store_route_plan(
-        self,
-        route_plan_id: UUID,
-        xml: str,
-        *,
-        mission_plan_id: UUID | None = None,
-    ) -> StoredRoutePlan:
-        digest = hashlib.sha256(xml.encode("utf-8")).hexdigest()
-        record = self._routes.get(route_plan_id)
-        if record is None:
-            record = _RouteRecord(route_plan_id=route_plan_id)
-            self._routes[route_plan_id] = record
-        if mission_plan_id is not None:
-            record.mission_plan_id = mission_plan_id
-        record.xml = xml
-        record.sha256_hex = digest
-        if record.state in (None, "INACTIVE", "DEACTIVATED"):
-            record.state = "READY_FOR_UPLOAD"
-        return StoredRoutePlan(
-            route_plan_id=route_plan_id,
-            xml=xml,
-            sha256_hex=digest,
-            mission_plan_id=record.mission_plan_id,
-            plan_state=record.state,
-        )
-
-    def get_stored_route(self, route_plan_id: UUID) -> StoredRoutePlan | None:
-        record = self._routes.get(route_plan_id)
-        if record is None or record.xml is None or record.sha256_hex is None:
-            return None
-        return StoredRoutePlan(
-            route_plan_id=record.route_plan_id,
-            xml=record.xml,
-            sha256_hex=record.sha256_hex,
-            mission_plan_id=record.mission_plan_id,
-            plan_state=record.state,
-        )

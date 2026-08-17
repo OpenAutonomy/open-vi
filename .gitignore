@@ -8,5 +8,3 @@ dist/
 build/
 .DS_Store
 .env
-traces/
-third_party/a-gra-test-harness/

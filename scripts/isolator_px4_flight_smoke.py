@@ -39,7 +39,7 @@ def main() -> int:
         MT_FLIGHT_COMMAND,
         MT_FLIGHT_COMMAND_STATUS,
     )
-    from open_vi.platform import Waypoint
+    from open_vi.domain import Waypoint
     from open_vi.platform.px4 import Px4MavlinkAdapter
 
     print(f"Connecting PX4 at {args.mavlink_url} …")

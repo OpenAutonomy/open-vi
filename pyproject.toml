@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
-    { name = "John Henry Burns", email = "jburns3141@gmail.com" },
+    { name = "OpenAutonomy" },
 ]
 dependencies = [
     "stomp.py>=8.1.0",
@@ -29,6 +29,11 @@ dev = [
     "pymavlink>=2.4.41",
 ]
 
+[project.urls]
+Homepage = "https://github.com/OpenAutonomy/open-vi"
+Repository = "https://github.com/OpenAutonomy/open-vi"
+Issues = "https://github.com/OpenAutonomy/open-vi/issues"
+
 [project.scripts]
 open-vi = "open_vi.__main__:main"
 
@@ -36,7 +41,7 @@ open-vi = "open_vi.__main__:main"
 packages = ["src/open_vi"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/README.md", "/docs", "/compose"]
+include = ["/src", "/README.md", "/LICENSE", "/docs", "/compose"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

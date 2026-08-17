@@ -15,7 +15,6 @@ from open_vi.codec.status import (
 from open_vi.codec.xmlutil import local_name, parse_xml
 from open_vi.config import IsolatorConfig
 from open_vi.isolator import Isolator
-from open_vi.isolator.executive import MT_FLIGHT_CAPABILITY_STATUS
 from open_vi.isolator.handlers.heartbeat import (
     MT_MA_FAULT,
     MT_SERVICE_STATUS,
@@ -25,6 +24,7 @@ from open_vi.isolator.handlers.heartbeat import (
     MT_SUBSYSTEM_STATUS_DATA_REQUEST,
     MT_SUBSYSTEM_STATUS_DATA_REQUEST_STATUS,
 )
+from open_vi.isolator.publishers import MT_FLIGHT_CAPABILITY_STATUS
 from open_vi.platform import StubPlatform
 
 

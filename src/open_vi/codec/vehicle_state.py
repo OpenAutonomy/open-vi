@@ -16,8 +16,8 @@ from open_vi.codec.xmlutil import (
     tostring,
     utc_now,
 )
+from open_vi.domain import TsipSnapshot
 from open_vi.identity import SystemIdentity
-from open_vi.platform.port import TsipSnapshot
 
 
 def _num(value: float) -> str:

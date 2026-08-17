@@ -64,6 +64,17 @@ def _iso(bus: InMemoryAsb) -> Isolator:
     )
 
 
+def test_isolator_requires_platform() -> None:
+    with pytest.raises(TypeError, match="platform"):
+        Isolator(InMemoryAsb())  # type: ignore[call-arg]
+
+
+def test_isolator_module_does_not_import_stub() -> None:
+    import open_vi.isolator.executive as executive
+
+    assert "StubPlatform" not in executive.__dict__
+
+
 def test_inbound_mts_matches_default_handlers() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)

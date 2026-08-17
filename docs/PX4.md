@@ -1,8 +1,8 @@
 # PX4
 
 `Px4MavlinkAdapter` is the PX4 / SITL backend behind `PlatformPort`. It
-speaks MAVLink (pymavlink) to the vehicle and returns the same DTOs as
-Stub. Isolator and codec never import MAVLink.
+speaks MAVLink (pymavlink) to the vehicle and returns the same `open_vi.domain`
+types as Stub. Isolator and codec never import MAVLink.
 
 Parent: [PLATFORM.md](PLATFORM.md).
 
@@ -22,9 +22,13 @@ flowchart LR
   Px4 <-->|"MAVLink UDP"| SITL
 ```
 
-Arm, takeoff, and mission start are **adapter-internal**. Mission Autonomy
-does not send UCI “arm” / “takeoff” messages; it sends `MA_FlightCommand`.
-The adapter realizes an accepted `WAYPOINT_FOLLOWING` command on PX4.
+The adapter does telemetry and `WAYPOINT_FOLLOWING`. Arm, takeoff, and
+mission start are **adapter-internal**. Mission Autonomy does not send UCI
+“arm” / “takeoff” messages; it sends `MA_FlightCommand`. The adapter
+realizes an accepted `WAYPOINT_FOLLOWING` command on PX4.
+
+Isolator owns the A-GRA route ladder. ACTIVATE does not push a stored
+`MA_RoutePlan` to the vehicle.
 
 ---
 
@@ -48,12 +52,16 @@ open-vi --platform px4
 | CLI | `--platform px4` |
 | Env platform | `VI_PLATFORM=px4` |
 | MAVLink URL | `udpin:127.0.0.1:14540` (`--mavlink-url` or `PX4_MAVLINK_URL`) |
+| Path clearance | `15` m (`path_clearance_m` or `PX4_PATH_CLEARANCE_M`) |
 | SITL image | `px4io/px4-sitl` (SIH; home ≈ 47.40°N, 8.55°E) |
 
 `--memory` Isolator is process-local: you cannot inject XML into a separate
 `open-vi --memory` process. Use STOMP (`open-vi --platform px4` +
 `compose/asb.yml`) for a live bus, or drive Isolator in-process as the
 flight smoke script does.
+
+`import open_vi.platform` does not load this module. `make_platform("px4")`
+imports it.
 
 ---
 
@@ -66,6 +74,11 @@ is not `WAYPOINT_FOLLOWING`, or waypoints are missing.
 A-GRA `Point2D` altitude is HAE. PX4 mission items are relative to home.
 Home HAE is `GLOBAL_POSITION_INT.alt − relative_alt`. The adapter subtracts
 that from each waypoint; it does not guess from a 50 m threshold.
+
+Waypoint capture and PX4 `NAV_ACC_RAD` / `NAV_MC_ALT_RAD` use this adapter's
+acceptance radius (`path_clearance_m` / `PX4_PATH_CLEARANCE_M`, default
+15 m). That is the PX4 backend's capture disk, not a shared Mission
+Autonomy constant.
 
 ```mermaid
 sequenceDiagram
@@ -86,9 +99,8 @@ Standalone `TAKEOFF` mode / `NAV_TAKEOFF` command sits at PX4
 `MIS_TAKEOFF_ALT` (~2.5 m on SIH). Embedding takeoff as mission item 0
 then `MISSION_START` is the path that actually climbs.
 
-Route activation uses the same local state machine as Stub (Isolator
-sequences). It does **not** push the stored `MA_RoutePlan` to the vehicle.
-QNH is applied locally to TSPI only.
+`apply_system_management` writes QNH onto the local TSPI snapshot
+(`kollsman_hpa`).
 
 ---
 
@@ -102,20 +114,6 @@ attitude, airspeed, heading, and battery → `TsipSnapshot`.
 
 ---
 
-## Supported vs not
-
-| In | Out / deferred |
-| --- | --- |
-| Heartbeat + TSPI | HSA_CSA / CurveFollowing (rejected) |
-| WAYPOINT_FOLLOWING execute | Route ACTIVATE → vehicle mission push |
-| Local route SM (Isolator) | QNH → PX4 params |
-| Local QNH on TSPI | Reconnect / retry polish |
-
-Unit tests mock MAVLink (`tests/test_platform_px4.py`). Live SITL is the
-smoke scripts, not CI.
-
----
-
 ## Smoke scripts
 
 | Script | Checks |
@@ -123,13 +121,16 @@ smoke scripts, not CI.
 | `scripts/px4_sitl_smoke.py` | Connect, heartbeat, `AVAILABLE`, TSPI |
 | `scripts/isolator_px4_flight_smoke.py` | In-process Isolator + memory ASB: `MA_FlightCommand` → Status ACCEPTED + Activity + climb |
 
+Unit tests mock MAVLink (`tests/test_platform_px4.py`). Live SITL is the
+smoke scripts, not CI.
+
 ---
 
 ## Package
 
 ```text
-src/open_vi/platform/px4.py     # Px4MavlinkAdapter
-src/open_vi/platform/__init__.py  # make_platform("px4")
+src/open_vi/platform/px4.py       # Px4MavlinkAdapter
+src/open_vi/platform/__init__.py  # make_platform("px4") lazy-imports px4
 scripts/px4_sitl_smoke.py
 scripts/isolator_px4_flight_smoke.py
 tests/test_platform_px4.py

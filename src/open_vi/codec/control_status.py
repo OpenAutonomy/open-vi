@@ -13,8 +13,8 @@ from open_vi.codec.xmlutil import (
     system_id,
     tostring,
 )
+from open_vi.domain import ControlOffer, ServiceStatusSnapshot
 from open_vi.identity import SystemIdentity
-from open_vi.platform.port import ControlOffer, ServiceStatusSnapshot
 
 
 def build_control_status(
