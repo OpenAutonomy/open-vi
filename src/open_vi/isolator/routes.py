@@ -1,4 +1,16 @@
-"""Isolator-owned A-GRA route ladder and stored plan bytes."""
+"""Isolator-owned route ladder and retained ``MA_RoutePlan`` bytes.
+
+:class:`RouteStore` sits next to session state. Route and query
+handlers read and write it; they do not ask
+:class:`~open_vi.platform.port.PlatformPort`.
+``ACTIVATE`` never calls the vehicle. Plans are opaque XML plus a
+sha256 — this module does not parse waypoints.
+
+The store jumps to the terminal plan state. Mid-states
+(``PREPARING_FOR_UPLOAD``, ``UPLOADING``, …) live on
+:class:`RouteActivationResult` so the handler can walk the
+compliance status ladder. ``prime`` is a test helper.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +25,7 @@ from open_vi.domain import (
 )
 
 # command_type → (allowed from-states, mid-state, terminal-state, emit_pair)
+# emit_pair False → handler publishes a single status (DEACTIVATE).
 _ROUTE_TRANSITIONS: dict[
     str, tuple[frozenset[str | None], str | None, str, bool]
 ] = {
@@ -51,6 +64,8 @@ _ROUTE_TRANSITIONS: dict[
 
 @dataclass
 class _RouteRecord:
+    """One plan: optional XML, sha256, and current PlanActivation state."""
+
     route_plan_id: UUID
     mission_plan_id: UUID | None = None
     state: str = "INACTIVE"
@@ -59,7 +74,14 @@ class _RouteRecord:
 
 
 class RouteStore:
-    """Ingest / retain MA_RoutePlan bytes and advance the A-GRA route ladder."""
+    """Retain plan bytes and accept or reject ladder commands.
+
+    Ladder: ``PREPARE_FOR_UPLOAD`` → ``UPLOAD`` →
+    ``PREPARE_FOR_ACTIVATION`` → ``ACTIVATE``, or ``DEACTIVATE`` from
+    ``READY_FOR_ACTIVATION`` / ``ACTIVATED``. Unknown commands and
+    illegal from-states are ``REJECTED``. ``UPLOAD`` also rejects
+    when no XML has been ingested.
+    """
 
     def __init__(self) -> None:
         self._routes: dict[UUID, _RouteRecord] = {}
@@ -71,7 +93,12 @@ class RouteStore:
         *,
         mission_plan_id: UUID | None = None,
     ) -> StoredRoutePlan:
-        """Retain inbound MA_RoutePlan content for File* / upload."""
+        """Store inbound ``MA_RoutePlan`` XML and its sha256.
+
+        Does not publish File* — the route handler does that on first
+        ingest. A plan in ``INACTIVE`` or ``DEACTIVATED`` (or a new
+        id) moves to ``READY_FOR_UPLOAD`` so ``UPLOAD`` can proceed.
+        """
         digest = hashlib.sha256(xml.encode("utf-8")).hexdigest()
         record = self._routes.get(route_plan_id)
         if record is None:
@@ -92,7 +119,11 @@ class RouteStore:
         )
 
     def get(self, route_plan_id: UUID) -> StoredRoutePlan | None:
-        """Return a previously stored route plan, if any."""
+        """Return a plan that has XML and a digest, or ``None``.
+
+        A record created only by ``PREPARE_FOR_UPLOAD`` (no ingest)
+        is not returned here.
+        """
         record = self._routes.get(route_plan_id)
         if record is None or record.xml is None or record.sha256_hex is None:
             return None
@@ -107,7 +138,14 @@ class RouteStore:
     def handle_activation(
         self, req: RouteActivationRequest
     ) -> RouteActivationResult:
-        """Advance route lifecycle upload → prepare → activate → deactivate."""
+        """Accept or reject one activation command and set the terminal state.
+
+        Mid-state and ``emit_pair`` go on the result for the handler.
+        ``DEACTIVATE`` sets ``emit_pair`` false so the handler
+        publishes a single status. ``PREPARE_FOR_UPLOAD`` may create
+        a record with no XML; ``UPLOAD`` then requires a prior
+        :meth:`ingest`.
+        """
         transition = _ROUTE_TRANSITIONS.get(req.command_type)
         if transition is None:
             return RouteActivationResult(
@@ -165,7 +203,10 @@ class RouteStore:
         state: str = "READY_FOR_ACTIVATION",
         xml: str | None = None,
     ) -> None:
-        """Test helper: place a route into a lifecycle state."""
+        """Test helper: place a route into a lifecycle state.
+
+        Optional *xml* is hashed the same way as :meth:`ingest`.
+        """
         digest = None
         if xml is not None:
             digest = hashlib.sha256(xml.encode("utf-8")).hexdigest()

@@ -1,4 +1,11 @@
-"""STOMP client adapter for ActiveMQ Classic as the ASB."""
+"""Live :class:`AsbPort` over ActiveMQ Classic STOMP.
+
+Default adapter for ``open-vi``. Isolator still sees only
+:class:`~open_vi.asb.port.AsbPort` — this module owns the broker
+session, destination mapping, and reconnect. Topic names are
+``/topic/<MessageType>``; subscribe also registers the harness
+``<None>`` alias.
+"""
 
 from __future__ import annotations
 
@@ -21,7 +28,11 @@ LOGGER = logging.getLogger(__name__)
 
 
 class _Listener(stomp.ConnectionListener):
-    """Forward STOMP callbacks into :class:`StompActiveMqAdapter`."""
+    """Forward STOMP frames into :class:`StompActiveMqAdapter`.
+
+    Errors are logged. A drop calls ``schedule_reconnect``. Inbound
+    frames become ``(message_type, xml)`` via ``dispatch_message``.
+    """
 
     def __init__(self, owner: StompActiveMqAdapter) -> None:
         self._owner = owner
@@ -43,7 +54,19 @@ class _Listener(stomp.ConnectionListener):
 
 
 class StompActiveMqAdapter:
-    """:class:`AsbPort` backed by ActiveMQ STOMP."""
+    """:class:`AsbPort` backed by an ActiveMQ STOMP session.
+
+    Host, port, optional credentials, and heartbeat come from
+    :class:`~open_vi.config.AsbConfig`. Unlike
+    :class:`~open_vi.asb.memory.InMemoryAsb`, ``publish`` logs and
+    drops when the session is down instead of raising — Isolator
+    keeps ticking while reconnect runs.
+
+    ``disconnect`` sets a closing flag so a broker drop during
+    shutdown does not start another reconnect. After a successful
+    reconnect, every previously subscribed message type is
+    registered again (primary topic and ``<None>`` alias).
+    """
 
     def __init__(self, config: AsbConfig | None = None) -> None:
         self.config = config or AsbConfig()
@@ -56,9 +79,11 @@ class StompActiveMqAdapter:
         self._reconnect_thread: threading.Thread | None = None
 
     def on_message(self, handler: MessageHandler) -> None:
+        """Register ``(message_type, xml) → None`` for inbound frames."""
         self._handlers.append(handler)
 
     def connect(self) -> None:
+        """Open a STOMP session. Isolator calls this before subscribe."""
         self._closing = False
         host_and_ports = [(self.config.host, self.config.stomp_port)]
         hb = self.config.heartbeat_ms
@@ -79,6 +104,7 @@ class StompActiveMqAdapter:
         )
 
     def disconnect(self) -> None:
+        """Close the session and suppress further reconnect attempts."""
         self._closing = True
         if self._conn is not None:
             try:
@@ -89,12 +115,18 @@ class StompActiveMqAdapter:
             self._conn = None
 
     def subscribe(self, message_type: str) -> None:
+        """Listen for a UCI type and its ``<None>`` harness alias.
+
+        Remembers *message_type* so a later reconnect can
+        resubscribe both destinations.
+        """
         if message_type not in self._message_types:
             self._message_types.append(message_type)
         for dest in subscribe_aliases(message_type):
             self._subscribe_dest(dest)
 
     def _subscribe_dest(self, destination: str) -> None:
+        """STOMP subscribe for one destination. Requires an open session."""
         if self._conn is None:
             raise RuntimeError("ASB not connected")
         self._sub_id += 1
@@ -104,6 +136,7 @@ class StompActiveMqAdapter:
         LOGGER.info("Subscribed %s", destination)
 
     def publish(self, message_type: str, xml: str | bytes) -> None:
+        """Send a UCI XML body. Logs and returns if the session is down."""
         conn = self._conn
         if conn is None or not conn.is_connected():
             LOGGER.warning(
@@ -118,7 +151,7 @@ class StompActiveMqAdapter:
         LOGGER.info("Published %s (%s bytes)", dest, len(body))
 
     def schedule_reconnect(self) -> None:
-        """Start a background reconnect attempt if not already running."""
+        """Start one background reconnect if not already running or closing."""
         if self._closing:
             return
         with self._reconnect_lock:
@@ -133,6 +166,7 @@ class StompActiveMqAdapter:
             self._reconnect_thread.start()
 
     def _reconnect_loop(self) -> None:
+        """Retry ``connect`` with exponential backoff, then resubscribe."""
         delay = 1.0
         while not self._closing:
             time.sleep(delay)
@@ -156,7 +190,11 @@ class StompActiveMqAdapter:
                 delay = min(delay * 2, 15.0)
 
     def dispatch_message(self, destination: str, body: str) -> None:
-        """Deliver one inbound STOMP frame to registered handlers."""
+        """Deliver one inbound frame as ``(message_type, xml)``.
+
+        Handler exceptions are logged so they cannot stop the STOMP
+        listener thread.
+        """
         mt = message_type_from_dest(destination)
         for handler in list(self._handlers):
             try:

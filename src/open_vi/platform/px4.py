@@ -1,4 +1,13 @@
-"""PX4 / SITL backend via MAVLink (pymavlink)."""
+"""PX4 / SITL :class:`PlatformPort` via MAVLink (pymavlink).
+
+Telemetry and ``WAYPOINT_FOLLOWING`` only. Isolator and the codec
+never import this module or MAVLink types —
+``make_platform("px4")`` loads it. Arm, takeoff, and mission start
+stay inside the adapter; Mission Autonomy sends
+``MA_FlightCommand``, not UCI arm. Default link is
+``udpin:127.0.0.1:14540``. Install pymavlink with
+``pip install -e ".[px4]"``.
+"""
 
 from __future__ import annotations
 
@@ -122,11 +131,19 @@ class _MavCache:
 
 
 class Px4MavlinkAdapter(PlatformPort):
-    """PX4 adapter: telemetry + waypoint mission execute (arm/takeoff/start).
+    """Live PX4 vehicle: heartbeat/TSPI in, waypoint missions out.
 
-    Connects with pymavlink (default ``udpin:127.0.0.1:14540`` for SITL).
-    Install: ``pip install -e ".[px4]"``.
-    Arm/takeoff/mission-start are adapter-internal — not separate VI ICD steps.
+    ``snapshot`` is ``AVAILABLE`` while HEARTBEAT or
+    ``GLOBAL_POSITION_INT`` is fresher than 10 s; otherwise
+    ``TEMPORARILY_UNAVAILABLE`` / ``PX4_LINK_DOWN``. Accepted
+    ``WAYPOINT_FOLLOWING`` uploads a mission (NAV_TAKEOFF as item 0
+    unless already airborne), arms, starts MISSION, and waits for
+    climb. A-GRA ``Point2D`` altitude is HAE; PX4 items are
+    relative to home. Completes when ``MISSION_ITEM_REACHED`` hits
+    the last waypoint.
+
+    HSA_CSA and CURVE_FOLLOWING are rejected. ``apply_system_management``
+    writes QNH onto the local TSPI snapshot only.
     """
 
     def __init__(
@@ -182,7 +199,12 @@ class Px4MavlinkAdapter(PlatformPort):
             self.connect()
 
     def connect(self) -> None:
-        """Open MAVLink and start the telemetry reader."""
+        """Open MAVLink, wait for HEARTBEAT, apply nav params, start the reader.
+
+        pymavlink is imported here so a stub-only install can still
+        import this module. Raises ``ImportError`` without the extra,
+        ``TimeoutError`` if no heartbeat arrives.
+        """
         if self._conn is not None:
             return
         try:
@@ -220,6 +242,7 @@ class Px4MavlinkAdapter(PlatformPort):
         self._thread.start()
 
     def close(self) -> None:
+        """Stop the reader thread and close the MAVLink connection."""
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
@@ -233,6 +256,7 @@ class Px4MavlinkAdapter(PlatformPort):
                 LOGGER.debug("PX4 connection close failed", exc_info=True)
 
     def snapshot(self) -> PlatformSnapshot:
+        """WAYPOINT_FOLLOWING offer plus link-based readiness."""
         if self._link_ok():
             readiness = ControlReadiness(
                 available=True,
@@ -247,6 +271,14 @@ class Px4MavlinkAdapter(PlatformPort):
         return PlatformSnapshot(offer=self._offer, readiness=readiness)
 
     def submit_flight_command(self, cmd: FlightCommandRequest) -> CommandResult:
+        """Accept ``WAYPOINT_FOLLOWING`` or reject; CANCEL a known command.
+
+        Rejects when the link is down, the choice is not Capability,
+        the mode is not ``WAYPOINT_FOLLOWING``, or waypoints are
+        missing. On accept, runs the mission upload / arm / start
+        path and returns ``ACTIVE_UNCONSTRAINED``. Completion is
+        later, via :meth:`poll_command_updates`.
+        """
         snap = self.snapshot()
         if not snap.readiness.available:
             return CommandResult(
@@ -320,15 +352,18 @@ class Px4MavlinkAdapter(PlatformPort):
         )
 
     def poll_command_updates(self) -> list[tuple[UUID, CommandResult]]:
+        """Drain terminal states queued by ``MISSION_ITEM_REACHED``."""
         with self._lock:
             updates = list(self._pending_updates)
             self._pending_updates.clear()
             return updates
 
     def active_flight_activity(self) -> FlightActivitySnapshot | None:
+        """Current mission activity, or ``None`` if idle or canceled."""
         return self._activity
 
     def get_vehicle_state(self) -> TspiSnapshot:
+        """Map the MAVLink cache into ``TspiSnapshot`` (degrees, NED, fuel)."""
         with self._lock:
             c = self._cache
             fuel = 85.0
@@ -357,6 +392,7 @@ class Px4MavlinkAdapter(PlatformPort):
             )
 
     def get_service_status(self) -> ServiceStatusSnapshot:
+        """VI service heartbeat fields for this adapter process."""
         secs = max(0, int(time.monotonic() - self._started))
         return ServiceStatusSnapshot(
             service_id=self._service_id,
@@ -365,6 +401,7 @@ class Px4MavlinkAdapter(PlatformPort):
         )
 
     def get_subsystem_status(self) -> SubsystemStatusSnapshot:
+        """Fixed flight-subsystem row (``OPERATE``, model ``px4``)."""
         return SubsystemStatusSnapshot(
             subsystem_id=self._subsystem_id,
             subsystem_label="flight",
@@ -374,15 +411,21 @@ class Px4MavlinkAdapter(PlatformPort):
         )
 
     def get_faults(self) -> tuple[FaultSnapshot, ...]:
+        """Cleared sentinel fault. This adapter does not raise PX4 faults."""
         return (FaultSnapshot(fault_id=self._fault_id),)
 
     def apply_system_management(self, *, qnh_kpa: float | None = None) -> str:
+        """Store QNH on the local TSPI snapshot. Always ``COMPLETED``.
+
+        *qnh_kpa* is converted to hPa (×10). Nothing is written to PX4.
+        """
         if qnh_kpa is None:
             return "COMPLETED"
         self._kollsman_hpa = float(qnh_kpa) * 10.0
         return "COMPLETED"
 
     def _link_ok(self) -> bool:
+        """True when a HEARTBEAT or position update is newer than 10 s."""
         if self._conn is None:
             return False
         with self._lock:
@@ -392,6 +435,7 @@ class Px4MavlinkAdapter(PlatformPort):
         return (time.monotonic() - last) <= _HEARTBEAT_STALE_S
 
     def _reader_loop(self) -> None:
+        """Drain MAVLink into :meth:`_ingest` until ``close``."""
         assert self._conn is not None
         while not self._stop.wait(0.01):
             try:
@@ -405,6 +449,7 @@ class Px4MavlinkAdapter(PlatformPort):
             self._ingest(msg)
 
     def _ingest(self, msg: Any) -> None:
+        """Update the telemetry cache; complete the mission on last WP reached."""
         mtype = msg.get_type()
         with self._lock:
             if mtype == "HEARTBEAT":
@@ -451,6 +496,11 @@ class Px4MavlinkAdapter(PlatformPort):
                 self._maybe_complete_mission_locked(seq)
 
     def _maybe_complete_mission_locked(self, seq: int) -> None:
+        """Queue ``COMPLETED`` when *seq* reaches the last uploaded waypoint.
+
+        Caller must hold ``_lock``. No-op if nothing is active or *seq*
+        is still short of ``_mission_last_seq``.
+        """
         cid = self._active_command_id
         last = self._mission_last_seq
         if cid is None or last is None or seq < last:
@@ -593,6 +643,7 @@ class Px4MavlinkAdapter(PlatformPort):
         )
 
     def _current_ll(self) -> tuple[float, float] | None:
+        """Cached lat/lon, or ``None`` before the first position."""
         with self._lock:
             lat = self._cache.lat_deg
             lon = self._cache.lon_deg
@@ -794,6 +845,7 @@ class Px4MavlinkAdapter(PlatformPort):
         LOGGER.info("PX4 mission started")
 
     def _set_mode_locked(self, name: str) -> bool:
+        """Set a PX4 mode by name. Caller must hold ``_io_lock``."""
         conn = self._require_conn()
         mapping = conn.mode_mapping() or {}
         mode = mapping.get(name)
@@ -812,6 +864,7 @@ class Px4MavlinkAdapter(PlatformPort):
     def _wait_command_ack_locked(
         self, command: int, timeout: float = 5.0
     ) -> None:
+        """Block until COMMAND_ACK for *command*. Caller holds ``_io_lock``."""
         conn = self._require_conn()
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -830,14 +883,17 @@ class Px4MavlinkAdapter(PlatformPort):
         raise TimeoutError(f"No COMMAND_ACK for command={command}")
 
     def _require_conn(self) -> Any:
+        """Return the open MAVLink connection, or raise if closed."""
         if self._conn is None:
             raise RuntimeError("PX4 not connected")
         return self._conn
 
     def _is_armed(self) -> bool:
+        """Last HEARTBEAT safety-armed flag."""
         with self._lock:
             return self._cache.armed
 
     def _relative_alt_m(self) -> float:
+        """AGL from ``GLOBAL_POSITION_INT.relative_alt``."""
         with self._lock:
             return self._cache.relative_alt_m

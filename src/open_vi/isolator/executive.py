@@ -1,4 +1,10 @@
-"""Isolator executive — A-GRA face on AsbPort."""
+"""Isolator: A-GRA sequences on :class:`AsbPort` and :class:`PlatformPort`.
+
+This is the only component that owns inbound dispatch, the tick loop,
+and outbound advertise / status / TSPI. Handlers parse UCI XML, call
+``RouteStore`` and/or the platform, and publish replies. Isolator
+never imports STOMP, ActiveMQ, MAVLink, PX4, or Stub.
+"""
 
 from __future__ import annotations
 
@@ -24,7 +30,18 @@ LOGGER = logging.getLogger(__name__)
 
 
 class Isolator:
-    """Advertise control, commands, TSPI, routes, contingencies, status."""
+    """Connect the bus, dispatch handlers, advertise, and tick.
+
+    ``platform`` is required. There is no default Stub, and this class
+    does not import one. ``bus`` is an :class:`AsbPort` — Isolator
+    never sees broker types.
+
+    ``attach`` opens the session and subscribes each handler's inbound
+    types. ``start`` attaches, advertises control, publishes the
+    optional status package and vehicle-state outs, and runs the tick
+    loop. Tests that need inbound only call ``attach``; tests that
+    need capability on the bus call ``advertise_once``.
+    """
 
     def __init__(
         self,
@@ -59,17 +76,22 @@ class Isolator:
 
     @property
     def inbound_mts(self) -> tuple[str, ...]:
-        """Message types subscribed from the current handler set."""
+        """Unique inbound message types declared on the current handlers."""
         return collect_inbound_mts(self._handlers)
 
     def add_handler(self, handler: MessageHandler) -> None:
+        """Append a handler. If already attached, subscribe its inbound types."""
         self._handlers.append(handler)
         if self._attached:
             for mt in getattr(handler, "inbound_mts", ()):
                 self.ctx.bus.subscribe(mt)
 
     def attach(self) -> None:
-        """Connect bus, register dispatch, subscribe inbound MTs (no tick)."""
+        """Connect the bus, register ``dispatch``, and subscribe inbound types.
+
+        Does not advertise or start the tick loop. Safe to call twice;
+        the second call is a no-op.
+        """
         if self._attached:
             return
         bus = self.ctx.bus
@@ -83,7 +105,12 @@ class Isolator:
         )
 
     def dispatch(self, message_type: str, xml: str) -> None:
-        """Public inbound dispatch (same path as the live bus callback)."""
+        """Route one inbound body to the first handler that claims it.
+
+        Same path as the live bus callback. Tests call this directly.
+        Handler exceptions are logged so one fault cannot drop the
+        rest of the session. Unknown types are logged and ignored.
+        """
         for handler in self._handlers:
             if handler.handles(message_type):
                 try:
@@ -94,7 +121,7 @@ class Isolator:
         LOGGER.warning("no handler for %s", message_type)
 
     def start(self) -> None:
-        """Attach, advertise control, and start the tick loop."""
+        """Attach, advertise, publish optional startup outs, and tick."""
         self.attach()
         self._advertise_control()
         if self.config.publish_status_package:
@@ -113,6 +140,7 @@ class Isolator:
         )
 
     def stop(self) -> None:
+        """Stop the tick loop, disconnect the bus, and clear attach state."""
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
@@ -122,7 +150,7 @@ class Isolator:
         LOGGER.info("Isolator stopped")
 
     def run_forever(self) -> None:
-        """Block until interrupted; for CLI use."""
+        """``start``, then block until SIGINT or ``stop``. For CLI use."""
         self.start()
         try:
             while not self._stop.is_set():
@@ -133,7 +161,7 @@ class Isolator:
             self.stop()
 
     def advertise_once(self) -> None:
-        """Publish capability + status without running the tick loop (tests)."""
+        """Publish capability and status without starting the tick loop."""
         self._advertise_control()
 
     def publish_status_package_once(self) -> None:
@@ -141,11 +169,14 @@ class Isolator:
         publishers.publish_status_package(self.ctx)
 
     def publish_contingency(self, kind: str) -> None:
-        """Inject a Stub contingency and publish Loose Direction1 outs."""
+        """Inject a Stub contingency and publish its Loose Direction1 outs.
+
+        Stays off :class:`PlatformPort`. Only meaningful with Stub.
+        """
         publishers.publish_contingency(self.ctx, kind)
 
     def publish_vehicle_state_once(self) -> None:
-        """Publish the five Receive Vehicle State Data outs."""
+        """Publish the five Receive Vehicle State Data outs from the platform."""
         publishers.publish_vehicle_state(self.ctx)
 
     def publish_command_updates_once(self) -> None:
@@ -153,9 +184,11 @@ class Isolator:
         publishers.publish_command_updates(self.ctx)
 
     def _advertise_control(self) -> None:
+        """Publish MA_FlightCapability and MA_FlightCapabilityStatus."""
         publishers.advertise_control(self.ctx)
 
     def _tick_loop(self) -> None:
+        """Call ``_tick`` every ``tick_period_s``. Log and keep going on error."""
         period = self.config.tick_period_s
         while not self._stop.wait(period):
             try:
@@ -164,7 +197,12 @@ class Isolator:
                 LOGGER.exception("Isolator tick failed")
 
     def _tick(self) -> None:
-        """Refresh capability status and publish vehicle-state outs."""
+        """One period: command completions, control offer, status, TSPI.
+
+        Republishes capability when availability changes, or on every
+        tick when ``tick_republish_status`` is set, so a late harness
+        subscriber still sees the control-mode authorization.
+        """
         self.publish_command_updates_once()
         snap = self.ctx.platform.snapshot()
         if (

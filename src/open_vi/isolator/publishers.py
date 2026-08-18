@@ -1,4 +1,10 @@
-"""Outbound publish helpers used by Isolator lifecycle / tick / harness."""
+"""Outbound advertise, status, TSPI, and Stub contingency publishes.
+
+These are not handlers. Isolator calls them from ``start``, the tick
+loop, and test helpers. Each function reads
+:class:`~open_vi.isolator.context.IsolatorContext` (platform snapshot,
+identity, session state) and publishes UCI XML on ``ctx.bus``.
+"""
 
 from __future__ import annotations
 
@@ -44,7 +50,12 @@ MT_RESPONSE_PLAN_EXECUTION_STATUS = "ResponsePlanExecutionStatus"
 
 
 def publish_command_updates(ctx: IsolatorContext) -> None:
-    """Publish FlightCommandStatus for platform-completed commands."""
+    """Publish status for commands the platform has newly completed.
+
+    Polls ``PlatformPort.poll_command_updates``. Every update becomes
+    ``MA_FlightCommandStatus``. A ``COMPLETED`` command also publishes
+    ``MA_FlightActivity`` when the platform still has an active activity.
+    """
     for command_id, result in ctx.platform.poll_command_updates():
         ctx.bus.publish(
             MT_FLIGHT_COMMAND_STATUS,
@@ -79,7 +90,12 @@ def publish_command_updates(ctx: IsolatorContext) -> None:
 
 
 def flight_activity_for_publish(ctx: IsolatorContext) -> FlightActivitySnapshot:
-    """Active flight activity, or an idle ENABLED placeholder."""
+    """Platform activity, or an idle ``ENABLED`` placeholder.
+
+    The vehicle-state package always includes ``MA_FlightActivity``.
+    When nothing is flying, this uses ``state.idle_activity_id`` so
+    the outbound still has a stable activity id.
+    """
     activity = ctx.platform.active_flight_activity()
     if activity is not None:
         return activity
@@ -92,7 +108,13 @@ def flight_activity_for_publish(ctx: IsolatorContext) -> FlightActivitySnapshot:
 
 
 def advertise_control(ctx: IsolatorContext) -> None:
-    """Publish MA_FlightCapability then MA_FlightCapabilityStatus."""
+    """Publish the control offer, then its readiness status.
+
+    Order is ``MA_FlightCapability`` then
+    ``MA_FlightCapabilityStatus``. Records ``state.advertised`` and
+    ``state.last_availability`` so the tick can skip a no-op republish
+    unless availability changed or ``tick_republish_status`` is on.
+    """
     snap = ctx.platform.snapshot()
     ctx.bus.publish(
         MT_FLIGHT_CAPABILITY,
@@ -126,7 +148,12 @@ def advertise_control(ctx: IsolatorContext) -> None:
 
 
 def publish_capability_status(ctx: IsolatorContext) -> None:
-    """Republish MA_FlightCapabilityStatus only (tick refresh)."""
+    """Republish ``MA_FlightCapabilityStatus`` only.
+
+    Does not send the offer again and does not update
+    ``state.last_availability``. Use :func:`advertise_control` when
+    the full pair must stay in sync.
+    """
     snap = ctx.platform.snapshot()
     ctx.bus.publish(
         MT_FLIGHT_CAPABILITY_STATUS,
@@ -142,7 +169,12 @@ def publish_capability_status(ctx: IsolatorContext) -> None:
 
 
 def publish_status_package(ctx: IsolatorContext) -> None:
-    """Publish ControlStatus, ResponsePlanExecutionStatus, SubsystemStatus."""
+    """Publish the three periodic status outs, in harness order.
+
+    ``ControlStatus``, ``ResponsePlanExecutionStatus``, then
+    ``SubsystemStatus``. Gated by ``publish_status_package`` on
+    Isolator start and tick.
+    """
     snap = ctx.platform.snapshot()
     service = ctx.platform.get_service_status()
     subsystem = ctx.platform.get_subsystem_status()
@@ -179,7 +211,14 @@ def publish_status_package(ctx: IsolatorContext) -> None:
 
 
 def publish_vehicle_state(ctx: IsolatorContext) -> None:
-    """Publish the five Receive Vehicle State Data outs (harness order)."""
+    """Publish the five Receive Vehicle State Data outs, in harness order.
+
+    ``MA_FlightActivity``, ``MA_PositionReportDetailed``,
+    ``WeatherObservation``, ``NavigationReport``, then
+    ``ComponentStatus``. Activity comes from
+    :func:`flight_activity_for_publish`; the rest from
+    ``platform.get_vehicle_state()``.
+    """
     activity = flight_activity_for_publish(ctx)
     state = ctx.platform.get_vehicle_state()
     identity = ctx.identity
@@ -227,10 +266,20 @@ def publish_vehicle_state(ctx: IsolatorContext) -> None:
 
 
 def publish_contingency(ctx: IsolatorContext, kind: str) -> None:
-    """Inject a Stub contingency and publish Loose Direction1 outs.
+    """Inject a Stub contingency and publish its Loose Direction1 outs.
 
-    Contingency injection is Stub/harness-only; vehicle backends drive
-    readiness via ``snapshot()`` instead.
+    Calls ``inject_contingency`` on the platform. That method is
+    Stub/harness-only and is not on
+    :class:`~open_vi.platform.port.PlatformPort` — vehicle
+    backends drive readiness through ``snapshot()`` instead.
+
+    ``MECHANICAL_DAMAGE`` publishes ``MA_Fault``.
+    ``SENSOR_FAILURE`` publishes ``SubsystemStatus`` then ``MA_Fault``.
+    ``COLLISION_AVOIDANCE`` publishes capability status then
+    capability (the reverse of :func:`advertise_control`).
+    ``CLEAR`` calls :func:`advertise_control`. Other *kind* values
+    raise ``ValueError``. A platform without ``inject_contingency``
+    raises ``TypeError``.
     """
     inject = getattr(ctx.platform, "inject_contingency", None)
     if inject is None:

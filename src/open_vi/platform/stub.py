@@ -1,4 +1,10 @@
-"""Deterministic platform backend for harness-first Isolator development."""
+"""Default :class:`PlatformPort` for tests and ``open-vi``.
+
+Deterministic in-process state: no MAVLink, no motion. Isolator and
+the codec never import this module — ``make_platform()`` and tests
+construct :class:`StubPlatform` directly. Accepts all three A-GRA
+modes. ``inject_contingency`` is Stub-only and is not on the port.
+"""
 
 from __future__ import annotations
 
@@ -26,7 +32,15 @@ _ACCEPTED_MODES = frozenset(
 
 
 class StubPlatform(PlatformPort):
-    """Fixed control offer + TSPI + status; accepts all three A-GRA modes."""
+    """Fixed offer, TSPI, and status; accept/reject without a vehicle.
+
+    Default offer is HSA_CSA, WAYPOINT_FOLLOWING, and CURVE_FOLLOWING,
+    all ``AVAILABLE``. ``submit_flight_command`` accepts immediately
+    and returns ``ACTIVE_UNCONSTRAINED``. Tests call
+    :meth:`complete_flight_command` when they need a later
+    ``COMPLETED``. :meth:`set_readiness` and :meth:`inject_contingency`
+    are harness hooks, not Isolator ICD steps.
+    """
 
     def __init__(
         self,
@@ -55,13 +69,20 @@ class StubPlatform(PlatformPort):
         self._started = time.monotonic()
 
     def snapshot(self) -> PlatformSnapshot:
+        """Current offer and readiness. Used by advertise and the tick."""
         return PlatformSnapshot(offer=self._offer, readiness=self._readiness)
 
     def set_readiness(self, readiness: ControlReadiness) -> None:
-        """Test helper: change availability without rebuilding the Isolator."""
+        """Test helper: change availability without rebuilding Isolator."""
         self._readiness = readiness
 
     def submit_flight_command(self, cmd: FlightCommandRequest) -> CommandResult:
+        """Accept any of the three A-GRA modes, or CANCEL a known command.
+
+        Rejects when readiness is unavailable, the choice is not
+        Capability, or the mode is unknown. Unlike PX4, waypoints
+        are not required and nothing is uploaded to a vehicle.
+        """
         if not self._readiness.available:
             return CommandResult(
                 processing_state="REJECTED",
@@ -115,7 +136,12 @@ class StubPlatform(PlatformPort):
     def complete_flight_command(
         self, command_id: UUID | None = None
     ) -> UUID | None:
-        """Mark the live command COMPLETED for the next Isolator poll."""
+        """Queue ``COMPLETED`` for Isolator's next ``poll_command_updates``.
+
+        *command_id* defaults to the first ``ACCEPTED`` command.
+        Returns that id, or ``None`` if nothing was live. Also marks
+        the current activity ``COMPLETED``.
+        """
         cid = command_id
         if cid is None:
             cid = next(
@@ -145,17 +171,21 @@ class StubPlatform(PlatformPort):
         return cid
 
     def poll_command_updates(self) -> list[tuple[UUID, CommandResult]]:
+        """Drain terminal states queued by :meth:`complete_flight_command`."""
         updates = list(self._pending_updates)
         self._pending_updates.clear()
         return updates
 
     def active_flight_activity(self) -> FlightActivitySnapshot | None:
+        """Current activity, or ``None`` if idle or canceled."""
         return self._activity
 
     def get_vehicle_state(self) -> TspiSnapshot:
+        """Fixed TSPI snapshot (constructor or default pose)."""
         return self._vehicle_state
 
     def get_service_status(self) -> ServiceStatusSnapshot:
+        """VI service heartbeat fields for this process."""
         secs = max(0, int(time.monotonic() - self._started))
         return ServiceStatusSnapshot(
             service_id=self._service_id,
@@ -163,15 +193,30 @@ class StubPlatform(PlatformPort):
         )
 
     def get_subsystem_status(self) -> SubsystemStatusSnapshot:
+        """Primary subsystem row. ``DEGRADED`` after ``SENSOR_FAILURE``."""
         return SubsystemStatusSnapshot(
             subsystem_id=self._subsystem_id,
             subsystem_state=self._subsystem_state,
         )
 
     def get_faults(self) -> tuple[FaultSnapshot, ...]:
+        """Current faults. Default is a cleared sentinel."""
         return self._faults
 
     def inject_contingency(self, kind: str) -> None:
+        """Apply a Loose Direction1 contingency. Stub/harness only.
+
+        ``MECHANICAL_DAMAGE`` sets a fault.
+        ``SENSOR_FAILURE`` sets a fault and ``DEGRADED``.
+        ``COLLISION_AVOIDANCE`` marks the offer
+        ``UNAVAILABLE`` / ``CONSTRAINT_COLLISION_AVOIDANCE``.
+        ``CLEAR`` restores operate, a cleared fault, and
+        ``AVAILABLE``. Other *kind* values raise ``ValueError``.
+
+        Isolator publishes the matching outs via
+        ``publishers.publish_contingency``. This method is not on
+        :class:`PlatformPort`.
+        """
         kind_u = kind.upper()
         if kind_u == "CLEAR":
             self._subsystem_state = "OPERATE"
@@ -209,6 +254,10 @@ class StubPlatform(PlatformPort):
         raise ValueError(f"Unknown contingency kind: {kind}")
 
     def apply_system_management(self, *, qnh_kpa: float | None = None) -> str:
+        """Store QNH on the TSPI snapshot. Always ``COMPLETED``.
+
+        *qnh_kpa* is converted to hPa (×10).
+        """
         if qnh_kpa is None:
             return "COMPLETED"
         # Vehicle Kollsman is hectopascals; QNH request is kilopascals.
