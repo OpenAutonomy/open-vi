@@ -449,7 +449,10 @@ class Px4MavlinkAdapter(PlatformPort):
             self._ingest(msg)
 
     def _ingest(self, msg: Any) -> None:
-        """Update the telemetry cache; complete the mission on last WP reached."""
+        """Update the telemetry cache.
+
+        Completes the mission when the last waypoint is reached.
+        """
         mtype = msg.get_type()
         with self._lock:
             if mtype == "HEARTBEAT":

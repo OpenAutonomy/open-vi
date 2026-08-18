@@ -80,7 +80,10 @@ class Isolator:
         return collect_inbound_mts(self._handlers)
 
     def add_handler(self, handler: MessageHandler) -> None:
-        """Append a handler. If already attached, subscribe its inbound types."""
+        """Append a handler.
+
+        If already attached, subscribe its inbound types.
+        """
         self._handlers.append(handler)
         if self._attached:
             for mt in getattr(handler, "inbound_mts", ()):
@@ -176,7 +179,7 @@ class Isolator:
         publishers.publish_contingency(self.ctx, kind)
 
     def publish_vehicle_state_once(self) -> None:
-        """Publish the five Receive Vehicle State Data outs from the platform."""
+        """Publish the five Receive Vehicle State Data outs."""
         publishers.publish_vehicle_state(self.ctx)
 
     def publish_command_updates_once(self) -> None:
@@ -188,7 +191,10 @@ class Isolator:
         publishers.advertise_control(self.ctx)
 
     def _tick_loop(self) -> None:
-        """Call ``_tick`` every ``tick_period_s``. Log and keep going on error."""
+        """Call ``_tick`` every ``tick_period_s``.
+
+        Log and keep going on error.
+        """
         period = self.config.tick_period_s
         while not self._stop.wait(period):
             try:

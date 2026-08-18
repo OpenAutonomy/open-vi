@@ -25,21 +25,18 @@ class AsbPort(Protocol):
 
     def connect(self) -> None:
         """Open the session. Isolator calls this before subscribe or publish."""
-        ...
 
     def disconnect(self) -> None:
         """Close the session."""
-        ...
 
     def subscribe(self, message_type: str) -> None:
-        """Listen for a UCI type. Adapters also register the ``<None>`` alias."""
-        ...
+        """Listen for a UCI type.
+
+        Adapters also register the ``<None>`` alias.
+        """
 
     def publish(self, message_type: str, xml: str | bytes) -> None:
         """Send a UCI XML body for *message_type*."""
-        ...
 
     def on_message(self, handler: MessageHandler) -> None:
         """Register ``(message_type, xml) → None`` for inbound traffic."""
-        ...
-
