@@ -16,7 +16,7 @@ from open_vi.domain import (
     PlatformSnapshot,
     ServiceStatusSnapshot,
     SubsystemStatusSnapshot,
-    TsipSnapshot,
+    TspiSnapshot,
 )
 from open_vi.platform.port import PlatformPort
 
@@ -33,7 +33,7 @@ class StubPlatform(PlatformPort):
         *,
         offer: ControlOffer | None = None,
         readiness: ControlReadiness | None = None,
-        vehicle_state: TsipSnapshot | None = None,
+        vehicle_state: TspiSnapshot | None = None,
         service_id: UUID | None = None,
         subsystem_id: UUID | None = None,
     ) -> None:
@@ -42,7 +42,7 @@ class StubPlatform(PlatformPort):
         self._activity: FlightActivitySnapshot | None = None
         self._commands: dict[UUID, str] = {}
         self._pending_updates: list[tuple[UUID, CommandResult]] = []
-        self._vehicle_state = vehicle_state or TsipSnapshot(
+        self._vehicle_state = vehicle_state or TspiSnapshot(
             component_id=uuid4()
         )
         self._service_id = service_id or uuid4()
@@ -152,7 +152,7 @@ class StubPlatform(PlatformPort):
     def active_flight_activity(self) -> FlightActivitySnapshot | None:
         return self._activity
 
-    def get_vehicle_state(self) -> TsipSnapshot:
+    def get_vehicle_state(self) -> TspiSnapshot:
         return self._vehicle_state
 
     def get_service_status(self) -> ServiceStatusSnapshot:

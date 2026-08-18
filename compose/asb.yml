@@ -5,9 +5,9 @@ services:
     image: apache/activemq-classic:6.1.2
     container_name: open-vi-asb
     ports:
-      - "8161:8161"     # web console
-      - "61616:61616"   # OpenWire
-      - "61613:61613"   # STOMP
+      - "127.0.0.1:8161:8161"     # web console
+      - "127.0.0.1:61616:61616"   # OpenWire
+      - "127.0.0.1:61613:61613"   # STOMP
     # No credentials — matches the official A-GRA harness ASB compose.
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8161"]

@@ -1,15 +1,9 @@
 # Codec
 
-The codec package parses and builds UCI/A-GRA XML for Isolator handlers and
-publishers. It turns message-type XML into `open_vi.domain` structs (and the
-reverse). It is not a full XSD binding and does not perform schema validation
-today.
-
-Parent: [ARCHITECTURE.md](ARCHITECTURE.md).
-
----
-
-## Role
+The codec parses and builds UCI/A-GRA XML for Isolator handlers and
+publishers. It turns a message-type document into `open_vi.domain` values
+and the reverse. It is not an XSD binding and does not validate against
+the catalog. The layers around it are in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ```mermaid
 flowchart LR
@@ -19,11 +13,11 @@ flowchart LR
   XML["UCI XML bytes"]
 
   H <-->|"parse / build"| C
-  C <-->|"domain structs"| D
+  C <-->|"domain values"| D
   C <--> XML
 ```
 
-Handlers and publishers import builders/parsers from submodules, for example:
+Handlers import builders and parsers from submodules:
 
 ```python
 from open_vi.codec.capability import build_flight_capability
@@ -31,58 +25,24 @@ from open_vi.codec.command import parse_flight_commands
 from open_vi.domain import FlightCommandRequest
 ```
 
-Codec speaks `open_vi.domain`, not `open_vi.platform`.
+The codec speaks `open_vi.domain`, not `open_vi.platform`.
 
----
+The default `xmlns` is the OAM URI in `ns.py` (CAL-friendly; no `uci:`
+prefix). Schema version is `005.0a`. Envelopes, ids, and security headers
+are shared helpers in `xmlutil`. UCI `Point2D` and TSPI lat/lon are
+radians on the wire; domain `Waypoint` and `TspiSnapshot` stay in
+degrees. Convert at this boundary (`geo.py`).
 
-## Conventions
-
-| Rule | Detail |
-| --- | --- |
-| Namespace | Default `xmlns` = OAM URI in `ns.py` (CAL-friendly; no `uci:` prefix) |
-| Schema version | `005.0a` (`SCHEMA_VERSION`) |
-| Envelopes | Shared helpers in `xmlutil` (`message_envelope`, IDs, security) |
-| Structs | `open_vi.domain` types — not platform types, not generated XSD classes |
-| Angles | UCI `Point2D` / TSPI lat/lon are **radians** on the wire; domain DTOs (`Waypoint`, `TsipSnapshot`) stay in **degrees**. Convert at the codec boundary (`geo.py`) |
-
----
-
-## Modules
-
-| Module | Message types (representative) |
+| Module | Message types |
 | --- | --- |
 | `capability.py` | `MA_FlightCapability`, `MA_FlightCapabilityStatus` |
 | `command.py` | `MA_FlightCommand`, status, activity |
 | `vehicle_state.py` | TSPI outs (`MA_PositionReportDetailed`, `NavigationReport`, …) |
 | `status.py` | `ServiceStatus`, `SubsystemStatus`, `MA_Fault` |
-| `route.py` | Route plan / activation command + status, File* |
-| `notification.py` | `MA_SystemNotification`, `MA_Response` parse |
-| `query.py` | `QueryDataRequest` / status / `AirfieldReport` |
-| `system_mgmt.py` | `MA_SystemManagementRequest` / status |
-| `control.py` | `MA_ControlRequest` / status / `MA_ControlAssignment` |
-| `task.py` | `MA_TaskCommand` / status / `TaskStatus` / `MA_Task` |
+| `route.py` | Route plan / activation, File* |
+| `notification.py` | `MA_SystemNotification`, `MA_Response` |
+| `query.py` | `QueryDataRequest`, `AirfieldReport` |
+| `system_mgmt.py` | `MA_SystemManagementRequest` |
+| `control.py` | `MA_ControlRequest`, `MA_ControlAssignment` |
+| `task.py` | `MA_TaskCommand`, `TaskStatus`, `MA_Task` |
 | `control_status.py` | `ControlStatus`, `ResponsePlanExecutionStatus` |
-| `xmlutil.py` / `ns.py` / `geo.py` | Shared XML helpers, constants, angle conversion |
-
----
-
-## Package
-
-```text
-src/open_vi/domain/          # flight / tspi / status / route / control
-src/open_vi/codec/
-  ns.py
-  xmlutil.py
-  geo.py
-  capability.py
-  command.py
-  vehicle_state.py
-  status.py
-  route.py
-  notification.py
-  query.py
-  system_mgmt.py
-  control.py
-  task.py
-  control_status.py
-```

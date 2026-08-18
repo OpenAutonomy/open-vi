@@ -14,7 +14,6 @@ authors = [
 ]
 dependencies = [
     "stomp.py>=8.1.0",
-    "lxml>=5.3.0",
 ]
 
 [project.optional-dependencies]

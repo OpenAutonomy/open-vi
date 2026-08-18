@@ -21,7 +21,7 @@ from open_vi.domain import (
     PlatformSnapshot,
     ServiceStatusSnapshot,
     SubsystemStatusSnapshot,
-    TsipSnapshot,
+    TspiSnapshot,
     Waypoint,
 )
 from open_vi.platform.port import PlatformPort
@@ -30,7 +30,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 _EARTH_M = 6_378_137.0
-# Adapter acceptance radius (NAV_ACC_RAD / capture). Not an MA constant.
+# Adapter acceptance radius written to NAV_ACC_RAD / NAV_MC_ALT_RAD.
 DEFAULT_PATH_CLEARANCE_M = 15.0
 
 
@@ -65,9 +65,9 @@ def advance_mission_waypoints(
 ) -> tuple[Waypoint, ...]:
     """Drop prefix WPs already captured or behind the vehicle toward the goal.
 
-    A mid-flight replan often starts with the current pose, then an RRT
-    vertex behind the aircraft. Uploading that prefix makes PX4 turn
-    around. Keep the goal.
+    A replacement route often starts at the current pose, then a point
+    behind the aircraft. Uploading that prefix makes PX4 turn around.
+    Keep the goal.
     """
     if len(waypoints) <= 1:
         return waypoints
@@ -328,14 +328,14 @@ class Px4MavlinkAdapter(PlatformPort):
     def active_flight_activity(self) -> FlightActivitySnapshot | None:
         return self._activity
 
-    def get_vehicle_state(self) -> TsipSnapshot:
+    def get_vehicle_state(self) -> TspiSnapshot:
         with self._lock:
             c = self._cache
             fuel = 85.0
             if c.battery_remaining is not None:
                 fuel = float(c.battery_remaining)
             heading_rad = math.radians(c.heading_deg)
-            return TsipSnapshot(
+            return TspiSnapshot(
                 latitude_deg=c.lat_deg,
                 longitude_deg=c.lon_deg,
                 altitude_m=c.alt_m,
@@ -497,9 +497,8 @@ class Px4MavlinkAdapter(PlatformPort):
     def _flight_rel_alt_m(self) -> float:
         """One AGL for every mission item so PX4 3D capture can succeed.
 
-        C2 cruise is first-pose HAE + 50 m (`CRUISE_AGL_M` in the C2
-        client). This still flattens every item to current AGL so SIH
-        3D capture can succeed if a later command arrives at a different HAE.
+        A later command may carry a different HAE. Flattening to current
+        AGL keeps every item inside the vertical capture window.
         """
         rel = self._relative_alt_m()
         if rel >= 2.0:
@@ -507,7 +506,7 @@ class Px4MavlinkAdapter(PlatformPort):
         return self._takeoff_alt_m
 
     def _apply_nav_params(self) -> None:
-        """Set MC acceptance to the planner disk so edge-hug WPs are flown."""
+        """Set MC acceptance to this adapter's capture radius."""
         # pylint: disable-next=import-outside-toplevel
         from pymavlink import mavutil
 
@@ -537,11 +536,9 @@ class Px4MavlinkAdapter(PlatformPort):
     ) -> None:
         """Upload mission, arm, start MISSION mode.
 
-        A replacement while airborne must not restart NAV_TAKEOFF at the
-        planner start — that is how a mid-mission replan (zone arrives
-        after the first command) leaves SIH holding at an intermediate
-        vertex. Drop waypoints already under the vehicle and start at the
-        next remaining item.
+        A replacement while airborne must not restart NAV_TAKEOFF.
+        Drop waypoints already under the vehicle and start at the next
+        remaining item.
         """
         remaining = self._remaining_waypoints(waypoints)
         if len(remaining) < len(waypoints):
@@ -625,9 +622,9 @@ class Px4MavlinkAdapter(PlatformPort):
         mav = conn.mav
         target_system = conn.target_system
         target_component = conn.target_component
-        # Standalone NAV_TAKEOFF / TAKEOFF mode sits at MIS_TAKEOFF_ALT on
-        # SIH; embedding takeoff as mission item 0 then MISSION_START works.
-        # Skip takeoff when already airborne — a replan must not restart it.
+        # Standalone TAKEOFF mode sits at MIS_TAKEOFF_ALT. Embedding
+        # NAV_TAKEOFF as item 0 then MISSION_START is the climb path.
+        # Skip takeoff when already airborne.
         items: list[tuple[int, float, float, float]] = []
         if include_takeoff:
             first = waypoints[0]

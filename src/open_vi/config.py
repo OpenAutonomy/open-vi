@@ -5,6 +5,12 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from open_vi.identity import (
+    DEFAULT_NAMESPACE_NAME,
+    DEFAULT_NAMESPACE_UUID,
+    DEFAULT_SYSTEM_NAME,
+)
+
 
 @dataclass(frozen=True)
 class AsbConfig:
@@ -41,10 +47,10 @@ class IsolatorConfig:
     """Isolator identity, timing, and compliance knobs."""
 
     asb: AsbConfig | None = None
-    system_name: str = "1"
-    system_label: str = "1"
-    namespace_name: str = "SUT"
-    namespace_uuid: str = "00000000-0000-0000-0000-000000000000"
+    system_name: str = DEFAULT_SYSTEM_NAME
+    system_label: str = DEFAULT_SYSTEM_NAME
+    namespace_name: str = DEFAULT_NAMESPACE_NAME
+    namespace_uuid: str = str(DEFAULT_NAMESPACE_UUID)
     schema_version: str = "005.0a"
     message_mode: str = "SIMULATION"
     compliance_mode: str = "loose"
@@ -55,14 +61,17 @@ class IsolatorConfig:
 
     @classmethod
     def from_env(cls) -> IsolatorConfig:
+        system_name = os.environ.get("VI_SYSTEM_NAME", DEFAULT_SYSTEM_NAME)
         return cls(
             asb=AsbConfig.from_env(),
-            system_name=os.environ.get("VI_SYSTEM_NAME", "1"),
-            system_label=os.environ.get("VI_SYSTEM_LABEL", "1"),
-            namespace_name=os.environ.get("VI_NAMESPACE_NAME", "SUT"),
+            system_name=system_name,
+            system_label=os.environ.get("VI_SYSTEM_LABEL", system_name),
+            namespace_name=os.environ.get(
+                "VI_NAMESPACE_NAME", DEFAULT_NAMESPACE_NAME
+            ),
             namespace_uuid=os.environ.get(
                 "VI_NAMESPACE_UUID",
-                "00000000-0000-0000-0000-000000000000",
+                str(DEFAULT_NAMESPACE_UUID),
             ),
             schema_version=os.environ.get("AGRA_SCHEMA_VERSION", "005.0a"),
             message_mode=os.environ.get("AGRA_MESSAGE_MODE", "SIMULATION"),

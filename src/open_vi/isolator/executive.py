@@ -1,4 +1,4 @@
-"""VI OMS Isolator executive — A-GRA face on AsbPort."""
+"""Isolator executive — A-GRA face on AsbPort."""
 
 from __future__ import annotations
 

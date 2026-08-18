@@ -1,17 +1,28 @@
 # open-vi
 
-open-vi is an ASK 5.0a Level 1 Vehicle Interface. It speaks native UCI/A-GRA
-XML on the Abstract Service Bus and drives one vehicle backend through
+## Introduction
+
+open-vi is an independent prototype: an ASK 5.0a Vehicle Interface. It is
+owned by [OpenAutonomy](https://github.com/OpenAutonomy). It is not an
+[Open Arsenal](https://gitlab.com/open-arsenal/) project; it speaks native
+UCI/A-GRA XML on the Abstract Service Bus so it can sit next to those
+systems.
+
+It is one process: Isolator logic plus one vehicle backend behind
 `PlatformPort`. Isolator owns A-GRA sequences, including the route ladder.
-Stub is the default backend; PX4 SITL is telemetry plus
-`WAYPOINT_FOLLOWING`.
+The default backend is `StubPlatform`. `Px4MavlinkAdapter` is a SITL cut
+for telemetry and `WAYPOINT_FOLLOWING`. A new vehicle is a new adapter; it
+is not a change to the Isolator.
 
-Owned by [OpenAutonomy](https://github.com/OpenAutonomy). This is an
-independent prototype, not an official Open Arsenal product.
+Goals:
 
-## Install and first hour
+- Speak ASK 5.0a message types on the bus.
+- Keep vehicle protocols (MAVLink, …) out of Isolator and codec.
+- Extensibility: a new airframe is a `PlatformPort` implementation.
 
-Python 3.11+.
+## Getting started
+
+Clone the repository and install it. Python 3.11+ is required.
 
 ```bash
 git clone https://github.com/OpenAutonomy/open-vi.git
@@ -19,47 +30,66 @@ cd open-vi
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
+```
+
+Advertise once on an in-process bus (no broker):
+
+```bash
 open-vi --memory --once
 ```
 
-That advertises on an in-process bus and prints a `MA_FlightCapability`
-document. There is no broker in this path.
+That publishes `MA_FlightCapability` and prints the XML, then exits 0.
+
+There is no authentication and no TLS on the live bus. `compose/asb.yml`
+starts ActiveMQ with no credentials and publishes ports on loopback.
+See [SECURITY.md](SECURITY.md).
+
+To run against a local broker:
 
 ```bash
 docker compose -f compose/asb.yml up -d
-open-vi                      # Stub on STOMP :61613
-# open-vi --platform px4     # PX4 SITL (udpin:127.0.0.1:14540)
+open-vi
+```
+
+That is Stub on STOMP `:61613`. PX4 SITL is `--platform px4` once a
+vehicle is listening on `udpin:127.0.0.1:14540`. See
+[docs/PX4.md](docs/PX4.md).
+
+```bash
 pytest
 ```
 
-PX4 needs `pip install -e ".[px4]"` (already in `.[dev]`) and a SITL on
-UDP 14540. See [docs/PX4.md](docs/PX4.md).
-
-The STOMP broker in `compose/asb.yml` has no credentials. Bind it to a
-machine you trust. See [SECURITY.md](SECURITY.md).
-
 ## Standards
 
-open-vi implements ASK 5.0a message types as CAL-friendly XML. The UCI /
-A-GRA XSD catalog is not in this tree and the codec does not validate
-against it. Namespace and schema version live in `src/open_vi/codec/ns.py`.
+UCI and A-GRA XSD documents are not in the tree. The codec builds
+CAL-friendly XML and does not validate against the catalog. Namespace and
+schema version are in `src/open_vi/codec/ns.py`.
 
-## Layout
+## Documentation
 
-| Path | Role |
-| --- | --- |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layers: ASB, domain, codec, Isolator, PlatformPort |
-| [`docs/ADDING_A_VEHICLE.md`](docs/ADDING_A_VEHICLE.md) | New vehicle backend |
-| [`docs/PLATFORM.md`](docs/PLATFORM.md) | `PlatformPort` methods |
-| [`docs/ISOLATOR.md`](docs/ISOLATOR.md) | Sequences and `RouteStore` |
-| [`docs/CODEC.md`](docs/CODEC.md) | Parse / build |
-| [`docs/ASB.md`](docs/ASB.md) | STOMP and in-memory bus |
-| [`docs/PX4.md`](docs/PX4.md) | PX4 SITL backend |
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — layers, ports, and an example path
+- [docs/ISOLATOR.md](docs/ISOLATOR.md) — sequences, handlers, and `RouteStore`
+- [docs/PLATFORM.md](docs/PLATFORM.md) — `PlatformPort` methods
+- [docs/ADDING_A_VEHICLE.md](docs/ADDING_A_VEHICLE.md) — adding a backend
+- [docs/CODEC.md](docs/CODEC.md) — parse and build
+- [docs/ASB.md](docs/ASB.md) — STOMP and the in-memory bus
+- [docs/PX4.md](docs/PX4.md) — PX4 SITL backend
+
+## FAQs
+
+1. [How is the Vehicle Interface put together?](docs/ARCHITECTURE.md)
+1. [How do I add a vehicle?](docs/ADDING_A_VEHICLE.md)
+1. [What does Isolator own versus the platform?](docs/ISOLATOR.md)
+1. [How do I run PX4 SITL?](docs/PX4.md)
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Changelog
+
+Notable changes are in [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
-Released under the MIT License. See [LICENSE](LICENSE).
+Licensed under the [MIT License](LICENSE). Open source and free to use.

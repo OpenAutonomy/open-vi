@@ -16,7 +16,7 @@ from open_vi.codec.xmlutil import (
     tostring,
     utc_now,
 )
-from open_vi.domain import TsipSnapshot
+from open_vi.domain import TspiSnapshot
 from open_vi.identity import SystemIdentity
 
 
@@ -75,7 +75,7 @@ def _cov_vv() -> ET.Element:
 
 def build_position_report_detailed(
     identity: SystemIdentity,
-    state: TsipSnapshot,
+    state: TspiSnapshot,
     *,
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
@@ -161,7 +161,7 @@ def build_position_report_detailed(
 
 def build_navigation_report(
     identity: SystemIdentity,
-    state: TsipSnapshot,
+    state: TspiSnapshot,
     *,
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
@@ -186,7 +186,7 @@ def build_navigation_report(
 
 def build_weather_observation(
     identity: SystemIdentity,
-    state: TsipSnapshot,
+    state: TspiSnapshot,
     *,
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
@@ -232,7 +232,7 @@ def build_weather_observation(
 
 def build_component_status(
     identity: SystemIdentity,
-    state: TsipSnapshot,
+    state: TspiSnapshot,
     *,
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",

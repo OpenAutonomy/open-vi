@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 
 @dataclass(frozen=True)
-class TsipSnapshot:
+class TspiSnapshot:
     """Internal vehicle kinematics / endurance for TSPI outs."""
 
     latitude_deg: float = 38.8895

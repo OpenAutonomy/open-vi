@@ -13,7 +13,7 @@ from open_vi.domain import (
     PlatformSnapshot,
     ServiceStatusSnapshot,
     SubsystemStatusSnapshot,
-    TsipSnapshot,
+    TspiSnapshot,
 )
 
 
@@ -42,7 +42,7 @@ class PlatformPort(ABC):
         """Return the current flight activity, if any."""
 
     @abstractmethod
-    def get_vehicle_state(self) -> TsipSnapshot:
+    def get_vehicle_state(self) -> TspiSnapshot:
         """Return current TSPI / navigation / weather / component state."""
 
     @abstractmethod

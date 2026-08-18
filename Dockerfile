@@ -19,4 +19,4 @@ RUN pip install --no-cache-dir ".[px4]" \
 USER vi
 
 ENTRYPOINT ["open-vi"]
-CMD ["--platform", "px4"]
+CMD ["--platform", "stub"]

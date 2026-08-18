@@ -25,7 +25,7 @@ from open_vi.domain.status import (
     ServiceStatusSnapshot,
     SubsystemStatusSnapshot,
 )
-from open_vi.domain.tspi import TsipSnapshot
+from open_vi.domain.tspi import TspiSnapshot
 
 __all__ = [
     "CommandResult",
@@ -40,6 +40,6 @@ __all__ = [
     "ServiceStatusSnapshot",
     "StoredRoutePlan",
     "SubsystemStatusSnapshot",
-    "TsipSnapshot",
+    "TspiSnapshot",
     "Waypoint",
 ]

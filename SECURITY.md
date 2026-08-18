@@ -15,7 +15,9 @@ no authorization, and no in-process TLS.** `compose/asb.yml` starts
 ActiveMQ with no credentials so it matches a typical local ASB. Any peer
 that can open STOMP `:61613` can publish and subscribe as any identity.
 
-Bind the broker to loopback, or put it on a network you already trust.
+`compose/asb.yml` publishes STOMP, OpenWire, and the console on
+loopback only. Bind any other broker the same way, or put it on a
+network you already trust.
 A finding is interesting here if it lets a peer do something that
 posture does not already permit.
 

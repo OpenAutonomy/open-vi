@@ -1,26 +1,26 @@
 # Architecture
 
-open-vi is an ASK 5.0a Level 1 **Vehicle Interface (VI)**. It speaks native
-UCI/A-GRA XML on the Abstract Service Bus (ASB) and drives a vehicle through
-an internal `PlatformPort`.
+open-vi is one process: Isolator logic plus one vehicle backend. It speaks
+native UCI/A-GRA XML on the Abstract Service Bus and drives the vehicle
+through `PlatformPort`. Isolator owns A-GRA sequences. A new vehicle is a
+new adapter; it is not a change to Isolator or the codec.
 
-ASB detail: [ASB.md](ASB.md).  
-Isolator detail: [ISOLATOR.md](ISOLATOR.md).  
-Codec detail: [CODEC.md](CODEC.md).  
-Platform detail: [PLATFORM.md](PLATFORM.md).  
-PX4 backend: [PX4.md](PX4.md).
-
----
+The bus face is in [ASB.md](ASB.md), sequences are in [ISOLATOR.md](ISOLATOR.md),
+parse and build are in [CODEC.md](CODEC.md), the vehicle port is in
+[PLATFORM.md](PLATFORM.md), and PX4 is in [PX4.md](PX4.md). How to add a
+backend is in [ADDING_A_VEHICLE.md](ADDING_A_VEHICLE.md).
 
 ## Topology
 
-Mission Autonomy (or the A-GRA test harness) and open-vi share an ActiveMQ
-broker. open-vi is one process: Isolator logic plus a vehicle backend.
+Mission Autonomy and open-vi share an ActiveMQ broker. Topics are named
+`/topic/<MessageType>`. Only one backend is wired at a time. Isolator
+construction requires a `PlatformPort`; the CLI passes one via
+`make_platform()`.
 
 ```mermaid
 flowchart LR
-  MA["Mission Autonomy / harness"]
-  ASB["ActiveMQ (ASB)"]
+  MA["Mission Autonomy"]
+  ASB["ActiveMQ"]
   Iso["Isolator"]
   subgraph adapters ["Platform adapter layer"]
     Port["PlatformPort"]
@@ -31,26 +31,20 @@ flowchart LR
   MA <-->|"STOMP · UCI XML"| ASB
   ASB <-->|"AsbPort"| Iso
   Iso <--> Port
-  Port <--> Stub
-  Port <--> Px4
+  Port --> Stub
+  Port --> Px4
 ```
 
 | Piece | Role |
 | --- | --- |
-| **Mission Autonomy / harness** | Peer on the bus; commands the VI, consumes status and TSPI |
-| **ActiveMQ** | ASB transport (STOMP); topics named `/topic/<MessageType>` |
-| **Isolator** | A-GRA sequences, accept/reject, route ladder + File*, outbound capability / status / TSPI |
-| **Platform adapter layer** | `PlatformPort` plus vehicle backends — snapshot, flight command, TSPI, QNH, faults |
-| **StubPlatform** | CLI default backend — deterministic state for harness and unit tests |
-| **Px4MavlinkAdapter** | Thin SITL cut — telemetry + WAYPOINT_FOLLOWING |
+| Mission Autonomy | Peer on the bus; commands the VI, consumes status and TSPI |
+| ActiveMQ | ASB transport (STOMP) |
+| Isolator | Sequences, accept/reject, route ladder and File*, outbound capability / status / TSPI |
+| `PlatformPort` | Snapshot, flight command, TSPI, QNH, faults |
+| `StubPlatform` | Default backend for tests and `open-vi` |
+| `Px4MavlinkAdapter` | SITL: telemetry and `WAYPOINT_FOLLOWING` |
 
-Only one backend is wired at a time. Isolator construction requires a
-`PlatformPort`; the CLI passes one via `make_platform()`. New vehicles add an
-adapter; they do not replace the Isolator or copy the route ladder.
-
----
-
-## Layered software architecture
+## Layers
 
 ```mermaid
 flowchart LR
@@ -59,7 +53,7 @@ flowchart LR
     Mem["InMemoryAsb"]
   end
 
-  subgraph openvi ["Open Vehicle Interface"]
+  subgraph openvi ["open-vi"]
     AsbPort["AsbPort"]
     Codec["codec/"]
     Domain["domain/"]
@@ -82,50 +76,27 @@ flowchart LR
   PlatPort --> Px4
 ```
 
-### ASB port
+`AsbPort` is `connect`, `disconnect`, `subscribe`, `publish`, and an inbound
+callback. Isolator and codec do not import STOMP types.
+`StompActiveMqAdapter` talks to the broker in `compose/asb.yml`.
+`InMemoryAsb` is unit tests and `open-vi --memory`.
 
-Narrow bus face used by the Isolator: `connect` / `disconnect`, `subscribe`,
-`publish`, and an inbound message callback. No STOMP types leak into Isolator
-or codec code. Detail: [ASB.md](ASB.md).
+`open_vi.domain` holds flight, TSPI, status, route, and control values.
+There is no XML and no bus here. Degrees live in domain; radians begin at
+the codec boundary.
 
-| Adapter | Use |
-| --- | --- |
-| `StompActiveMqAdapter` | Live broker (`compose/asb.yml`) |
-| `InMemoryAsb` | Unit tests and `--memory` |
+The codec turns those values into CAL-friendly XML (default `xmlns`, no
+`uci:` prefix) and back. It is not an XSD binding and does not validate
+against the catalog.
 
-### Domain
+Isolator owns identity, session state, `RouteStore`, the tick loop, and
+dispatch to handlers. The default SystemID is `open-vi` under this
+project's namespace UUID, not the official-harness SUT / 1 / nil parent. `Isolator.__init__` requires `platform: PlatformPort`.
+It does not default to Stub and does not import Stub.
+`COMPLIANCE_MODE=loose|strict` selects status-ladder length without forking
+the handlers.
 
-Internal values only: flight, TSPI, status, route, and control dataclasses
-under `src/open_vi/domain/`. No XML, no bus, no Isolator tick. Degrees here;
-radians begin at the codec boundary. Codec, Isolator (`RouteStore`), and
-`PlatformPort` all import `open_vi.domain`.
-
-### Codec
-
-Parse and build official message types as CAL-friendly XML (default `xmlns`,
-no `uci:` prefix). Lives under `src/open_vi/codec/`. Speaks `open_vi.domain`,
-not `platform`. Full XSD validation is not required for the current Isolator.
-Detail: [CODEC.md](CODEC.md).
-
-### Isolator
-
-Owns identity, session state, `RouteStore` (A-GRA route ladder + stored
-`MA_RoutePlan` bytes + File*), the tick loop, and inbound dispatch to
-handlers. Handlers implement Core sequences (capability, flight commands,
-control request, tasks, routes + validation, heartbeat, contingencies, query,
-system management). The Isolator never imports vehicle protocols.
-
-`Isolator.__init__` requires `platform: PlatformPort`. It does not default to
-Stub and does not import Stub.
-
-`COMPLIANCE_MODE=loose|strict` selects OPT status ladders (e.g.
-`QUEUED`→`PROCESSING`→`COMPLETED`) without forking the codebase.
-
-### Platform adapter layer
-
-`PlatformPort` is the internal vehicle API: snapshot, flight command, TSPI,
-status / faults, and QNH. It does not own routes or File*. Backends implement
-it: **StubPlatform** and **Px4MavlinkAdapter** (thin SITL: telemetry +
-waypoint execute). Accept/reject for ICD flight-command rules uses platform
-readiness and command results. Detail: [PLATFORM.md](PLATFORM.md),
-[PX4.md](PX4.md). Adding a backend: [ADDING_A_VEHICLE.md](ADDING_A_VEHICLE.md).
+`PlatformPort` is snapshot, flight command, TSPI, status, faults, and QNH.
+It does not own routes or File*. Backends implement the port. Isolator
+accepts or rejects flight commands from platform readiness and command
+results.

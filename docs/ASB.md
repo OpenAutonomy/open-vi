@@ -1,14 +1,9 @@
 # ASB
 
-The Abstract Service Bus (ASB) module is how open-vi exchanges UCI/A-GRA messages
-with a Mission Autonomy instance (or the A-GRA test harness). Isolator code
-depends only on `AsbPort` — never on STOMP or ActiveMQ types.
-
-Parent: [ARCHITECTURE.md](ARCHITECTURE.md).
-
----
-
-## Port
+The Abstract Service Bus is how open-vi exchanges UCI/A-GRA messages with
+Mission Autonomy. Isolator depends only on `AsbPort`. It never imports
+STOMP or ActiveMQ types. The layers around it are in
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
 ```mermaid
 flowchart LR
@@ -26,6 +21,9 @@ flowchart LR
   Stomp <-->|"STOMP :61613"| Broker
 ```
 
+`message_type` is the UCI root name (for example `MA_FlightCommand`).
+Adapters map it to `/topic/<MessageType>`.
+
 | Method | Role |
 | --- | --- |
 | `connect` / `disconnect` | Session lifecycle |
@@ -33,30 +31,12 @@ flowchart LR
 | `publish(message_type, xml)` | Send a UCI XML body |
 | `on_message(handler)` | Register `(message_type, xml) → None` callbacks |
 
-`message_type` is the UCI root name (e.g. `MA_FlightCommand`). Adapters map it
-to `/topic/<MessageType>`.
+`StompActiveMqAdapter` is the live broker and the default when you run
+`open-vi`. `InMemoryAsb` is unit tests and `open-vi --memory`.
 
----
-
-## Adapters
-
-| Adapter | Use |
-| --- | --- |
-| `StompActiveMqAdapter` | Live broker; default when running `open-vi` |
-| `InMemoryAsb` | Unit tests and `open-vi --memory` |
-
-Subscriptions use a primary topic plus a harness-style `/topic/<MT><None>`
-alias (`subscribe_aliases`). The STOMP adapter reconnects and resubscribes on
+Subscribe also registers `/topic/<MessageType><None>`. Some peers publish
+to that alias. The STOMP adapter reconnects and resubscribes on
 disconnect.
 
----
-
-## Package
-
-```text
-src/open_vi/asb/
-  port.py        # AsbPort protocol
-  topics.py      # topic_dest / subscribe_aliases
-  stomp_amq.py   # StompActiveMqAdapter
-  memory.py      # InMemoryAsb
-```
+There is no authentication and no TLS. `compose/asb.yml` starts ActiveMQ
+with no credentials. See [SECURITY.md](../SECURITY.md).
