@@ -1,5 +1,7 @@
 # open-vi
 
+![Open-VI: one interface, any vehicle](docs/open-vi-banner.png)
+
 ## Introduction
 
 open-vi is an independent prototype: an ASK 5.0a Vehicle Interface. It is
