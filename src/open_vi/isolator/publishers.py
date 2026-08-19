@@ -87,6 +87,8 @@ def publish_command_updates(ctx: IsolatorContext) -> None:
                 object_state="UPDATED",
             ),
         )
+        if activity.activity_state == "COMPLETED":
+            ctx.state.active_activity_id = None
 
 
 def flight_activity_for_publish(ctx: IsolatorContext) -> FlightActivitySnapshot:

@@ -28,7 +28,7 @@ A-GRA route ladder.
 | Method | Role |
 | --- | --- |
 | `snapshot()` | Control offer and readiness (advertise / tick) |
-| `submit_flight_command()` | Accept or reject a flight capability command |
+| `submit_flight_command()` | Accept or reject a flight command (Capability NEW/CANCEL or Activity UPDATE) |
 | `poll_command_updates()` | Terminal command states since last poll (default: none) |
 | `active_flight_activity()` | Current activity for `MA_FlightActivity` |
 | `get_vehicle_state()` | TSPI, airdata, components (`TspiSnapshot`) |
@@ -48,7 +48,7 @@ Stub-only and stays off the port.
 state: accept/reject, TSPI, and status.
 
 `Px4MavlinkAdapter` is telemetry and `WAYPOINT_FOLLOWING` (mission upload,
-arm, takeoff, mission start). Install, SITL, and smoke scripts are in
+arm, takeoff, mission start). Install and SITL are in
 [PX4.md](PX4.md).
 
 `import open_vi.platform` loads the port and Stub. PX4 is imported only

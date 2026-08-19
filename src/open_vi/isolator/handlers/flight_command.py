@@ -11,6 +11,7 @@ from open_vi.codec.command import (
     parse_flight_commands,
 )
 from open_vi.codec.task import build_ma_task
+from open_vi.domain import CommandResult, FlightCommandRequest, is_live_activity
 from open_vi.isolator.context import IsolatorContext
 from open_vi.isolator.handlers.task import MT_MA_TASK
 
@@ -22,7 +23,7 @@ MT_FLIGHT_ACTIVITY = "MA_FlightActivity"
 
 
 class FlightCommandHandler:
-    """Handle Capability FlightCommands (Waypoint / HSA_CSA / Curve)."""
+    """Handle Capability NEW/CANCEL and Activity UPDATE FlightCommands."""
 
     inbound_mts = (MT_FLIGHT_COMMAND,)
 
@@ -40,7 +41,7 @@ class FlightCommandHandler:
             LOGGER.warning("MA_FlightCommand contained no Command instances")
             return
         for cmd in commands:
-            result = ctx.platform.submit_flight_command(cmd)
+            result = self._submit(cmd, ctx)
             status_xml = build_flight_command_status(
                 ctx.identity,
                 command_id=cmd.command_id,
@@ -80,6 +81,7 @@ class FlightCommandHandler:
                     activity,
                     schema_version=ctx.schema_version,
                     mode=ctx.message_mode,
+                    object_state="NEW" if result.new_activity else "UPDATED",
                 )
                 ctx.bus.publish(MT_FLIGHT_ACTIVITY, activity_xml)
                 ctx.state.active_activity_id = activity.activity_id
@@ -88,3 +90,57 @@ class FlightCommandHandler:
                     MT_FLIGHT_ACTIVITY,
                     activity.activity_id.hex,
                 )
+
+    def _submit(
+        self, cmd: FlightCommandRequest, ctx: IsolatorContext
+    ) -> CommandResult:
+        """Gate Capability NEW and Activity UPDATE, then call the platform."""
+        reason = _command_reject_reason(cmd, ctx)
+        if reason is not None:
+            return CommandResult(
+                processing_state="REJECTED",
+                reason="INVALID_INPUT_PARAMETER",
+                reason_description=reason,
+            )
+        return ctx.platform.submit_flight_command(cmd)
+
+
+def _command_reject_reason(
+    cmd: FlightCommandRequest, ctx: IsolatorContext
+) -> str | None:
+    """Return a reject description, or ``None`` if Isolator should submit."""
+    if cmd.choice == "Activity":
+        return _activity_reject_reason(cmd, ctx)
+    if cmd.choice == "Capability":
+        return _capability_reject_reason(cmd, ctx)
+    return f"Unknown FlightCommand choice {cmd.choice}"
+
+
+def _activity_reject_reason(
+    cmd: FlightCommandRequest, ctx: IsolatorContext
+) -> str | None:
+    """Activity UPDATE must name the live activity."""
+    if cmd.command_state != "UPDATE":
+        return "Activity commands require CommandState UPDATE"
+    if (
+        cmd.activity_id is None
+        or cmd.activity_id != ctx.state.active_activity_id
+    ):
+        return "Unknown or idle ActivityID"
+    return None
+
+
+def _capability_reject_reason(
+    cmd: FlightCommandRequest, ctx: IsolatorContext
+) -> str | None:
+    """Capability NEW starts an activity; CANCEL stops one. No live replan."""
+    if cmd.command_state == "CANCEL":
+        return None
+    if cmd.command_state != "NEW":
+        return "Capability commands require CommandState NEW or CANCEL"
+    if is_live_activity(ctx.platform.active_flight_activity()):
+        return (
+            "Capability NEW is not allowed while an activity is live; "
+            "use Activity UPDATE"
+        )
+    return None

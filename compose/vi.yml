@@ -1,10 +1,8 @@
-# open-vi on the local ASB. Broker is compose/asb.yml.
+# Stub on STOMP. Set BROKER_HOST to the ASB.
 #
-#   docker compose -f compose/asb.yml -f compose/vi.yml up --build
+#   BROKER_HOST=host.docker.internal docker compose -f compose/vi.yml up --build
 #
-# Stub on STOMP. The process is a client; it does not publish a port.
-# PX4 is --platform px4 / VI_PLATFORM=px4 once a vehicle is reachable
-# from this container (see docs/PX4.md).
+# PX4: VI_PLATFORM=px4 (see docs/PX4.md).
 
 services:
   open-vi:
@@ -14,10 +12,9 @@ services:
     image: open-vi:local
     container_name: open-vi
     environment:
-      BROKER_HOST: activemq
-      STOMP_PORT: "61613"
+      BROKER_HOST: ${BROKER_HOST:-host.docker.internal}
+      STOMP_PORT: ${STOMP_PORT:-61613}
       VI_PLATFORM: stub
-    depends_on:
-      activemq:
-        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped

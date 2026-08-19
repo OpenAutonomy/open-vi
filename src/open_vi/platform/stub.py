@@ -23,6 +23,7 @@ from open_vi.domain import (
     ServiceStatusSnapshot,
     SubsystemStatusSnapshot,
     TspiSnapshot,
+    is_live_activity,
 )
 from open_vi.platform.port import PlatformPort
 
@@ -77,11 +78,12 @@ class StubPlatform(PlatformPort):
         self._readiness = readiness
 
     def submit_flight_command(self, cmd: FlightCommandRequest) -> CommandResult:
-        """Accept any of the three A-GRA modes, or CANCEL a known command.
+        """Accept Capability NEW when idle, CANCEL, or Activity UPDATE.
 
-        Rejects when readiness is unavailable, the choice is not
-        Capability, or the mode is unknown. Unlike PX4, waypoints
-        are not required and nothing is uploaded to a vehicle.
+        Rejects when readiness is unavailable, Capability NEW arrives
+        while an activity is live, the Activity is not an UPDATE
+        against the live activity, or the mode is unknown. Unlike PX4,
+        waypoints are not required and nothing is uploaded to a vehicle.
         """
         if not self._readiness.available:
             return CommandResult(
@@ -89,12 +91,8 @@ class StubPlatform(PlatformPort):
                 reason="CAPABILITY_UNAVAILABLE",
                 reason_description="Flight capability not available",
             )
-        if cmd.choice != "Capability":
-            return CommandResult(
-                processing_state="REJECTED",
-                reason="INVALID_INPUT_PARAMETER",
-                reason_description="Activity modify not supported yet",
-            )
+        if cmd.choice == "Activity":
+            return self._submit_activity(cmd)
         if cmd.command_state == "CANCEL":
             if cmd.command_id in self._commands:
                 self._commands[cmd.command_id] = "CANCELED"
@@ -109,6 +107,23 @@ class StubPlatform(PlatformPort):
                 processing_state="REJECTED",
                 reason="INVALID_INPUT_PARAMETER",
                 reason_description="Unknown command id for CANCEL",
+            )
+        if cmd.command_state != "NEW":
+            return CommandResult(
+                processing_state="REJECTED",
+                reason="INVALID_INPUT_PARAMETER",
+                reason_description=(
+                    "Capability commands require CommandState NEW or CANCEL"
+                ),
+            )
+        if is_live_activity(self._activity):
+            return CommandResult(
+                processing_state="REJECTED",
+                reason="INVALID_INPUT_PARAMETER",
+                reason_description=(
+                    "Capability NEW is not allowed while an activity "
+                    "is live; use Activity UPDATE"
+                ),
             )
         if cmd.mode not in _ACCEPTED_MODES:
             return CommandResult(
@@ -131,6 +146,41 @@ class StubPlatform(PlatformPort):
             processing_state="ACCEPTED",
             activity_id=activity_id,
             new_activity=True,
+        )
+
+    def _submit_activity(self, cmd: FlightCommandRequest) -> CommandResult:
+        """Keep the live activity_id; reject NEW, CANCEL, and unknown ids."""
+        if cmd.command_state != "UPDATE":
+            return CommandResult(
+                processing_state="REJECTED",
+                reason="INVALID_INPUT_PARAMETER",
+                reason_description=(
+                    "Activity commands require CommandState UPDATE"
+                ),
+            )
+        if (
+            not is_live_activity(self._activity)
+            or cmd.activity_id != self._activity.activity_id
+        ):
+            return CommandResult(
+                processing_state="REJECTED",
+                reason="INVALID_INPUT_PARAMETER",
+                reason_description="Unknown or idle ActivityID",
+            )
+        if cmd.mode not in _ACCEPTED_MODES:
+            return CommandResult(
+                processing_state="REJECTED",
+                reason="CAPABILITY_UNAVAILABLE",
+                reason_description=(
+                    "Stub accepts WAYPOINT_FOLLOWING, HSA_CSA, "
+                    f"CURVE_FOLLOWING; got {cmd.mode}"
+                ),
+            )
+        self._commands[cmd.command_id] = "ACCEPTED"
+        return CommandResult(
+            processing_state="ACCEPTED",
+            activity_id=self._activity.activity_id,
+            new_activity=False,
         )
 
     def complete_flight_command(

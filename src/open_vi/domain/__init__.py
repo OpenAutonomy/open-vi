@@ -14,6 +14,7 @@ from open_vi.domain.flight import (
     FlightActivitySnapshot,
     FlightCommandRequest,
     Waypoint,
+    is_live_activity,
 )
 from open_vi.domain.route import (
     RouteActivationRequest,
@@ -42,4 +43,5 @@ __all__ = [
     "SubsystemStatusSnapshot",
     "TspiSnapshot",
     "Waypoint",
+    "is_live_activity",
 ]

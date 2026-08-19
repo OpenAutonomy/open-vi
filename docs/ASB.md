@@ -38,5 +38,4 @@ Subscribe also registers `/topic/<MessageType><None>`. Some peers publish
 to that alias. The STOMP adapter reconnects and resubscribes on
 disconnect.
 
-There is no authentication and no TLS. `compose/asb.yml` starts ActiveMQ
-with no credentials. See [SECURITY.md](SECURITY.md).
+There is no authentication and no TLS. See [SECURITY.md](SECURITY.md).

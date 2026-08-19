@@ -28,6 +28,7 @@ class FlightCommandRequest:
     mode: str | None  # WAYPOINT_FOLLOWING | HSA_CSA | CURVE_FOLLOWING | None
     waypoints: tuple[Waypoint, ...] = ()
     choice: str = "Capability"  # Capability | Activity
+    activity_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -50,3 +51,8 @@ class FlightActivitySnapshot:
     capability_id: UUID
     activity_state: str = "ACTIVE_UNCONSTRAINED"
     interactive: bool = True
+
+
+def is_live_activity(activity: FlightActivitySnapshot | None) -> bool:
+    """True when a command may UPDATE this activity (not idle or COMPLETED)."""
+    return activity is not None and activity.activity_state != "COMPLETED"

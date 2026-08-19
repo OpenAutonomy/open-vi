@@ -395,6 +395,137 @@ def test_px4_cancel_ignores_later_mission_reached(
     plat.close()
 
 
+def _airborne_px4(monkeypatch: pytest.MonkeyPatch) -> Px4MavlinkAdapter:
+    conn = _FakeConn()
+    plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg("HEARTBEAT", base_mode=128)
+    )
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=0,
+            lon=0,
+            alt=500000,
+            relative_alt=30000,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=0,
+        )
+    )
+
+    def fake_recv_match(**kwargs: object) -> object | None:
+        types = kwargs.get("type")
+        if types == "MISSION_ACK":
+            return _FakeMsg("MISSION_ACK", type=0)
+        if types == "COMMAND_ACK":
+            return _FakeMsg("COMMAND_ACK", command=400, result=0)
+        if isinstance(types, list) and "MISSION_REQUEST" in types:
+            return _FakeMsg("MISSION_REQUEST", seq=0)
+        if types == "HEARTBEAT":
+            return _FakeMsg("HEARTBEAT", base_mode=128, system_status=4)
+        return None
+
+    conn.recv_match = fake_recv_match  # type: ignore[method-assign]
+    pytest.importorskip("pymavlink")
+    monkeypatch.setattr(plat, "_wait_command_ack_locked", lambda *a, **k: None)
+    return plat
+
+
+def test_px4_activity_update_keeps_activity_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plat = _airborne_px4(monkeypatch)
+    first = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="WAYPOINT_FOLLOWING",
+            waypoints=(Waypoint(10.0, 20.0, 40.0),),
+        )
+    )
+    assert first.processing_state == "ACCEPTED"
+    live = first.activity_id
+    assert live is not None
+    updated = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="UPDATE",
+            mode="WAYPOINT_FOLLOWING",
+            waypoints=(Waypoint(11.0, 21.0, 45.0),),
+            choice="Activity",
+            activity_id=live,
+        )
+    )
+    assert updated.processing_state == "ACCEPTED"
+    assert updated.new_activity is False
+    assert updated.activity_id == live
+    assert plat.active_flight_activity() is not None
+    assert plat.active_flight_activity().activity_id == live
+    plat.close()
+
+
+def test_px4_capability_new_while_live_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plat = _airborne_px4(monkeypatch)
+    first = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="WAYPOINT_FOLLOWING",
+            waypoints=(Waypoint(10.0, 20.0, 40.0),),
+        )
+    )
+    assert first.processing_state == "ACCEPTED"
+    second = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="WAYPOINT_FOLLOWING",
+            waypoints=(Waypoint(11.0, 21.0, 45.0),),
+        )
+    )
+    assert second.processing_state == "REJECTED"
+    assert plat.active_flight_activity() is not None
+    assert plat.active_flight_activity().activity_id == first.activity_id
+    plat.close()
+
+
+def test_px4_activity_update_unknown_id_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plat = _airborne_px4(monkeypatch)
+    plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="WAYPOINT_FOLLOWING",
+            waypoints=(Waypoint(10.0, 20.0, 40.0),),
+        )
+    )
+    result = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="UPDATE",
+            mode="WAYPOINT_FOLLOWING",
+            waypoints=(Waypoint(11.0, 21.0, 45.0),),
+            choice="Activity",
+            activity_id=uuid4(),
+        )
+    )
+    assert result.processing_state == "REJECTED"
+    assert result.reason == "INVALID_INPUT_PARAMETER"
+    plat.close()
+
+
 def test_advance_skips_captured_and_behind_waypoints() -> None:
     from open_vi.platform.px4 import advance_mission_waypoints
 

@@ -19,8 +19,12 @@ flowchart LR
 
 The adapter does telemetry and `WAYPOINT_FOLLOWING`. Arm, takeoff, and
 mission start stay inside the adapter. Mission Autonomy sends
-`MA_FlightCommand`, not UCI arm or takeoff. Isolator owns the route
-ladder; ACTIVATE does not push a stored `MA_RoutePlan` to the vehicle.
+`MA_FlightCommand`, not UCI arm or takeoff. Capability NEW starts a
+mission when idle. Activity UPDATE is the replan: it reuses the airborne
+replace (hold, drop prefix waypoints, skip takeoff) and keeps the live
+`activity_id`. A second Capability NEW while airborne is rejected.
+Isolator owns the route ladder; ACTIVATE does not push a stored
+`MA_RoutePlan` to the vehicle.
 
 `import open_vi.platform` does not load this module. `make_platform("px4")`
 imports it.
@@ -39,8 +43,6 @@ docker run -d --name open-vi-px4-sitl \
 The image home is about 47.40°N, 8.55°E. Then:
 
 ```bash
-PYTHONPATH=src python scripts/px4_sitl_smoke.py
-PYTHONPATH=src python scripts/isolator_px4_flight_smoke.py
 open-vi --platform px4
 ```
 
@@ -50,17 +52,17 @@ Acceptance radius defaults to 15 m (`path_clearance_m` or
 `PX4_PATH_CLEARANCE_M`). That is this adapter's capture disk, not a
 shared Mission Autonomy constant.
 
-`open-vi --memory` is process-local: you cannot inject XML into a separate
-`--memory` process. Use STOMP (`open-vi --platform px4` and
-`compose/asb.yml`) for a live bus, or drive Isolator in-process as the
-flight smoke script does.
+`open-vi --memory` is process-local. For a live bus,
+`open-vi --platform px4` connects over STOMP.
 
 ## Waypoint execute
 
 An accepted `WAYPOINT_FOLLOWING` uploads a mission, arms, starts MISSION,
-and waits until relative altitude shows climb. The command is rejected if
-the link is down, the mode is not `WAYPOINT_FOLLOWING`, or waypoints are
-missing.
+and waits until relative altitude shows climb. An Activity UPDATE with
+the live `ActivityID` runs the same upload without minting a new
+activity. The command is rejected if the link is down, the mode is not
+`WAYPOINT_FOLLOWING`, waypoints are missing, or Activity is not UPDATE
+against the live id.
 
 A-GRA `Point2D` altitude is HAE. PX4 mission items are relative to home.
 Home HAE is `GLOBAL_POSITION_INT.alt − relative_alt`. The adapter
@@ -94,12 +96,7 @@ position are fresher than 10 s; otherwise `TEMPORARILY_UNAVAILABLE` /
 `PX4_LINK_DOWN`. `get_vehicle_state()` maps lat/lon/alt, NED speeds,
 attitude, airspeed, heading, and battery into `TspiSnapshot`.
 
-## Smoke scripts
+## Tests
 
-`scripts/px4_sitl_smoke.py` connects, waits for a heartbeat, and checks
-`AVAILABLE` plus TSPI. `scripts/isolator_px4_flight_smoke.py` runs
-Isolator in-process on `InMemoryAsb`, sends `MA_FlightCommand`, and
-expects Status ACCEPTED, Activity, and climb.
-
-Unit tests mock MAVLink (`tests/test_platform_px4.py`). Live SITL is the
-smoke scripts, not CI.
+Unit tests mock MAVLink (`tests/test_platform_px4.py`). They are not
+live SITL and are not gated on a vehicle.

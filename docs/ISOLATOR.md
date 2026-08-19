@@ -68,6 +68,11 @@ concern: parse, then `RouteStore` and/or `PlatformPort`, then publish.
 | `control` | `MA_ControlRequest` | `MA_ControlRequestStatus` and `MA_ControlAssignment` |
 | `task` | `MA_TaskCommand` | `MA_TaskCommandStatus` and `TaskStatus` |
 
+Capability NEW starts an activity when idle. CANCEL stops it. Activity
+UPDATE is the replan: it replaces the live path and republishes
+`MA_FlightActivity` as `UPDATED`. A second Capability NEW while an
+activity is live is rejected. ACTIVATE still does not call the vehicle.
+
 `COMPLIANCE_MODE=loose|strict` selects status-ladder length on route and
 query. Advertise, TSPI, the status package, and Stub contingencies are
 outbound-only (`publishers.py`), not handlers.

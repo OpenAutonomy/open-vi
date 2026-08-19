@@ -2,8 +2,17 @@
 
 ## [Unreleased]
 
+### Removed
+
+- `compose/asb.yml`.
+
 ### Added
 
+- Activity UPDATE on `MA_FlightCommand`: Isolator matches the live
+  `ActivityID`, Stub and PX4 replace the path without minting a new
+  activity, and `MA_FlightActivity` is published as `UPDATED`.
+  Capability NEW while an activity is live is rejected; replan is
+  Activity UPDATE only.
 - MkDocs on GitHub Pages:
   [openautonomy.github.io/open-vi](https://openautonomy.github.io/open-vi/).
 - Container image on GHCR (`ghcr.io/openautonomy/open-vi`), built from

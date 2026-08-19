@@ -78,7 +78,7 @@ flowchart LR
 
 `AsbPort` is `connect`, `disconnect`, `subscribe`, `publish`, and an inbound
 callback. Isolator and codec do not import STOMP types.
-`StompActiveMqAdapter` talks to the broker in `compose/asb.yml`.
+`StompActiveMqAdapter` connects to the ASB at `BROKER_HOST`.
 `InMemoryAsb` is unit tests and `open-vi --memory`.
 
 `open_vi.domain` holds flight, TSPI, status, route, and control values.

@@ -1,16 +1,13 @@
 # Runtime image for open-vi. Default is Stub on STOMP.
 #
 #   docker build -f Containerfile -t open-vi .
-#   docker compose -f compose/asb.yml -f compose/vi.yml up --build
-#
-# BROKER_HOST defaults to the compose service name. Point it at
-# host.docker.internal (or the host IP) when the broker is on the host.
+#   BROKER_HOST=host.docker.internal docker compose -f compose/vi.yml up --build
 
 FROM python:3.12-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    BROKER_HOST=activemq \
+    BROKER_HOST=host.docker.internal \
     STOMP_PORT=61613 \
     VI_TICK_PERIOD_S=1 \
     AGRA_MESSAGE_MODE=SIMULATION \

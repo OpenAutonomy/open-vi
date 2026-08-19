@@ -68,6 +68,16 @@ def parse_flight_commands(xml: str | bytes) -> list[FlightCommandRequest]:
         if not cap_id_text:
             # Activity commands may omit CapabilityID; use nil for reject path.
             cap_id_text = "0" * 32
+        activity_id = None
+        if choice_name == "Activity":
+            act_id_node = find_one(choice_el, "ActivityID")
+            act_id_text = (
+                find_text(act_id_node, "UUID")
+                if act_id_node is not None
+                else None
+            )
+            if act_id_text:
+                activity_id = parse_uuid_text(act_id_text)
         state = find_text(choice_el, "CommandState") or "NEW"
         mode = None
         for tag, mode_name in _MODE_TAGS.items():
@@ -83,6 +93,7 @@ def parse_flight_commands(xml: str | bytes) -> list[FlightCommandRequest]:
                 mode=mode,
                 waypoints=waypoints,
                 choice=choice_name,
+                activity_id=activity_id,
             )
         )
     return requests
@@ -92,7 +103,7 @@ def _parse_waypoints(node) -> tuple[Waypoint, ...]:
     """Extract waypoints; UCI lat/lon are radians on the wire.
 
     A-GRA PathSegment lists are not necessarily in flight order. Walk
-    ``FirstInPathSegmentID`` / ``NextPathSegment`` when present (MA's
+    ``FirstInPathSegmentID`` / ``NextPathSegment`` when present (A-GRA
     ``EndPoint`` / ``Point2D`` layout). Fall back to document-order
     ``Position`` / ``Point2D`` for older sample XML.
     """
@@ -285,6 +296,17 @@ def build_flight_activity(
     return tostring(root)
 
 
+def _ranking():
+    return el(
+        "Ranking",
+        el(
+            "Rank",
+            el("Priority", text="0"),
+            el("PrecedenceWithinPriority", text="0"),
+        ),
+    )
+
+
 def _capability_shell(
     command_id: UUID,
     capability_id: UUID,
@@ -297,16 +319,65 @@ def _capability_shell(
         id_type("CommandID", command_id),
         el("CommandState", text=command_state),
         id_type("CapabilityID", capability_id, "flight-capability"),
-        el(
-            "Ranking",
-            el(
-                "Rank",
-                el("Priority", text="0"),
-                el("PrecedenceWithinPriority", text="0"),
-            ),
-        ),
+        _ranking(),
         el("FlightControlMode", flight_control_mode),
     )
+
+
+def _activity_shell(
+    command_id: UUID,
+    activity_id: UUID,
+    flight_control_mode,
+    *,
+    command_state: str = "UPDATE",
+    capability_id: UUID | None = None,
+):
+    children = [
+        id_type("CommandID", command_id),
+        el("CommandState", text=command_state),
+        id_type("ActivityID", activity_id, "flight-activity"),
+    ]
+    if capability_id is not None:
+        children.append(
+            id_type("CapabilityID", capability_id, "flight-capability")
+        )
+    children.extend(
+        (_ranking(), el("FlightControlMode", flight_control_mode))
+    )
+    return el("Activity", *children)
+
+
+def _waypoint_following_mode(waypoints: tuple[Waypoint, ...]):
+    path_id = UUID(int=1)
+    path_children = [
+        id_type("PathID", path_id, "path-1"),
+        el("PathType", text="PRIMARY"),
+    ]
+    for index, wp in enumerate(waypoints, start=1):
+        point_kids = [
+            el("Latitude", text=format_uci_angle(deg_to_rad(wp.latitude_deg))),
+            el(
+                "Longitude",
+                text=format_uci_angle(deg_to_rad(wp.longitude_deg)),
+            ),
+        ]
+        if wp.altitude_m is not None:
+            point_kids.append(el("Altitude", text=str(wp.altitude_m)))
+        path_children.append(
+            el(
+                "Segment",
+                id_type("PathSegmentID", UUID(int=index)),
+                el("Position", *point_kids),
+            )
+        )
+    route = el(
+        "Route",
+        el("Detailed", text="false"),
+        id_type("FirstInRoutePathID", path_id),
+        el("RouteProjection", text="GREAT_CIRCLE"),
+        el("Path", *path_children),
+    )
+    return el("WaypointFollowing", route)
 
 
 def _flight_command_bytes(
@@ -340,43 +411,40 @@ def build_sample_waypoint_command(
     mode: str = "SIMULATION",
 ) -> bytes:
     """Minimal MA_FlightCommand (WaypointFollowing) for unit tests."""
-    path_id = UUID(int=1)
-    path_children = [
-        id_type("PathID", path_id, "path-1"),
-        el("PathType", text="PRIMARY"),
-    ]
-    for index, wp in enumerate(waypoints, start=1):
-        point_kids = [
-            el("Latitude", text=format_uci_angle(deg_to_rad(wp.latitude_deg))),
-            el(
-                "Longitude",
-                text=format_uci_angle(deg_to_rad(wp.longitude_deg)),
-            ),
-        ]
-        if wp.altitude_m is not None:
-            point_kids.append(el("Altitude", text=str(wp.altitude_m)))
-        path_children.append(
-            el(
-                "Segment",
-                id_type("PathSegmentID", UUID(int=index)),
-                el("Position", *point_kids),
-            )
-        )
-    route = el(
-        "Route",
-        el("Detailed", text="false"),
-        id_type("FirstInRoutePathID", path_id),
-        el("RouteProjection", text="GREAT_CIRCLE"),
-        el("Path", *path_children),
-    )
     capability = _capability_shell(
         command_id,
         capability_id,
-        el("WaypointFollowing", route),
+        _waypoint_following_mode(waypoints),
         command_state=command_state,
     )
     return _flight_command_bytes(
         identity, capability, schema_version=schema_version, mode=mode
+    )
+
+
+def build_sample_activity_update_command(
+    identity: SystemIdentity,
+    *,
+    command_id: UUID,
+    activity_id: UUID,
+    waypoints: tuple[Waypoint, ...] = (
+        Waypoint(latitude_deg=38.0, longitude_deg=-77.0, altitude_m=100.0),
+    ),
+    command_state: str = "UPDATE",
+    capability_id: UUID | None = None,
+    schema_version: str = SCHEMA_VERSION,
+    mode: str = "SIMULATION",
+) -> bytes:
+    """Minimal Activity-choice MA_FlightCommand (UPDATE) for unit tests."""
+    activity = _activity_shell(
+        command_id,
+        activity_id,
+        _waypoint_following_mode(waypoints),
+        command_state=command_state,
+        capability_id=capability_id,
+    )
+    return _flight_command_bytes(
+        identity, activity, schema_version=schema_version, mode=mode
     )
 
 

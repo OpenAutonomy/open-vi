@@ -11,16 +11,13 @@ queue. Fixes land on `main`; there is no backport branch.
 ## What this software assumes
 
 open-vi is a prototype. **The Abstract Service Bus has no authentication,
-no authorization, and no in-process TLS.** `compose/asb.yml` starts
-ActiveMQ with no credentials so it matches a typical local ASB. Any peer
-that can open STOMP `:61613` can publish and subscribe as any identity.
+no authorization, and no in-process TLS.** open-vi is a STOMP client.
+Any peer that can open the same STOMP port can publish and subscribe as
+any identity.
 
-`compose/asb.yml` publishes STOMP, OpenWire, and the console on
-loopback only. Bind any other broker the same way, or put it on a
-network you already trust. `compose/vi.yml` runs the VI image as a
-STOMP client on that broker; it does not add authentication.
-A finding is interesting here if it lets a peer do something that
-posture does not already permit.
+`compose/vi.yml` runs the VI image against `BROKER_HOST`. Bind the
+broker on a network you already trust. A finding is interesting here if
+it lets a peer do something that posture does not already permit.
 
 ## In scope
 

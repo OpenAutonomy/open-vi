@@ -12,7 +12,7 @@ from open_vi.codec.xmlutil import local_name, parse_xml, tostring
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
-# Degrees matching open-ma DEMO_ROUTE (wire values in the fixture are radians).
+# Degrees for the golden fixture (wire values are UCI radians).
 GOLDEN_WAYPOINTS = (
     (47.3980, 8.5460, 30.0),
     (47.3985, 8.5465, 30.0),

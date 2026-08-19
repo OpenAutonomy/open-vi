@@ -5,10 +5,8 @@
 ## Introduction
 
 open-vi is an independent prototype: an ASK 5.0a Vehicle Interface. It is
-owned by [OpenAutonomy](https://github.com/OpenAutonomy). It is not an
-[Open Arsenal](https://gitlab.com/open-arsenal/) project; it speaks native
-UCI/A-GRA XML on the Abstract Service Bus so it can sit next to those
-systems.
+owned by [OpenAutonomy](https://github.com/OpenAutonomy). It speaks native
+UCI/A-GRA XML on the Abstract Service Bus.
 
 It is one process: Isolator logic plus one vehicle backend behind
 `PlatformPort`. Isolator owns A-GRA sequences, including the route ladder.
@@ -42,21 +40,19 @@ open-vi --memory --once
 
 That publishes `MA_FlightCapability` and prints the XML, then exits 0.
 
-There is no authentication and no TLS on the live bus. `compose/asb.yml`
-starts ActiveMQ with no credentials and publishes ports on loopback.
-See [SECURITY.md](SECURITY.md).
+There is no authentication and no TLS on the live bus. See
+[SECURITY.md](SECURITY.md).
 
-To run against a local broker:
+`open-vi` connects to the ASB at `BROKER_HOST` (default localhost):
 
 ```bash
-docker compose -f compose/asb.yml up -d
 open-vi
 ```
 
-Or the VI image on that broker:
+Or the VI image:
 
 ```bash
-docker compose -f compose/asb.yml -f compose/vi.yml up --build
+BROKER_HOST=host.docker.internal docker compose -f compose/vi.yml up --build
 ```
 
 CI publishes `ghcr.io/openautonomy/open-vi` from `main`. Either path

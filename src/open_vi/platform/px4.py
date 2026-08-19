@@ -32,6 +32,7 @@ from open_vi.domain import (
     SubsystemStatusSnapshot,
     TspiSnapshot,
     Waypoint,
+    is_live_activity,
 )
 from open_vi.platform.port import PlatformPort
 
@@ -138,9 +139,10 @@ class Px4MavlinkAdapter(PlatformPort):
     ``TEMPORARILY_UNAVAILABLE`` / ``PX4_LINK_DOWN``. Accepted
     ``WAYPOINT_FOLLOWING`` uploads a mission (NAV_TAKEOFF as item 0
     unless already airborne), arms, starts MISSION, and waits for
-    climb. A-GRA ``Point2D`` altitude is HAE; PX4 items are
-    relative to home. Completes when ``MISSION_ITEM_REACHED`` hits
-    the last waypoint.
+    climb. Activity UPDATE reuses that airborne replace and keeps
+    the live ``activity_id``. A-GRA ``Point2D`` altitude is HAE; PX4
+    items are relative to home. Completes when
+    ``MISSION_ITEM_REACHED`` hits the last waypoint.
 
     HSA_CSA and CURVE_FOLLOWING are rejected. ``apply_system_management``
     writes QNH onto the local TSPI snapshot only.
@@ -271,13 +273,14 @@ class Px4MavlinkAdapter(PlatformPort):
         return PlatformSnapshot(offer=self._offer, readiness=readiness)
 
     def submit_flight_command(self, cmd: FlightCommandRequest) -> CommandResult:
-        """Accept ``WAYPOINT_FOLLOWING`` or reject; CANCEL a known command.
+        """Accept ``WAYPOINT_FOLLOWING`` NEW when idle, UPDATE, or CANCEL.
 
-        Rejects when the link is down, the choice is not Capability,
+        Rejects when the link is down, Capability NEW arrives while an
+        activity is live, Activity is not UPDATE against the live id,
         the mode is not ``WAYPOINT_FOLLOWING``, or waypoints are
-        missing. On accept, runs the mission upload / arm / start
-        path and returns ``ACTIVE_UNCONSTRAINED``. Completion is
-        later, via :meth:`poll_command_updates`.
+        missing. On accept, runs the mission upload / arm / start path
+        and returns ``ACTIVE_UNCONSTRAINED``. Completion is later, via
+        :meth:`poll_command_updates`.
         """
         snap = self.snapshot()
         if not snap.readiness.available:
@@ -286,12 +289,8 @@ class Px4MavlinkAdapter(PlatformPort):
                 reason="CAPABILITY_UNAVAILABLE",
                 reason_description="PX4 link not available",
             )
-        if cmd.choice != "Capability":
-            return CommandResult(
-                processing_state="REJECTED",
-                reason="INVALID_INPUT_PARAMETER",
-                reason_description="Activity modify not supported yet",
-            )
+        if cmd.choice == "Activity":
+            return self._submit_activity(cmd)
         if cmd.command_state == "CANCEL":
             if cmd.command_id in self._commands:
                 with self._lock:
@@ -311,6 +310,84 @@ class Px4MavlinkAdapter(PlatformPort):
                 reason="INVALID_INPUT_PARAMETER",
                 reason_description="Unknown command id for CANCEL",
             )
+        if cmd.command_state != "NEW":
+            return CommandResult(
+                processing_state="REJECTED",
+                reason="INVALID_INPUT_PARAMETER",
+                reason_description=(
+                    "Capability commands require CommandState NEW or CANCEL"
+                ),
+            )
+        with self._lock:
+            live = self._activity
+        if is_live_activity(live):
+            return CommandResult(
+                processing_state="REJECTED",
+                reason="INVALID_INPUT_PARAMETER",
+                reason_description=(
+                    "Capability NEW is not allowed while an activity "
+                    "is live; use Activity UPDATE"
+                ),
+            )
+        rejected = self._execute_waypoints_or_reject(cmd)
+        if rejected is not None:
+            return rejected
+        activity_id = uuid4()
+        with self._lock:
+            self._activity = FlightActivitySnapshot(
+                activity_id=activity_id,
+                capability_id=cmd.capability_id,
+                activity_state="ACTIVE_UNCONSTRAINED",
+                interactive=True,
+            )
+            self._commands[cmd.command_id] = "ACCEPTED"
+            self._active_command_id = cmd.command_id
+        return CommandResult(
+            processing_state="ACCEPTED",
+            activity_id=activity_id,
+            new_activity=True,
+        )
+
+    def _submit_activity(self, cmd: FlightCommandRequest) -> CommandResult:
+        """Replace the live path; keep ``activity_id``.
+
+        Later ``COMPLETED`` is for this UPDATE command, not the original NEW.
+        """
+        if cmd.command_state != "UPDATE":
+            return CommandResult(
+                processing_state="REJECTED",
+                reason="INVALID_INPUT_PARAMETER",
+                reason_description=(
+                    "Activity commands require CommandState UPDATE"
+                ),
+            )
+        with self._lock:
+            live = self._activity
+        if not is_live_activity(live) or cmd.activity_id != live.activity_id:
+            return CommandResult(
+                processing_state="REJECTED",
+                reason="INVALID_INPUT_PARAMETER",
+                reason_description="Unknown or idle ActivityID",
+            )
+        rejected = self._execute_waypoints_or_reject(cmd)
+        if rejected is not None:
+            return rejected
+        with self._lock:
+            self._commands[cmd.command_id] = "ACCEPTED"
+            self._active_command_id = cmd.command_id
+        return CommandResult(
+            processing_state="ACCEPTED",
+            activity_id=live.activity_id,
+            new_activity=False,
+        )
+
+    def _execute_waypoints_or_reject(
+        self, cmd: FlightCommandRequest
+    ) -> CommandResult | None:
+        """Upload waypoints, or return a reject.
+
+        ``None`` means the vehicle ran.
+        """
         if cmd.mode not in _ACCEPTED_MODES:
             return CommandResult(
                 processing_state="REJECTED",
@@ -335,21 +412,7 @@ class Px4MavlinkAdapter(PlatformPort):
                 reason="FAILED",
                 reason_description=f"Waypoint execution failed: {exc}",
             )
-        activity_id = uuid4()
-        with self._lock:
-            self._activity = FlightActivitySnapshot(
-                activity_id=activity_id,
-                capability_id=cmd.capability_id,
-                activity_state="ACTIVE_UNCONSTRAINED",
-                interactive=True,
-            )
-            self._commands[cmd.command_id] = "ACCEPTED"
-            self._active_command_id = cmd.command_id
-        return CommandResult(
-            processing_state="ACCEPTED",
-            activity_id=activity_id,
-            new_activity=True,
-        )
+        return None
 
     def poll_command_updates(self) -> list[tuple[UUID, CommandResult]]:
         """Drain terminal states queued by ``MISSION_ITEM_REACHED``."""
