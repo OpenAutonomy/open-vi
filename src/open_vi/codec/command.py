@@ -341,9 +341,7 @@ def _activity_shell(
         children.append(
             id_type("CapabilityID", capability_id, "flight-capability")
         )
-    children.extend(
-        (_ranking(), el("FlightControlMode", flight_control_mode))
-    )
+    children.extend((_ranking(), el("FlightControlMode", flight_control_mode)))
     return el("Activity", *children)
 
 
