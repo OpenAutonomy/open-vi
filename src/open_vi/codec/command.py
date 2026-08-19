@@ -245,6 +245,19 @@ def build_flight_command_status(
                 el("Description", text=result.reason_description)
             )
         children.append(el("CommandProcessingStateReason", *reason_kids))
+    if result.validation_results:
+        detail_kids = [
+            el("ValidationResult", text=value)
+            for value in result.validation_results
+        ]
+        if result.reason_description:
+            detail_kids.append(
+                el(
+                    "ValidationResultReason",
+                    el("Description", text=result.reason_description),
+                )
+            )
+        children.append(el("CannotComplyDetails", *detail_kids))
     if result.processing_state == "ACCEPTED" and result.activity_id is not None:
         children.append(
             el(

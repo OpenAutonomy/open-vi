@@ -32,8 +32,6 @@ it lets a peer do something that posture does not already permit.
 
 - The codec does not validate against the UCI XSD. Non-conforming XML
   may be parsed into domain structs or dropped; it is not schema-rejected.
-- `COMPLIANCE_MODE` only selects status-ladder length. It is not an
-  access-control switch.
 
 ## Supported versions
 

@@ -5,7 +5,9 @@ native UCI/A-GRA XML on the Abstract Service Bus and drives the vehicle
 through `PlatformPort`. Isolator owns A-GRA sequences. A new vehicle is a
 new adapter; it is not a change to Isolator or the codec.
 
-The bus face is in [ASB.md](ASB.md), sequences are in [ISOLATOR.md](ISOLATOR.md),
+What the ASK 5.0a Volume requires, and what Isolator covers, is in
+[FEATURES.md](FEATURES.md). The bus face is in [ASB.md](ASB.md),
+sequences are in [ISOLATOR.md](ISOLATOR.md),
 parse and build are in [CODEC.md](CODEC.md), the vehicle port is in
 [PLATFORM.md](PLATFORM.md), and PX4 is in [PX4.md](PX4.md). How to add a
 backend is in [ADDING_A_VEHICLE.md](ADDING_A_VEHICLE.md).
@@ -93,8 +95,6 @@ Isolator owns identity, session state, `RouteStore`, the tick loop, and
 dispatch to handlers. The default SystemID is `open-vi` under this
 project's namespace UUID, not the official-harness SUT / 1 / nil parent. `Isolator.__init__` requires `platform: PlatformPort`.
 It does not default to Stub and does not import Stub.
-`COMPLIANCE_MODE=loose|strict` selects status-ladder length without forking
-the handlers.
 
 `PlatformPort` is snapshot, flight command, TSPI, status, faults, and QNH.
 It does not own routes or File*. Backends implement the port. Isolator

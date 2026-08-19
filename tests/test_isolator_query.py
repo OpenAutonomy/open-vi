@@ -58,7 +58,7 @@ def test_capability_query_republishes_flight_capability() -> None:
         MT_QUERY_DATA_REQUEST,
         build_sample_query_data_request(iso.identity, request_id=uuid4()),
     )
-    assert len(bus.published[MT_QUERY_DATA_REQUEST_STATUS]) == 2
+    assert len(bus.published[MT_QUERY_DATA_REQUEST_STATUS]) == 3
     cap = bus.published[MT_FLIGHT_CAPABILITY][-1]
     assert local_name(parse_xml(cap)) == "MA_FlightCapability"
     assert iso.ctx.state.capability_id.hex in cap.replace("-", "")

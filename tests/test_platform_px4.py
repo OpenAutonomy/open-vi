@@ -11,6 +11,10 @@ from open_vi.domain import ControlReadiness, FlightCommandRequest, Waypoint
 from open_vi.platform import make_platform
 from open_vi.platform.px4 import Px4MavlinkAdapter
 
+# Airborne fixture home HAE is 470 m; these are 30 m and 50 m AGL.
+_IN_BAND = Waypoint(10.0, 20.0, 500.0)
+_IN_BAND_2 = Waypoint(11.0, 21.0, 520.0)
+
 
 class _FakeMsg:
     def __init__(self, mtype: str, **fields: object) -> None:
@@ -25,13 +29,19 @@ class _FakeConn:
     def __init__(self) -> None:
         self.target_system = 1
         self.target_component = 1
+        self.param_sets: list[tuple[tuple[object, ...], dict[str, object]]] = []
         self.mav = SimpleNamespace(
             mission_count_send=lambda *a, **k: None,
             mission_item_int_send=lambda *a, **k: None,
             command_long_send=lambda *a, **k: None,
+            param_set_send=self._param_set,
         )
+
         self._queue: list[object] = []
         self.closed = False
+
+    def _param_set(self, *args: object, **kwargs: object) -> None:
+        self.param_sets.append((args, kwargs))
 
     def push(self, msg: object) -> None:
         self._queue.append(msg)
@@ -146,6 +156,11 @@ def test_px4_telemetry_and_snapshot() -> None:
     snap = plat.snapshot()
     assert snap.readiness.available
     assert snap.offer.capability_types == ("WAYPOINT_FOLLOWING",)
+    profile = snap.offer.waypoint_profile
+    assert profile is not None
+    assert profile.altitude_ref == "WGS_HAE"
+    assert profile.min_altitude_m == pytest.approx(130.0)
+    assert profile.max_altitude_m == pytest.approx(620.0)
     state = plat.get_vehicle_state()
     assert state.latitude_deg == pytest.approx(38.8895)
     assert state.longitude_deg == pytest.approx(-77.0353)
@@ -189,6 +204,7 @@ def test_px4_rejects_hsa_csa() -> None:
         )
     )
     assert result.processing_state == "REJECTED"
+    assert result.validation_results == ("CAPABILITY_NOT_SUPPORTED",)
     plat.close()
 
 
@@ -267,7 +283,7 @@ def test_px4_waypoint_execute_accepts(
             capability_id=uuid4(),
             command_state="NEW",
             mode="WAYPOINT_FOLLOWING",
-            waypoints=(Waypoint(10.0, 20.0, 40.0),),
+            waypoints=(_IN_BAND,),
         )
     )
     assert result.processing_state == "ACCEPTED"
@@ -317,7 +333,7 @@ def test_px4_mission_reached_completes_last_waypoint() -> None:
             capability_id=uuid4(),
             command_state="NEW",
             mode="WAYPOINT_FOLLOWING",
-            waypoints=(Waypoint(10.0, 20.0, 40.0),),
+            waypoints=(_IN_BAND,),
         )
     )
     assert result.processing_state == "ACCEPTED"
@@ -376,7 +392,7 @@ def test_px4_cancel_ignores_later_mission_reached(
             capability_id=capability_id,
             command_state="NEW",
             mode="WAYPOINT_FOLLOWING",
-            waypoints=(Waypoint(10.0, 20.0, 40.0),),
+            waypoints=(_IN_BAND,),
         )
     )
     canceled = plat.submit_flight_command(
@@ -443,7 +459,7 @@ def test_px4_activity_update_keeps_activity_id(
             capability_id=uuid4(),
             command_state="NEW",
             mode="WAYPOINT_FOLLOWING",
-            waypoints=(Waypoint(10.0, 20.0, 40.0),),
+            waypoints=(_IN_BAND,),
         )
     )
     assert first.processing_state == "ACCEPTED"
@@ -455,7 +471,7 @@ def test_px4_activity_update_keeps_activity_id(
             capability_id=uuid4(),
             command_state="UPDATE",
             mode="WAYPOINT_FOLLOWING",
-            waypoints=(Waypoint(11.0, 21.0, 45.0),),
+            waypoints=(_IN_BAND_2,),
             choice="Activity",
             activity_id=live,
         )
@@ -478,7 +494,7 @@ def test_px4_capability_new_while_live_rejected(
             capability_id=uuid4(),
             command_state="NEW",
             mode="WAYPOINT_FOLLOWING",
-            waypoints=(Waypoint(10.0, 20.0, 40.0),),
+            waypoints=(_IN_BAND,),
         )
     )
     assert first.processing_state == "ACCEPTED"
@@ -488,7 +504,7 @@ def test_px4_capability_new_while_live_rejected(
             capability_id=uuid4(),
             command_state="NEW",
             mode="WAYPOINT_FOLLOWING",
-            waypoints=(Waypoint(11.0, 21.0, 45.0),),
+            waypoints=(_IN_BAND_2,),
         )
     )
     assert second.processing_state == "REJECTED"
@@ -507,7 +523,7 @@ def test_px4_activity_update_unknown_id_rejected(
             capability_id=uuid4(),
             command_state="NEW",
             mode="WAYPOINT_FOLLOWING",
-            waypoints=(Waypoint(10.0, 20.0, 40.0),),
+            waypoints=(_IN_BAND,),
         )
     )
     result = plat.submit_flight_command(
@@ -516,7 +532,7 @@ def test_px4_activity_update_unknown_id_rejected(
             capability_id=uuid4(),
             command_state="UPDATE",
             mode="WAYPOINT_FOLLOWING",
-            waypoints=(Waypoint(11.0, 21.0, 45.0),),
+            waypoints=(_IN_BAND_2,),
             choice="Activity",
             activity_id=uuid4(),
         )
@@ -545,3 +561,54 @@ def test_advance_keeps_goal_when_all_prefix_is_behind() -> None:
     behind = Waypoint(47.3980, 8.5450, 50.0)
     goal = Waypoint(47.3980, 8.5300, 50.0)
     assert advance_mission_waypoints((behind, goal), here) == (goal,)
+
+
+def test_px4_rejects_out_of_envelope_before_mission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plat = _airborne_px4(monkeypatch)
+    sent: list[int] = []
+    plat._conn.mav.mission_count_send = (  # type: ignore[union-attr]
+        lambda *a, **k: sent.append(1)
+    )
+    result = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="WAYPOINT_FOLLOWING",
+            waypoints=(Waypoint(10.0, 20.0, 2000.0),),
+        )
+    )
+    assert result.processing_state == "REJECTED"
+    assert result.validation_results == ("PERFORMANCE_LIMIT_EXCEEDED",)
+    assert sent == []
+    plat.close()
+
+
+def test_px4_qnh_writes_param() -> None:
+    pytest.importorskip("pymavlink")
+    conn = _FakeConn()
+    plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
+    plat._ingest(_FakeMsg("HEARTBEAT", base_mode=0))  # pylint: disable=protected-access
+
+    def fake_recv(**kwargs: object) -> object | None:
+        if kwargs.get("type") == "PARAM_VALUE":
+            return _FakeMsg(
+                "PARAM_VALUE",
+                param_id=b"SENS_BARO_QNH",
+                param_value=1013.25,
+            )
+        return None
+
+    conn.recv_match = fake_recv  # type: ignore[method-assign]
+    assert plat.apply_system_management(qnh_kpa=101.325) == "COMPLETED"
+    assert conn.param_sets
+    assert plat.get_vehicle_state().kollsman_hpa == pytest.approx(1013.25)
+    plat.close()
+
+
+def test_px4_qnh_link_down_rejected() -> None:
+    plat = Px4MavlinkAdapter(connection=None, autoconnect=False)
+    assert plat.apply_system_management(qnh_kpa=101.325) == "REJECTED"
+    plat.close()

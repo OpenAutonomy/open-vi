@@ -5,7 +5,7 @@ from __future__ import annotations
 from open_vi.asb import InMemoryAsb
 from open_vi.codec.xmlutil import local_name, parse_xml
 from open_vi.config import IsolatorConfig
-from open_vi.domain import ControlReadiness
+from open_vi.domain import ControlOffer, ControlReadiness, FlightModeProfile
 from open_vi.isolator import Isolator
 from open_vi.isolator.publishers import (
     MT_FLIGHT_CAPABILITY,
@@ -49,6 +49,30 @@ def test_capability_xml_contains_control_modes() -> None:
     assert "WAYPOINT_FOLLOWING" in raw
     assert "CURVE_FOLLOWING" in raw
     assert "CAPABILITY_COMMAND" in raw
+    assert "WaypointFollowingPerformanceProfile" not in raw
+
+
+def test_advertise_includes_waypoint_profile() -> None:
+    bus = InMemoryAsb()
+    bus.connect()
+    iso = Isolator(
+        bus,
+        platform=StubPlatform(
+            offer=ControlOffer(
+                waypoint_profile=FlightModeProfile(
+                    min_altitude_m=10.0,
+                    max_altitude_m=500.0,
+                    altitude_ref="AGL",
+                )
+            )
+        ),
+    )
+    iso.advertise_once()
+    raw = bus.wait_for(MT_FLIGHT_CAPABILITY, timeout=0.5)
+    assert raw is not None
+    assert "WaypointFollowingPerformanceProfile" in raw
+    assert "MinAltitude" in raw
+    assert "AGL" in raw
 
 
 def test_status_xml_available() -> None:

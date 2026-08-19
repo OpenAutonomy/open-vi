@@ -23,6 +23,16 @@ mission start stay inside the adapter. Mission Autonomy sends
 mission when idle. Activity UPDATE is the replan: it reuses the airborne
 replace (hold, drop prefix waypoints, skip takeoff) and keeps the live
 `activity_id`. A second Capability NEW while airborne is rejected.
+
+Before upload, the adapter checks the path against a relative-altitude
+envelope (default 10–500 m AGL; `PX4_MIN_REL_ALT_M` /
+`PX4_MAX_REL_ALT_M`). Rejects use Volume `ValidationResult`
+(`INVALID_WAYPOINT`, `PERFORMANCE_LIMIT_EXCEEDED`,
+`CAPABILITY_NOT_SUPPORTED`). The same limits are advertised on
+`MA_FlightCapability` as `WaypointFollowingPerformanceProfile` (HAE
+once home is known, otherwise AGL). `apply_system_management` writes
+`SENS_BARO_QNH` and the local TSPI snapshot.
+
 Isolator owns the route ladder; ACTIVATE does not push a stored
 `MA_RoutePlan` to the vehicle.
 
@@ -50,10 +60,15 @@ open-vi --platform px4
 defaults to `udpin:127.0.0.1:14540` (`--mavlink-url` or `PX4_MAVLINK_URL`).
 Acceptance radius defaults to 15 m (`path_clearance_m` or
 `PX4_PATH_CLEARANCE_M`). That is this adapter's capture disk, not a
-shared Mission Autonomy constant.
+shared Mission Autonomy constant. Relative-altitude envelope defaults
+to 10–500 m AGL (`PX4_MIN_REL_ALT_M`, `PX4_MAX_REL_ALT_M`).
 
 `open-vi --memory` is process-local. For a live bus,
 `open-vi --platform px4` connects over STOMP.
+
+An accepted `WAYPOINT_FOLLOWING` is rejected first when the path is
+empty, a point is non-finite, or relative altitude is outside the
+envelope. Those rejects never start a mission.
 
 ## Waypoint execute
 
@@ -61,8 +76,8 @@ An accepted `WAYPOINT_FOLLOWING` uploads a mission, arms, starts MISSION,
 and waits until relative altitude shows climb. An Activity UPDATE with
 the live `ActivityID` runs the same upload without minting a new
 activity. The command is rejected if the link is down, the mode is not
-`WAYPOINT_FOLLOWING`, waypoints are missing, or Activity is not UPDATE
-against the live id.
+`WAYPOINT_FOLLOWING`, the path fails the envelope check, or Activity
+is not UPDATE against the live id.
 
 A-GRA `Point2D` altitude is HAE. PX4 mission items are relative to home.
 Home HAE is `GLOBAL_POSITION_INT.alt − relative_alt`. The adapter
@@ -85,8 +100,9 @@ sequenceDiagram
 
 A standalone PX4 TAKEOFF mode sits at `MIS_TAKEOFF_ALT`. Embedding
 takeoff as mission item 0 and then `MISSION_START` is the path that
-climbs. `apply_system_management` writes QNH onto the local
-TSPI snapshot (`kollsman_hpa`).
+climbs. `apply_system_management` writes `SENS_BARO_QNH` (hPa) and
+the local TSPI snapshot (`kollsman_hpa`). Link down or a missing
+param ack is `REJECTED`.
 
 ## Telemetry
 

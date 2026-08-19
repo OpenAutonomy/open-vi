@@ -7,6 +7,7 @@ status, route, and control types used by codec, Isolator, and PlatformPort.
 from open_vi.domain.control import (
     ControlOffer,
     ControlReadiness,
+    FlightModeProfile,
     PlatformSnapshot,
 )
 from open_vi.domain.flight import (
@@ -15,6 +16,7 @@ from open_vi.domain.flight import (
     FlightCommandRequest,
     Waypoint,
     is_live_activity,
+    validate_waypoint_path,
 )
 from open_vi.domain.route import (
     RouteActivationRequest,
@@ -33,6 +35,7 @@ __all__ = [
     "ControlOffer",
     "ControlReadiness",
     "FaultSnapshot",
+    "FlightModeProfile",
     "FlightActivitySnapshot",
     "FlightCommandRequest",
     "PlatformSnapshot",
@@ -44,4 +47,5 @@ __all__ = [
     "TspiSnapshot",
     "Waypoint",
     "is_live_activity",
+    "validate_waypoint_path",
 ]

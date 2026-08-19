@@ -44,7 +44,7 @@ class AsbConfig:
 
 @dataclass(frozen=True)
 class IsolatorConfig:
-    """Isolator identity, timing, and compliance knobs."""
+    """Isolator identity and timing."""
 
     asb: AsbConfig | None = None
     system_name: str = DEFAULT_SYSTEM_NAME
@@ -53,7 +53,6 @@ class IsolatorConfig:
     namespace_uuid: str = str(DEFAULT_NAMESPACE_UUID)
     schema_version: str = "005.0a"
     message_mode: str = "SIMULATION"
-    compliance_mode: str = "loose"
     tick_period_s: float = 5.0
     tick_republish_status: bool = True
     publish_vehicle_state: bool = True
@@ -75,7 +74,6 @@ class IsolatorConfig:
             ),
             schema_version=os.environ.get("AGRA_SCHEMA_VERSION", "005.0a"),
             message_mode=os.environ.get("AGRA_MESSAGE_MODE", "SIMULATION"),
-            compliance_mode=os.environ.get("COMPLIANCE_MODE", "loose").lower(),
             tick_period_s=float(os.environ.get("VI_TICK_PERIOD_S", "5")),
             tick_republish_status=os.environ.get(
                 "VI_TICK_REPUBLISH_STATUS", "true"

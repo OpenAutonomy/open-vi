@@ -28,7 +28,7 @@ plugins:
             show_source: false
             filters: ["!^_"]
 
-# Architecture links to ../SECURITY.md and compose paths for GitHub.
+# Some pages link to ../SECURITY.md and compose paths for GitHub.
 validation:
   omitted_files: warn
   absolute_links: ignore
@@ -37,6 +37,7 @@ validation:
 
 nav:
   - Home: index.md
+  - Features: FEATURES.md
   - Architecture: ARCHITECTURE.md
   - Isolator: ISOLATOR.md
   - Platform: PLATFORM.md
@@ -45,9 +46,7 @@ nav:
   - ASB: ASB.md
   - PX4: PX4.md
   - API: api.md
-  - Security: SECURITY.md
   - Contributing: CONTRIBUTING.md
-  - Changelog: CHANGELOG.md
 
 markdown_extensions:
   - admonition

@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
-from open_vi.codec.command import parse_flight_commands
+from open_vi.codec.capability import build_flight_capability
+from open_vi.codec.command import (
+    build_flight_command_status,
+    parse_flight_commands,
+)
 from open_vi.codec.xmlutil import local_name, parse_xml, tostring
+from open_vi.domain import CommandResult, ControlOffer, FlightModeProfile
+from open_vi.identity import SystemIdentity
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -71,3 +77,46 @@ def test_parse_follows_next_path_segment_not_document_order() -> None:
     assert wp_c != -1 and wp_a != -1
     assert wp_c < wp_a
     _assert_golden_waypoints(parse_flight_commands(xml))
+
+
+def test_status_includes_cannot_comply_details() -> None:
+    xml = build_flight_command_status(
+        SystemIdentity.named("1"),
+        command_id=uuid4(),
+        result=CommandResult(
+            processing_state="REJECTED",
+            reason="INVALID_INPUT_PARAMETER",
+            reason_description="too high",
+            validation_results=("PERFORMANCE_LIMIT_EXCEEDED",),
+        ),
+    )
+    assert b"CannotComplyDetails" in xml
+    assert b"PERFORMANCE_LIMIT_EXCEEDED" in xml
+    assert b"too high" in xml
+
+
+def test_capability_omits_profile_when_unset() -> None:
+    xml = build_flight_capability(
+        SystemIdentity.named("1"),
+        ControlOffer(),
+        capability_id=uuid4(),
+    )
+    assert b"WaypointFollowingPerformanceProfile" not in xml
+
+
+def test_capability_includes_waypoint_profile() -> None:
+    xml = build_flight_capability(
+        SystemIdentity.named("1"),
+        ControlOffer(
+            waypoint_profile=FlightModeProfile(
+                min_altitude_m=10.0,
+                max_altitude_m=500.0,
+                altitude_ref="AGL",
+            )
+        ),
+        capability_id=uuid4(),
+    )
+    assert b"WaypointFollowingPerformanceProfile" in xml
+    assert b"MinAltitude" in xml
+    assert b"MaxAltitude" in xml
+    assert b"AGL" in xml

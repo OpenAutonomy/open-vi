@@ -16,7 +16,7 @@ from open_vi.codec.route import (
     build_file_metadata_for_route,
 )
 from open_vi.codec.status import parse_request_id
-from open_vi.isolator.compliance import status_ladder
+from open_vi.isolator.compliance import STATUS_LADDER
 from open_vi.isolator.context import IsolatorContext
 from open_vi.isolator.handlers.route import (
     MT_FILE_LOCATION,
@@ -50,8 +50,7 @@ class QueryHandler:
             return
         schema = ctx.schema_version
         mode = ctx.message_mode
-        ladder = status_ladder(ctx)
-        for state in ladder:
+        for state in STATUS_LADDER:
             ctx.bus.publish(
                 MT_QUERY_DATA_REQUEST_STATUS,
                 build_query_data_request_status(
@@ -67,7 +66,7 @@ class QueryHandler:
         LOGGER.info(
             "%s → %s× %s kinds=%s request=%s",
             MT_QUERY_DATA_REQUEST,
-            len(ladder),
+            len(STATUS_LADDER),
             MT_QUERY_DATA_REQUEST_STATUS,
             ",".join(kinds),
             request_id.hex,

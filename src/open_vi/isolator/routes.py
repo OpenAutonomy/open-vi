@@ -9,7 +9,7 @@ sha256 — this module does not parse waypoints.
 The store jumps to the terminal plan state. Mid-states
 (``PREPARING_FOR_UPLOAD``, ``UPLOADING``, …) live on
 :class:`RouteActivationResult` so the handler can walk the
-compliance status ladder. ``prime`` is a test helper.
+status ladder. ``prime`` is a test helper.
 """
 
 from __future__ import annotations

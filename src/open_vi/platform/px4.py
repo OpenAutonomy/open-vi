@@ -27,12 +27,14 @@ from open_vi.domain import (
     FaultSnapshot,
     FlightActivitySnapshot,
     FlightCommandRequest,
+    FlightModeProfile,
     PlatformSnapshot,
     ServiceStatusSnapshot,
     SubsystemStatusSnapshot,
     TspiSnapshot,
     Waypoint,
     is_live_activity,
+    validate_waypoint_path,
 )
 from open_vi.platform.port import PlatformPort
 
@@ -42,6 +44,10 @@ LOGGER = logging.getLogger(__name__)
 _EARTH_M = 6_378_137.0
 # Adapter acceptance radius written to NAV_ACC_RAD / NAV_MC_ALT_RAD.
 DEFAULT_PATH_CLEARANCE_M = 15.0
+DEFAULT_MIN_REL_ALT_M = 10.0
+DEFAULT_MAX_REL_ALT_M = 500.0
+_QNH_PARAM = "SENS_BARO_QNH"
+_QNH_ACK_TIMEOUT_S = 5.0
 
 
 def _horiz_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -144,8 +150,11 @@ class Px4MavlinkAdapter(PlatformPort):
     items are relative to home. Completes when
     ``MISSION_ITEM_REACHED`` hits the last waypoint.
 
-    HSA_CSA and CURVE_FOLLOWING are rejected. ``apply_system_management``
-    writes QNH onto the local TSPI snapshot only.
+    HSA_CSA and CURVE_FOLLOWING are rejected with
+    ``CAPABILITY_NOT_SUPPORTED``. Waypoint paths are checked against
+    a relative-altitude envelope before upload.
+    ``apply_system_management`` writes ``SENS_BARO_QNH`` and the local
+    TSPI snapshot.
     """
 
     def __init__(
@@ -157,6 +166,8 @@ class Px4MavlinkAdapter(PlatformPort):
         connection: Any | None = None,
         takeoff_alt_m: float = 30.0,
         path_clearance_m: float | None = None,
+        min_rel_alt_m: float | None = None,
+        max_rel_alt_m: float | None = None,
     ) -> None:
         self.connection_url = connection_url or os.environ.get(
             "PX4_MAVLINK_URL", DEFAULT_MAVLINK_URL
@@ -176,6 +187,20 @@ class Px4MavlinkAdapter(PlatformPort):
             )
         )
         self._takeoff_alt_m = takeoff_alt_m
+        self._min_rel_alt_m = (
+            float(min_rel_alt_m)
+            if min_rel_alt_m is not None
+            else float(
+                os.environ.get("PX4_MIN_REL_ALT_M", str(DEFAULT_MIN_REL_ALT_M))
+            )
+        )
+        self._max_rel_alt_m = (
+            float(max_rel_alt_m)
+            if max_rel_alt_m is not None
+            else float(
+                os.environ.get("PX4_MAX_REL_ALT_M", str(DEFAULT_MAX_REL_ALT_M))
+            )
+        )
         self._conn: Any | None = connection
         self._offer = ControlOffer(
             capability_types=("WAYPOINT_FOLLOWING",),
@@ -270,7 +295,28 @@ class Px4MavlinkAdapter(PlatformPort):
                 availability="TEMPORARILY_UNAVAILABLE",
                 reason="PX4_LINK_DOWN",
             )
-        return PlatformSnapshot(offer=self._offer, readiness=readiness)
+        offer = ControlOffer(
+            capability_types=self._offer.capability_types,
+            capability_label=self._offer.capability_label,
+            accepted_interfaces=self._offer.accepted_interfaces,
+            waypoint_profile=self._waypoint_profile(),
+        )
+        return PlatformSnapshot(offer=offer, readiness=readiness)
+
+    def _waypoint_profile(self) -> FlightModeProfile:
+        """AGL envelope, or HAE once home is known."""
+        home = self._home_hae_m()
+        if home is None:
+            return FlightModeProfile(
+                min_altitude_m=self._min_rel_alt_m,
+                max_altitude_m=self._max_rel_alt_m,
+                altitude_ref="AGL",
+            )
+        return FlightModeProfile(
+            min_altitude_m=home + self._min_rel_alt_m,
+            max_altitude_m=home + self._max_rel_alt_m,
+            altitude_ref="WGS_HAE",
+        )
 
     def submit_flight_command(self, cmd: FlightCommandRequest) -> CommandResult:
         """Accept ``WAYPOINT_FOLLOWING`` NEW when idle, UPDATE, or CANCEL.
@@ -396,13 +442,16 @@ class Px4MavlinkAdapter(PlatformPort):
                     "PX4 adapter v0 accepts WAYPOINT_FOLLOWING only; "
                     f"got {cmd.mode}"
                 ),
+                validation_results=("CAPABILITY_NOT_SUPPORTED",),
             )
-        if not cmd.waypoints:
-            return CommandResult(
-                processing_state="REJECTED",
-                reason="INVALID_INPUT_PARAMETER",
-                reason_description="WAYPOINT_FOLLOWING requires waypoints",
-            )
+        rejected = validate_waypoint_path(
+            cmd.waypoints,
+            min_rel_alt_m=self._min_rel_alt_m,
+            max_rel_alt_m=self._max_rel_alt_m,
+            home_hae_m=self._home_hae_m(),
+        )
+        if rejected is not None:
+            return rejected
         try:
             self._execute_waypoint_following(cmd.waypoints)
         except Exception as exc:  # pylint: disable=broad-exception-caught
@@ -478,14 +527,55 @@ class Px4MavlinkAdapter(PlatformPort):
         return (FaultSnapshot(fault_id=self._fault_id),)
 
     def apply_system_management(self, *, qnh_kpa: float | None = None) -> str:
-        """Store QNH on the local TSPI snapshot. Always ``COMPLETED``.
+        """Write QNH to PX4 and the local TSPI snapshot.
 
-        *qnh_kpa* is converted to hPa (×10). Nothing is written to PX4.
+        *qnh_kpa* is converted to hPa (×10) and sent as
+        ``SENS_BARO_QNH``. Link down or a missing PARAM_VALUE is
+        ``REJECTED``.
         """
         if qnh_kpa is None:
             return "COMPLETED"
-        self._kollsman_hpa = float(qnh_kpa) * 10.0
+        hpa = float(qnh_kpa) * 10.0
+        if not self._link_ok():
+            return "REJECTED"
+        try:
+            self._set_qnh_hpa(hpa)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            LOGGER.warning("PX4 QNH PARAM_SET failed: %s", exc)
+            return "REJECTED"
+        self._kollsman_hpa = hpa
         return "COMPLETED"
+
+    def _set_qnh_hpa(self, hpa: float) -> None:
+        """PARAM_SET ``SENS_BARO_QNH`` and wait for PARAM_VALUE."""
+        # pylint: disable-next=import-outside-toplevel
+        from pymavlink import mavutil
+
+        conn = self._require_conn()
+        name = _QNH_PARAM.encode("ascii")
+        with self._io_lock:
+            conn.mav.param_set_send(
+                conn.target_system,
+                conn.target_component,
+                name,
+                float(hpa),
+                mavutil.mavlink.MAV_PARAM_TYPE_REAL32,
+            )
+            deadline = time.monotonic() + _QNH_ACK_TIMEOUT_S
+            while time.monotonic() < deadline:
+                msg = conn.recv_match(
+                    type="PARAM_VALUE", blocking=True, timeout=1.0
+                )
+                if msg is None:
+                    continue
+                param_id = getattr(msg, "param_id", b"")
+                if isinstance(param_id, bytes):
+                    param_id = param_id.split(b"\x00", 1)[0].decode(
+                        "ascii", errors="replace"
+                    )
+                if str(param_id).strip("\x00") == _QNH_PARAM:
+                    return
+        raise TimeoutError("Timed out waiting for SENS_BARO_QNH")
 
     def _link_ok(self) -> bool:
         """True when a HEARTBEAT or position update is newer than 10 s."""

@@ -6,7 +6,7 @@ from uuid import UUID
 
 from open_vi.codec.ns import SCHEMA_VERSION
 from open_vi.codec.xmlutil import el, id_type, message_envelope, tostring
-from open_vi.domain import ControlOffer, ControlReadiness
+from open_vi.domain import ControlOffer, ControlReadiness, FlightModeProfile
 from open_vi.identity import SystemIdentity
 
 
@@ -26,6 +26,9 @@ def build_flight_capability(
         capability_children.append(el("AcceptedInterface", text=iface))
     for cap_type in offer.capability_types:
         capability_children.append(el("CapabilityType", text=cap_type))
+    profile_el = _waypoint_performance_profile(offer.waypoint_profile)
+    if profile_el is not None:
+        capability_children.append(profile_el)
 
     data = el(
         "MessageData",
@@ -40,6 +43,46 @@ def build_flight_capability(
         object_state="NEW",
     )
     return tostring(root)
+
+
+def _waypoint_performance_profile(
+    profile: FlightModeProfile | None,
+):
+    """WaypointFollowingPerformanceProfile, or None when unset."""
+    if profile is None:
+        return None
+    kids = []
+    if profile.min_altitude_m is not None:
+        kids.append(
+            _altitude_limit(
+                "MinAltitude",
+                profile.min_altitude_m,
+                profile.altitude_ref,
+            )
+        )
+    if profile.max_altitude_m is not None:
+        kids.append(
+            _altitude_limit(
+                "MaxAltitude",
+                profile.max_altitude_m,
+                profile.altitude_ref,
+            )
+        )
+    if not kids:
+        return None
+    return el(
+        "FlightCapabilityPerformanceProfile",
+        el("WaypointFollowingPerformanceProfile", *kids),
+    )
+
+
+def _altitude_limit(tag: str, altitude_m: float, altitude_ref: str):
+    """MinAltitude / MaxAltitude with AltitudeReferenceType children."""
+    return el(
+        tag,
+        el("AltitudeReference", text=altitude_ref),
+        el("Altitude", text=f"{altitude_m:.3f}"),
+    )
 
 
 def build_flight_capability_status(

@@ -17,7 +17,7 @@ from open_vi.codec.route import (
     parse_route_validation_command,
 )
 from open_vi.domain import RouteActivationRequest, RouteActivationResult
-from open_vi.isolator.compliance import status_ladder
+from open_vi.isolator.compliance import STATUS_LADDER
 from open_vi.isolator.context import IsolatorContext
 
 LOGGER = logging.getLogger(__name__)
@@ -96,9 +96,8 @@ class RouteHandler:
                 ),
             )
             return
-        # Loose: PROCESSING→COMPLETED. Strict OPT Non-Terminal: +QUEUED.
         mid = result.progress_state or result.plan_state
-        for command_status in status_ladder(ctx):
+        for command_status in STATUS_LADDER:
             plan_state = (
                 result.plan_state if command_status == "COMPLETED" else mid
             )
@@ -217,7 +216,7 @@ class RouteHandler:
             ),
         )
         processing = "ACCEPTED"
-        for command_status in status_ladder(ctx):
+        for command_status in STATUS_LADDER:
             ctx.bus.publish(
                 MT_ROUTE_VALIDATION_STATUS,
                 build_route_plan_validation_command_status(

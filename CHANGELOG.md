@@ -5,9 +5,19 @@
 ### Removed
 
 - `compose/asb.yml`.
+- `COMPLIANCE_MODE`. Route, query, and control always publish
+  `QUEUED`, `PROCESSING`, then `COMPLETED`.
 
 ### Added
 
+- PX4 Flight Autonomy for waypoint following: envelope
+  validation with Volume `ValidationResult` reasons,
+  `WaypointFollowingPerformanceProfile` min/max altitude on
+  `MA_FlightCapability`, and `SENS_BARO_QNH` on
+  `MA_SystemManagementRequest`.
+- [docs/FEATURES.md](docs/FEATURES.md): ASK 5.0a Vehicle Interface
+  Volume coverage, structured as the volume's compliance IDs,
+  §1.2 interactions, and §1.3.1 MMS.
 - Activity UPDATE on `MA_FlightCommand`: Isolator matches the live
   `ActivityID`, Stub and PX4 replace the path without minting a new
   activity, and `MA_FlightActivity` is published as `UPDATED`.

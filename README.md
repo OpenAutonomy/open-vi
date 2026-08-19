@@ -75,6 +75,7 @@ schema version are in `src/open_vi/codec/ns.py`.
 Published at
 [openautonomy.github.io/open-vi](https://openautonomy.github.io/open-vi/).
 
+- [docs/FEATURES.md](docs/FEATURES.md) — ASK 5.0a VI coverage
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — layers, ports, and an example path
 - [docs/ISOLATOR.md](docs/ISOLATOR.md) — sequences, handlers, and `RouteStore`
 - [docs/PLATFORM.md](docs/PLATFORM.md) — `PlatformPort` methods
@@ -85,6 +86,7 @@ Published at
 
 ## FAQs
 
+1. [How much of the VI standard do we cover?](docs/FEATURES.md)
 1. [How is the Vehicle Interface put together?](docs/ARCHITECTURE.md)
 1. [How do I add a vehicle?](docs/ADDING_A_VEHICLE.md)
 1. [What does Isolator own versus the platform?](docs/ISOLATOR.md)

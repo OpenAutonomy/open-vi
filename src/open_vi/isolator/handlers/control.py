@@ -10,7 +10,7 @@ from open_vi.codec.control import (
     build_control_request_status,
     parse_control_request,
 )
-from open_vi.isolator.compliance import status_ladder
+from open_vi.isolator.compliance import STATUS_LADDER
 from open_vi.isolator.context import IsolatorContext
 
 LOGGER = logging.getLogger(__name__)
@@ -180,7 +180,7 @@ class ControlHandler:
         del approved
         schema = ctx.schema_version
         mode = ctx.message_mode
-        for state in status_ladder(ctx):
+        for state in STATUS_LADDER:
             ctx.bus.publish(
                 MT_CONTROL_REQUEST_STATUS,
                 build_control_request_status(

@@ -67,12 +67,13 @@ def test_acquire_publishes_status_and_assignment() -> None:
         ),
     )
     statuses = list(bus.published[MT_CONTROL_REQUEST_STATUS])
-    assert len(statuses) == 2
-    assert "PROCESSING" in statuses[0]
-    assert "PENDING" in statuses[0]
-    assert "COMPLETED" in statuses[1]
-    assert "APPROVED" in statuses[1]
-    assert request_id.hex in statuses[1].replace("-", "")
+    assert len(statuses) == 3
+    assert "QUEUED" in statuses[0]
+    assert "PROCESSING" in statuses[1]
+    assert "PENDING" in statuses[1]
+    assert "COMPLETED" in statuses[2]
+    assert "APPROVED" in statuses[2]
+    assert request_id.hex in statuses[2].replace("-", "")
     assignment = bus.published[MT_CONTROL_ASSIGNMENT][-1]
     assert local_name(parse_xml(assignment)) == "MA_ControlAssignment"
     assert "CAPABILITY_PRIMARY" in assignment

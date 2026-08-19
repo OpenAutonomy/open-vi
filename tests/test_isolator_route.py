@@ -71,7 +71,7 @@ def test_parse_by_mission_plan_activation_command() -> None:
     assert cmds[0].command_type == "PREPARE_FOR_UPLOAD"
 
 
-def test_by_mission_plan_activation_loose() -> None:
+def test_by_mission_plan_activation() -> None:
     bus = InMemoryAsb()
     iso = Isolator(
         bus,
@@ -88,12 +88,13 @@ def test_by_mission_plan_activation_loose() -> None:
             command_type="PREPARE_FOR_UPLOAD",
         ),
     )
-    assert len(bus.published[MT_ACTIVATION_STATUS]) == 2
-    assert "PROCESSING" in bus.published[MT_ACTIVATION_STATUS][0]
-    assert "COMPLETED" in bus.published[MT_ACTIVATION_STATUS][1]
+    assert len(bus.published[MT_ACTIVATION_STATUS]) == 3
+    assert "QUEUED" in bus.published[MT_ACTIVATION_STATUS][0]
+    assert "PROCESSING" in bus.published[MT_ACTIVATION_STATUS][1]
+    assert "COMPLETED" in bus.published[MT_ACTIVATION_STATUS][2]
 
 
-def test_convert_and_upload_route_loose() -> None:
+def test_convert_and_upload_route() -> None:
     bus = InMemoryAsb()
     platform = StubPlatform()
     iso = Isolator(
@@ -117,10 +118,10 @@ def test_convert_and_upload_route_loose() -> None:
             command_type="PREPARE_FOR_UPLOAD",
         ),
     )
-    assert len(bus.published[MT_ACTIVATION_STATUS]) == 2
-    assert "PROCESSING" in bus.published[MT_ACTIVATION_STATUS][0]
-    assert "COMPLETED" in bus.published[MT_ACTIVATION_STATUS][1]
-    assert "READY_FOR_UPLOAD" in bus.published[MT_ACTIVATION_STATUS][1]
+    assert len(bus.published[MT_ACTIVATION_STATUS]) == 3
+    assert "PROCESSING" in bus.published[MT_ACTIVATION_STATUS][1]
+    assert "COMPLETED" in bus.published[MT_ACTIVATION_STATUS][2]
+    assert "READY_FOR_UPLOAD" in bus.published[MT_ACTIVATION_STATUS][2]
 
     plan_xml = build_sample_route_plan(iso.identity, route_plan_id=route_id)
     assert parse_route_plan_id(plan_xml) == route_id
@@ -152,9 +153,9 @@ def test_convert_and_upload_route_loose() -> None:
         ),
     )
     statuses = list(bus.published[MT_ACTIVATION_STATUS])[before:]
-    assert len(statuses) == 2
-    assert "UPLOADED" in statuses[1]
-    assert "COMPLETED" in statuses[1]
+    assert len(statuses) == 3
+    assert "UPLOADED" in statuses[2]
+    assert "COMPLETED" in statuses[2]
 
 
 def test_prepare_for_route_activation() -> None:
@@ -181,9 +182,9 @@ def test_prepare_for_route_activation() -> None:
             command_type="PREPARE_FOR_ACTIVATION",
         ),
     )
-    assert len(bus.published[MT_ACTIVATION_STATUS]) == 2
-    assert "READY_FOR_ACTIVATION" in bus.published[MT_ACTIVATION_STATUS][1]
-    assert "COMPLETED" in bus.published[MT_ACTIVATION_STATUS][1]
+    assert len(bus.published[MT_ACTIVATION_STATUS]) == 3
+    assert "READY_FOR_ACTIVATION" in bus.published[MT_ACTIVATION_STATUS][2]
+    assert "COMPLETED" in bus.published[MT_ACTIVATION_STATUS][2]
 
 
 def test_activate_route() -> None:
@@ -213,12 +214,12 @@ def test_activate_route() -> None:
             command_type="ACTIVATE",
         ),
     )
-    assert len(bus.published[MT_ACTIVATION_STATUS]) == 2
-    assert "ACTIVATED" in bus.published[MT_ACTIVATION_STATUS][1]
-    assert "COMPLETED" in bus.published[MT_ACTIVATION_STATUS][1]
+    assert len(bus.published[MT_ACTIVATION_STATUS]) == 3
+    assert "ACTIVATED" in bus.published[MT_ACTIVATION_STATUS][2]
+    assert "COMPLETED" in bus.published[MT_ACTIVATION_STATUS][2]
 
 
-def test_receive_deactivate_route_loose() -> None:
+def test_receive_deactivate_route() -> None:
     bus = InMemoryAsb()
     route_id = uuid4()
     mission_id = uuid4()
@@ -297,9 +298,10 @@ def test_validate_stored_route_plan() -> None:
     assert local_name(parse_xml(validation)) == "RoutePlanValidation"
     assert "VALID" in validation
     statuses = list(bus.published[MT_ROUTE_VALIDATION_STATUS])
-    assert len(statuses) == 2
-    assert "PROCESSING" in statuses[0]
-    assert "COMPLETED" in statuses[1]
+    assert len(statuses) == 3
+    assert "QUEUED" in statuses[0]
+    assert "PROCESSING" in statuses[1]
+    assert "COMPLETED" in statuses[2]
     assert command_id.hex in statuses[1].replace("-", "")
 
 

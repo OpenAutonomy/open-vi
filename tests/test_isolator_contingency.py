@@ -140,7 +140,7 @@ def test_barometric_system_management_completed() -> None:
     assert abs(platform.get_vehicle_state().kollsman_hpa - 1013.25) < 0.01
 
 
-def test_query_data_request_two_statuses() -> None:
+def test_query_data_request_statuses() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
     attach_isolator(iso)
@@ -150,7 +150,8 @@ def test_query_data_request_two_statuses() -> None:
         build_sample_query_data_request(iso.identity, request_id=request_id),
     )
     statuses = list(bus.published[MT_QUERY_DATA_REQUEST_STATUS])
-    assert len(statuses) == 2
-    assert "PROCESSING" in statuses[0]
-    assert "COMPLETED" in statuses[1]
-    assert request_id.hex in statuses[1].replace("-", "")
+    assert len(statuses) == 3
+    assert "QUEUED" in statuses[0]
+    assert "PROCESSING" in statuses[1]
+    assert "COMPLETED" in statuses[2]
+    assert request_id.hex in statuses[2].replace("-", "")

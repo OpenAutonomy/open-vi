@@ -6,6 +6,16 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
+class FlightModeProfile:
+    """Altitude envelope for one advertised flight control mode."""
+
+    min_altitude_m: float | None = None
+    max_altitude_m: float | None = None
+    # AltitudeReferenceEnum: WGS_HAE | AGL | MSL | ALTITUDE_BAROMETRIC
+    altitude_ref: str = "AGL"
+
+
+@dataclass(frozen=True)
 class ControlOffer:
     """Control modes the platform is willing to advertise to MA."""
 
@@ -16,6 +26,7 @@ class ControlOffer:
     )
     capability_label: str = "flight-capability"
     accepted_interfaces: tuple[str, ...] = ("CAPABILITY_COMMAND",)
+    waypoint_profile: FlightModeProfile | None = None
 
 
 @dataclass(frozen=True)

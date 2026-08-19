@@ -73,9 +73,9 @@ UPDATE is the replan: it replaces the live path and republishes
 `MA_FlightActivity` as `UPDATED`. A second Capability NEW while an
 activity is live is rejected. ACTIVATE still does not call the vehicle.
 
-`COMPLIANCE_MODE=loose|strict` selects status-ladder length on route and
-query. Advertise, TSPI, the status package, and Stub contingencies are
-outbound-only (`publishers.py`), not handlers.
+Route, query, and control publish `QUEUED`, `PROCESSING`, then
+`COMPLETED`. Advertise, TSPI, the status package, and Stub
+contingencies are outbound-only (`publishers.py`), not handlers.
 
 Isolator does not import STOMP, ActiveMQ, MAVLink, or PX4. Vehicle
 backends implement `PlatformPort` ([PLATFORM.md](PLATFORM.md),

@@ -1,8 +1,0 @@
-# Not the live site. CI publishes MkDocs via GitHub Actions.
-# This only keeps the leftover Jekyll builder from parsing docs/.
-exclude:
-  - docs
-  - src
-  - tests
-  - compose
-  - scripts
