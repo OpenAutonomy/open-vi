@@ -14,7 +14,6 @@ theme:
 
 plugins:
   - search
-  - include-markdown
   - mkdocstrings:
       handlers:
         python:
@@ -52,6 +51,9 @@ nav:
 
 markdown_extensions:
   - admonition
+  - pymdownx.snippets:
+      check_paths: true
+      base_path: !relative $config_dir
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
