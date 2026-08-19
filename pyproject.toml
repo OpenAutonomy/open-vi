@@ -27,9 +27,16 @@ dev = [
     "pylint>=3.3",
     "pymavlink>=2.4.41",
 ]
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.27",
+    "mkdocs-include-markdown-plugin>=7.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/OpenAutonomy/open-vi"
+Documentation = "https://openautonomy.github.io/open-vi/"
 Repository = "https://github.com/OpenAutonomy/open-vi"
 Issues = "https://github.com/OpenAutonomy/open-vi/issues"
 

@@ -5,6 +5,9 @@ on:
     branches: [main, master]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -24,3 +27,55 @@ jobs:
         run: ./scripts/lint.sh
       - name: Test
         run: pytest -q
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[docs]"
+      - name: Build docs
+        run: mkdocs build --strict
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs
+          path: site
+          retention-days: 14
+
+  pages:
+    # HTML is already built in `docs`. This job only publishes it.
+    # Private repos, fork PRs, and feature branches keep the artifact.
+    if: >-
+      github.event_name == 'push'
+      && !github.event.repository.private
+      && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    needs: [test, docs]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: docs
+          path: site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+          name: github-pages-${{ github.run_attempt }}
+      - id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
+

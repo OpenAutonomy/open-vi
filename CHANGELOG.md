@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- MkDocs on GitHub Pages:
+  [openautonomy.github.io/open-vi](https://openautonomy.github.io/open-vi/).
+
 ## [0.1.0] - 2026-08-17
 
 First tagged source release. Canonical home is

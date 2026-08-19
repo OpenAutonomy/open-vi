@@ -1,0 +1,62 @@
+site_name: open-vi
+site_description: A-GRA ASK 5.0a Vehicle Interface
+site_url: https://openautonomy.github.io/open-vi/
+repo_url: https://github.com/OpenAutonomy/open-vi
+repo_name: OpenAutonomy/open-vi
+
+theme:
+  name: material
+  palette:
+    scheme: default
+  features:
+    - navigation.sections
+    - content.code.copy
+
+plugins:
+  - search
+  - include-markdown
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            members_order: source
+            merge_init_into_class: true
+            separate_signature: true
+            show_signature_annotations: true
+            show_root_heading: true
+            show_source: false
+            filters: ["!^_"]
+
+# Architecture links to ../SECURITY.md and compose paths for GitHub.
+validation:
+  omitted_files: warn
+  absolute_links: ignore
+  unrecognized_links: ignore
+  anchors: warn
+
+nav:
+  - Home: index.md
+  - Architecture: ARCHITECTURE.md
+  - Isolator: ISOLATOR.md
+  - Platform: PLATFORM.md
+  - Adding a vehicle: ADDING_A_VEHICLE.md
+  - Codec: CODEC.md
+  - ASB: ASB.md
+  - PX4: PX4.md
+  - API: api.md
+  - Security: SECURITY.md
+  - Contributing: CONTRIBUTING.md
+  - Changelog: CHANGELOG.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - tables
+  - toc:
+      permalink: true

@@ -69,6 +69,9 @@ schema version are in `src/open_vi/codec/ns.py`.
 
 ## Documentation
 
+Published at
+[openautonomy.github.io/open-vi](https://openautonomy.github.io/open-vi/).
+
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — layers, ports, and an example path
 - [docs/ISOLATOR.md](docs/ISOLATOR.md) — sequences, handlers, and `RouteStore`
 - [docs/PLATFORM.md](docs/PLATFORM.md) — `PlatformPort` methods
