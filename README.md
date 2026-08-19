@@ -53,7 +53,14 @@ docker compose -f compose/asb.yml up -d
 open-vi
 ```
 
-That is Stub on STOMP `:61613`. PX4 SITL is `--platform px4` once a
+Or the VI image on that broker:
+
+```bash
+docker compose -f compose/asb.yml -f compose/vi.yml up --build
+```
+
+CI publishes `ghcr.io/openautonomy/open-vi` from `main`. Either path
+is Stub on STOMP `:61613`. PX4 SITL is `--platform px4` once a
 vehicle is listening on `udpin:127.0.0.1:14540`. See
 [docs/PX4.md](docs/PX4.md).
 

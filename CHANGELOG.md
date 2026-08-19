@@ -6,6 +6,8 @@
 
 - MkDocs on GitHub Pages:
   [openautonomy.github.io/open-vi](https://openautonomy.github.io/open-vi/).
+- Container image on GHCR (`ghcr.io/openautonomy/open-vi`), built from
+  `Containerfile` on a public push to `main`.
 
 ## [0.1.0] - 2026-08-17
 

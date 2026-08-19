@@ -25,4 +25,5 @@ mkdocs serve
 ```
 
 CI runs `mkdocs build --strict`. A public push to `main` publishes
-[GitHub Pages](https://openautonomy.github.io/open-vi/).
+[GitHub Pages](https://openautonomy.github.io/open-vi/) and
+`ghcr.io/openautonomy/open-vi`.

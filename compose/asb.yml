@@ -1,5 +1,6 @@
 # Local Abstract Service Bus matching the official A-GRA test harness ports.
 # STOMP 61613 is what open-vi and the compliance harness use.
+# Pair with compose/vi.yml to run the VI image on this broker.
 services:
   activemq:
     image: apache/activemq-classic:6.1.2
