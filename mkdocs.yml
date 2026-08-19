@@ -28,7 +28,7 @@ plugins:
             show_source: false
             filters: ["!^_"]
 
-# Some pages link to ../SECURITY.md and compose paths for GitHub.
+# SECURITY.md lives at the repo root; docs pages use the GitHub URL.
 validation:
   omitted_files: warn
   absolute_links: ignore

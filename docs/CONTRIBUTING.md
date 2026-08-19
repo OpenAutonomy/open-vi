@@ -5,7 +5,7 @@ for the layers and [Adding a vehicle](ADDING_A_VEHICLE.md) if you are
 adding a backend.
 
 Found a vulnerability? Do not open a PR for it first — see the
-[security policy](../SECURITY.md).
+[security policy](https://github.com/OpenAutonomy/open-vi/blob/main/SECURITY.md).
 
 ```bash
 python3 -m venv .venv
