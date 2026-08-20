@@ -1,8 +1,8 @@
 # Features
 
 Coverage of the ASK 5.0a Vehicle Interface Volume (v. 5.0a, 21 APR
-2026). Rows follow that volume: interface compliance IDs, then each
-§1.2 interaction, then the §1.3.1 Minimum Message Set.
+2026). Sections follow that volume: §1.2 interactions, then §1.3
+compliance and the Minimum Message Set.
 
 This is Isolator coverage of the Core Mission Use Case unless a row
 names another MUC. `StubPlatform` is the default backend.
@@ -17,13 +17,6 @@ names another MUC. `StubPlatform` is the default backend.
 Volume §1.4 (Mission and Flight Autonomy Capabilities) allocates work
 to MA or FA. It is not a VI interface checklist, so it is not repeated
 here.
-
-## 1.3 Interface compliance
-
-| ID | Requirement | Status |
-| --- | --- | --- |
-| MA-L1-015 | Support the VI MMS for signals tagged `VI = 1` | Partial |
-| MA-L1-016 | Implement required VI feature-profile sequences (optional sequences excepted) | Partial |
 
 ## 1.2 Interface interactions
 
@@ -102,7 +95,14 @@ call the vehicle. Plans are opaque XML plus a hash.
 | --- | --- | --- | --- |
 | 1.2.7.1 | Validate Release Envelope | Not supported | No strike `TaskID` / release-envelope check. |
 
-## 1.3.1 VI MMS
+## 1.3 Interface compliance
+
+| ID | Requirement | Status |
+| --- | --- | --- |
+| MA-L1-015 | Support the VI MMS for signals tagged `VI = 1` | Partial |
+| MA-L1-016 | Implement required VI feature-profile sequences (optional sequences excepted) | Partial |
+
+### 1.3.1 VI MMS
 
 Direction is relative to VI. Core unless noted.
 
