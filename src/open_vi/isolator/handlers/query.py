@@ -6,6 +6,15 @@ import logging
 from uuid import uuid4
 
 from open_vi.codec.capability import build_flight_capability
+from open_vi.codec.mts import (
+    MT_AIRFIELD_REPORT,
+    MT_FILE_LOCATION,
+    MT_FILE_METADATA,
+    MT_FLIGHT_CAPABILITY,
+    MT_QUERY_DATA_REQUEST,
+    MT_QUERY_DATA_REQUEST_STATUS,
+    MT_ROUTE_PLAN,
+)
 from open_vi.codec.query import (
     build_airfield_report,
     build_query_data_request_status,
@@ -18,18 +27,8 @@ from open_vi.codec.route import (
 from open_vi.codec.status import parse_request_id
 from open_vi.isolator.compliance import STATUS_LADDER
 from open_vi.isolator.context import IsolatorContext
-from open_vi.isolator.handlers.route import (
-    MT_FILE_LOCATION,
-    MT_FILE_METADATA,
-    MT_ROUTE_PLAN,
-)
 
 LOGGER = logging.getLogger(__name__)
-
-MT_QUERY_DATA_REQUEST = "QueryDataRequest"
-MT_QUERY_DATA_REQUEST_STATUS = "QueryDataRequestStatus"
-MT_AIRFIELD_REPORT = "AirfieldReport"
-MT_FLIGHT_CAPABILITY = "MA_FlightCapability"
 
 _ALL_KINDS = ("capability", "route", "airfield")
 

@@ -7,6 +7,13 @@ from uuid import uuid4
 from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
 from open_vi.codec.command import build_sample_waypoint_command
+from open_vi.codec.mts import (
+    MT_FLIGHT_COMMAND,
+    MT_MA_TASK,
+    MT_TASK_COMMAND,
+    MT_TASK_COMMAND_STATUS,
+    MT_TASK_STATUS,
+)
 from open_vi.codec.task import (
     build_sample_task_command,
     parse_task_commands,
@@ -15,13 +22,6 @@ from open_vi.codec.xmlutil import local_name, parse_xml
 from open_vi.config import IsolatorConfig
 from open_vi.domain import ControlReadiness
 from open_vi.isolator import Isolator
-from open_vi.isolator.handlers.flight_command import MT_FLIGHT_COMMAND
-from open_vi.isolator.handlers.task import (
-    MT_MA_TASK,
-    MT_TASK_COMMAND,
-    MT_TASK_COMMAND_STATUS,
-    MT_TASK_STATUS,
-)
 from open_vi.platform import StubPlatform
 
 

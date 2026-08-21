@@ -22,6 +22,7 @@ Handlers import builders and parsers from submodules:
 ```python
 from open_vi.codec.capability import build_flight_capability
 from open_vi.codec.command import parse_flight_commands
+from open_vi.codec.mts import MT_FLIGHT_COMMAND
 from open_vi.domain import FlightCommandRequest
 ```
 
@@ -35,6 +36,7 @@ degrees. Convert at this boundary (`geo.py`).
 
 | Module | Message types |
 | --- | --- |
+| `mts.py` | UCI root names (`MT_*`) for Isolator and tests |
 | `capability.py` | `MA_FlightCapability`, `MA_FlightCapabilityStatus` |
 | `command.py` | `MA_FlightCommand`, status, activity |
 | `path.py` | Shared Path / Point2D waypoint parse and build |

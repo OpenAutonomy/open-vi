@@ -92,10 +92,12 @@ completion is `COMPLETED`; DEACTIVATE of an executing plan is
 `FAILED`. The status package republishes that family on the tick.
 
 Route, query, and control publish `QUEUED`, `PROCESSING`, then
-`COMPLETED`. Advertise, TSPI, the status package, and Stub
-contingencies are outbound-only (`publishers.py`), not handlers.
+`COMPLETED`. Advertise, TSPI, faults, subsystem status, and the
+status package are outbound-only (`publishers.py`), not handlers.
+Message-type names live in `open_vi.codec.mts`.
 
 Isolator does not import STOMP, ActiveMQ, MAVLink, or PX4. Vehicle
 backends implement `PlatformPort` ([PLATFORM.md](PLATFORM.md),
-[platforms](platforms/README.md)). Stub contingency injection stays
-off that ABC.
+[platforms](platforms/README.md)). Stub `inject_contingency` stays
+off that ABC. Isolator publishes whatever `snapshot()` and
+`get_faults()` already report.

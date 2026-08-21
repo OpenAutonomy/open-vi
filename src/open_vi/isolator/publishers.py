@@ -1,4 +1,4 @@
-"""Outbound advertise, status, TSPI, and Stub contingency publishes.
+"""Outbound advertise, status, and TSPI publishes.
 
 These are not handlers. Isolator calls them from ``start``, the tick
 loop, and test helpers. Each function reads
@@ -25,6 +25,22 @@ from open_vi.codec.control_status import (
     build_response_plan_execution_status,
     build_route_plan_execution_status,
 )
+from open_vi.codec.mts import (
+    MT_COMPONENT_STATUS,
+    MT_CONTROL_STATUS,
+    MT_FLIGHT_ACTIVITY,
+    MT_FLIGHT_CAPABILITY,
+    MT_FLIGHT_CAPABILITY_STATUS,
+    MT_FLIGHT_COMMAND_STATUS,
+    MT_MA_FAULT,
+    MT_MISSION_PLAN_EXECUTION_STATUS,
+    MT_NAVIGATION_REPORT,
+    MT_POSITION_REPORT_DETAILED,
+    MT_RESPONSE_PLAN_EXECUTION_STATUS,
+    MT_ROUTE_PLAN_EXECUTION_STATUS,
+    MT_SUBSYSTEM_STATUS,
+    MT_WEATHER_OBSERVATION,
+)
 from open_vi.codec.status import build_ma_fault, build_subsystem_status
 from open_vi.codec.vehicle_state import (
     build_component_status,
@@ -38,24 +54,8 @@ from open_vi.domain import (
     PlanExecutionSnapshot,
 )
 from open_vi.isolator.context import IsolatorContext
-from open_vi.isolator.handlers.flight_command import (
-    MT_FLIGHT_ACTIVITY,
-    MT_FLIGHT_COMMAND_STATUS,
-)
-from open_vi.isolator.handlers.heartbeat import MT_MA_FAULT, MT_SUBSYSTEM_STATUS
 
 LOGGER = logging.getLogger(__name__)
-
-MT_FLIGHT_CAPABILITY = "MA_FlightCapability"
-MT_FLIGHT_CAPABILITY_STATUS = "MA_FlightCapabilityStatus"
-MT_POSITION_REPORT_DETAILED = "MA_PositionReportDetailed"
-MT_WEATHER_OBSERVATION = "WeatherObservation"
-MT_NAVIGATION_REPORT = "NavigationReport"
-MT_COMPONENT_STATUS = "ComponentStatus"
-MT_CONTROL_STATUS = "ControlStatus"
-MT_RESPONSE_PLAN_EXECUTION_STATUS = "ResponsePlanExecutionStatus"
-MT_ROUTE_PLAN_EXECUTION_STATUS = "RoutePlanExecutionStatus"
-MT_MISSION_PLAN_EXECUTION_STATUS = "MA_MissionPlanExecutionStatus"
 
 
 def publish_command_updates(
@@ -191,14 +191,8 @@ def flight_activity_for_publish(ctx: IsolatorContext) -> FlightActivitySnapshot:
     )
 
 
-def advertise_control(ctx: IsolatorContext) -> None:
-    """Publish the control offer, then its readiness status.
-
-    Order is ``MA_FlightCapability`` then
-    ``MA_FlightCapabilityStatus``. Records
-    ``state.last_availability`` so the tick can skip a no-op republish
-    unless availability changed or ``tick_republish_status`` is on.
-    """
+def publish_flight_capability(ctx: IsolatorContext) -> None:
+    """Publish ``MA_FlightCapability`` from the current platform offer."""
     snap = ctx.platform.snapshot()
     ctx.bus.publish(
         MT_FLIGHT_CAPABILITY,
@@ -210,17 +204,19 @@ def advertise_control(ctx: IsolatorContext) -> None:
             mode=ctx.message_mode,
         ),
     )
-    ctx.bus.publish(
-        MT_FLIGHT_CAPABILITY_STATUS,
-        build_flight_capability_status(
-            ctx.identity,
-            snap.readiness,
-            capability_id=ctx.state.capability_id,
-            capability_label=snap.offer.capability_label,
-            schema_version=ctx.schema_version,
-            mode=ctx.message_mode,
-        ),
-    )
+
+
+def advertise_control(ctx: IsolatorContext) -> None:
+    """Publish the control offer, then its readiness status.
+
+    Order is ``MA_FlightCapability`` then
+    ``MA_FlightCapabilityStatus``. Records
+    ``state.last_availability`` so the tick can skip a no-op republish
+    unless availability changed or ``tick_republish_status`` is on.
+    """
+    publish_flight_capability(ctx)
+    publish_capability_status(ctx)
+    snap = ctx.platform.snapshot()
     ctx.state.last_availability = snap.readiness.availability
     LOGGER.info(
         "Advertised %s then %s (%s)",
@@ -245,6 +241,32 @@ def publish_capability_status(ctx: IsolatorContext) -> None:
             snap.readiness,
             capability_id=ctx.state.capability_id,
             capability_label=snap.offer.capability_label,
+            schema_version=ctx.schema_version,
+            mode=ctx.message_mode,
+        ),
+    )
+
+
+def publish_faults(ctx: IsolatorContext) -> None:
+    """Publish ``MA_Fault`` from ``platform.get_faults()``."""
+    ctx.bus.publish(
+        MT_MA_FAULT,
+        build_ma_fault(
+            ctx.identity,
+            ctx.platform.get_faults(),
+            schema_version=ctx.schema_version,
+            mode=ctx.message_mode,
+        ),
+    )
+
+
+def publish_subsystem_status(ctx: IsolatorContext) -> None:
+    """Publish ``SubsystemStatus`` from the platform."""
+    ctx.bus.publish(
+        MT_SUBSYSTEM_STATUS,
+        build_subsystem_status(
+            ctx.identity,
+            ctx.platform.get_subsystem_status(),
             schema_version=ctx.schema_version,
             mode=ctx.message_mode,
         ),
@@ -341,91 +363,3 @@ def publish_vehicle_state(ctx: IsolatorContext) -> None:
         "Published vehicle state: Activity, PositionReportDetailed, "
         "Weather, Navigation, ComponentStatus"
     )
-
-
-def publish_contingency(ctx: IsolatorContext, kind: str) -> None:
-    """Inject a Stub contingency and publish its Loose Direction1 outs.
-
-    Calls ``inject_contingency`` on the platform. That method is
-    Stub/harness-only and is not on
-    :class:`~open_vi.platform.port.PlatformPort` — vehicle
-    backends drive readiness through ``snapshot()`` instead.
-
-    ``MECHANICAL_DAMAGE`` publishes ``MA_Fault``.
-    ``SENSOR_FAILURE`` publishes ``SubsystemStatus`` then ``MA_Fault``.
-    ``COLLISION_AVOIDANCE`` publishes capability status then
-    capability (the reverse of :func:`advertise_control`).
-    ``CLEAR`` calls :func:`advertise_control`. Other *kind* values
-    raise ``ValueError``. A platform without ``inject_contingency``
-    raises ``TypeError``.
-    """
-    inject = getattr(ctx.platform, "inject_contingency", None)
-    if inject is None:
-        raise TypeError(
-            "Platform does not support contingency injection "
-            "(StubPlatform-only harness API)"
-        )
-    inject(kind)
-    kind_u = kind.upper()
-    schema = ctx.schema_version
-    mode = ctx.message_mode
-    bus = ctx.bus
-    if kind_u == "MECHANICAL_DAMAGE":
-        bus.publish(
-            MT_MA_FAULT,
-            build_ma_fault(
-                ctx.identity,
-                ctx.platform.get_faults(),
-                schema_version=schema,
-                mode=mode,
-            ),
-        )
-    elif kind_u == "SENSOR_FAILURE":
-        bus.publish(
-            MT_SUBSYSTEM_STATUS,
-            build_subsystem_status(
-                ctx.identity,
-                ctx.platform.get_subsystem_status(),
-                schema_version=schema,
-                mode=mode,
-            ),
-        )
-        bus.publish(
-            MT_MA_FAULT,
-            build_ma_fault(
-                ctx.identity,
-                ctx.platform.get_faults(),
-                schema_version=schema,
-                mode=mode,
-            ),
-        )
-    elif kind_u == "COLLISION_AVOIDANCE":
-        snap = ctx.platform.snapshot()
-        # Harness order: Status then Capability.
-        bus.publish(
-            MT_FLIGHT_CAPABILITY_STATUS,
-            build_flight_capability_status(
-                ctx.identity,
-                snap.readiness,
-                capability_id=ctx.state.capability_id,
-                capability_label=snap.offer.capability_label,
-                schema_version=schema,
-                mode=mode,
-            ),
-        )
-        bus.publish(
-            MT_FLIGHT_CAPABILITY,
-            build_flight_capability(
-                ctx.identity,
-                snap.offer,
-                capability_id=ctx.state.capability_id,
-                schema_version=schema,
-                mode=mode,
-            ),
-        )
-        ctx.state.last_availability = snap.readiness.availability
-    elif kind_u == "CLEAR":
-        advertise_control(ctx)
-    else:
-        raise ValueError(f"Unknown contingency kind: {kind}")
-    LOGGER.info("Published contingency outs for %s", kind_u)

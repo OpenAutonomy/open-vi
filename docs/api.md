@@ -24,6 +24,10 @@ Generated from source docstrings.
 
 ::: open_vi.asb.stomp_amq
 
+## Codec
+
+::: open_vi.codec.mts
+
 ## Isolator
 
 ::: open_vi.isolator

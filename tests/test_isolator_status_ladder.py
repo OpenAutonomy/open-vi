@@ -6,18 +6,16 @@ from uuid import uuid4
 
 from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
+from open_vi.codec.mts import (
+    MT_ACTIVATION_COMMAND,
+    MT_ACTIVATION_STATUS,
+    MT_QUERY_DATA_REQUEST,
+    MT_QUERY_DATA_REQUEST_STATUS,
+)
 from open_vi.codec.query import build_sample_query_data_request
 from open_vi.codec.route import build_sample_route_activation_command
 from open_vi.config import IsolatorConfig
 from open_vi.isolator import Isolator
-from open_vi.isolator.handlers.query import (
-    MT_QUERY_DATA_REQUEST,
-    MT_QUERY_DATA_REQUEST_STATUS,
-)
-from open_vi.isolator.handlers.route import (
-    MT_ACTIVATION_COMMAND,
-    MT_ACTIVATION_STATUS,
-)
 from open_vi.platform import StubPlatform
 
 

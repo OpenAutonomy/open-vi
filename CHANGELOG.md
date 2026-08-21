@@ -22,12 +22,17 @@
   `RouteStore.ingested_ids()` lists stored plans for query.
   `IsolatorState` keeps single-owner fields only. Publishers no
   longer write session state.
+- UCI message-type names live in `open_vi.codec.mts`. Handlers
+  and publishers import those constants instead of each other.
 - Platform docs live under `docs/platforms/{stub,px4}/` (README plus
   FEATURES). Isolator Volume coverage stays in
   [docs/FEATURES.md](docs/FEATURES.md).
 
 ### Removed
 
+- `Isolator.publish_contingency` and `publishers.publish_contingency`.
+  Stub `inject_contingency` stays on tests; Isolator publishes
+  faults, subsystem status, or capability from the platform.
 - `docs/PX4.md` (moved to `docs/platforms/px4/`).
 - `compose/asb.yml`.
 - `COMPLIANCE_MODE`. Route, query, and control always publish

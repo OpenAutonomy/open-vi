@@ -5,6 +5,16 @@ from __future__ import annotations
 import logging
 
 from open_vi.codec.capability import build_flight_capability_status
+from open_vi.codec.mts import (
+    MT_FLIGHT_CAPABILITY_STATUS,
+    MT_MA_FAULT,
+    MT_SERVICE_STATUS,
+    MT_SERVICE_STATUS_DATA_REQUEST,
+    MT_SERVICE_STATUS_DATA_REQUEST_STATUS,
+    MT_SUBSYSTEM_STATUS,
+    MT_SUBSYSTEM_STATUS_DATA_REQUEST,
+    MT_SUBSYSTEM_STATUS_DATA_REQUEST_STATUS,
+)
 from open_vi.codec.status import (
     build_ma_fault,
     build_service_status,
@@ -17,15 +27,6 @@ from open_vi.codec.status import (
 from open_vi.isolator.context import IsolatorContext
 
 LOGGER = logging.getLogger(__name__)
-
-MT_SERVICE_STATUS = "ServiceStatus"
-MT_SERVICE_STATUS_DATA_REQUEST = "ServiceStatusDataRequest"
-MT_SERVICE_STATUS_DATA_REQUEST_STATUS = "ServiceStatusDataRequestStatus"
-MT_SUBSYSTEM_STATUS = "SubsystemStatus"
-MT_SUBSYSTEM_STATUS_DATA_REQUEST = "SubsystemStatusDataRequest"
-MT_SUBSYSTEM_STATUS_DATA_REQUEST_STATUS = "SubsystemStatusDataRequestStatus"
-MT_MA_FAULT = "MA_Fault"
-MT_FLIGHT_CAPABILITY_STATUS = "MA_FlightCapabilityStatus"
 
 _HANDLED = {
     MT_SERVICE_STATUS,

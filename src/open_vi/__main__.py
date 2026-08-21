@@ -8,9 +8,9 @@ import os
 import sys
 
 from open_vi.asb import InMemoryAsb, StompActiveMqAdapter
+from open_vi.codec.mts import MT_FLIGHT_CAPABILITY
 from open_vi.config import AsbConfig, IsolatorConfig
 from open_vi.isolator import Isolator
-from open_vi.isolator.publishers import MT_FLIGHT_CAPABILITY
 from open_vi.platform import make_platform
 
 LOGGER = logging.getLogger("open_vi")

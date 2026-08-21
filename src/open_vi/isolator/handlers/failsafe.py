@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from open_vi.codec.mts import MT_MA_RESPONSE, MT_SYSTEM_NOTIFICATION
 from open_vi.codec.notification import (
     build_system_notification,
     parse_response_id,
@@ -11,9 +12,6 @@ from open_vi.codec.notification import (
 from open_vi.isolator.context import IsolatorContext
 
 LOGGER = logging.getLogger(__name__)
-
-MT_MA_RESPONSE = "MA_Response"
-MT_SYSTEM_NOTIFICATION = "MA_SystemNotification"
 
 
 class FailsafeHandler:

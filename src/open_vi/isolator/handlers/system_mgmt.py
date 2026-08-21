@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from open_vi.codec.mts import MT_SYSTEM_MGMT_REQUEST, MT_SYSTEM_MGMT_STATUS
 from open_vi.codec.status import parse_request_id
 from open_vi.codec.system_mgmt import (
     build_system_management_request_status,
@@ -12,9 +13,6 @@ from open_vi.codec.system_mgmt import (
 from open_vi.isolator.context import IsolatorContext
 
 LOGGER = logging.getLogger(__name__)
-
-MT_SYSTEM_MGMT_REQUEST = "MA_SystemManagementRequest"
-MT_SYSTEM_MGMT_STATUS = "MA_SystemManagementRequestStatus"
 
 
 class SystemManagementHandler:

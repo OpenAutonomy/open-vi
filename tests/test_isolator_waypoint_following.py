@@ -13,6 +13,12 @@ from open_vi.codec.command import (
     parse_flight_commands,
 )
 from open_vi.codec.geo import deg_to_rad, format_uci_angle, rad_to_deg
+from open_vi.codec.mts import (
+    MT_FLIGHT_ACTIVITY,
+    MT_FLIGHT_COMMAND,
+    MT_FLIGHT_COMMAND_STATUS,
+    MT_MA_TASK,
+)
 from open_vi.codec.xmlutil import (
     el,
     id_type,
@@ -25,12 +31,6 @@ from open_vi.config import IsolatorConfig
 from open_vi.domain import ControlReadiness, Waypoint
 from open_vi.identity import SystemIdentity
 from open_vi.isolator import Isolator
-from open_vi.isolator.handlers.flight_command import (
-    MT_FLIGHT_ACTIVITY,
-    MT_FLIGHT_COMMAND,
-    MT_FLIGHT_COMMAND_STATUS,
-)
-from open_vi.isolator.handlers.task import MT_MA_TASK
 from open_vi.platform import StubPlatform
 
 

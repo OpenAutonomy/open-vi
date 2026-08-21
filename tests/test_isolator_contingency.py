@@ -6,32 +6,27 @@ from uuid import uuid4
 
 from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
+from open_vi.codec.mts import (
+    MT_CONTROL_STATUS,
+    MT_FLIGHT_CAPABILITY,
+    MT_FLIGHT_CAPABILITY_STATUS,
+    MT_MA_FAULT,
+    MT_MA_RESPONSE,
+    MT_QUERY_DATA_REQUEST,
+    MT_QUERY_DATA_REQUEST_STATUS,
+    MT_RESPONSE_PLAN_EXECUTION_STATUS,
+    MT_ROUTE_PLAN_EXECUTION_STATUS,
+    MT_SUBSYSTEM_STATUS,
+    MT_SYSTEM_MGMT_REQUEST,
+    MT_SYSTEM_MGMT_STATUS,
+    MT_SYSTEM_NOTIFICATION,
+)
 from open_vi.codec.notification import build_sample_ma_response
 from open_vi.codec.query import build_sample_query_data_request
 from open_vi.codec.system_mgmt import build_sample_system_management_request
 from open_vi.codec.xmlutil import local_name, parse_xml
 from open_vi.config import IsolatorConfig
 from open_vi.isolator import Isolator
-from open_vi.isolator.handlers.failsafe import (
-    MT_MA_RESPONSE,
-    MT_SYSTEM_NOTIFICATION,
-)
-from open_vi.isolator.handlers.heartbeat import MT_MA_FAULT, MT_SUBSYSTEM_STATUS
-from open_vi.isolator.handlers.query import (
-    MT_QUERY_DATA_REQUEST,
-    MT_QUERY_DATA_REQUEST_STATUS,
-)
-from open_vi.isolator.handlers.system_mgmt import (
-    MT_SYSTEM_MGMT_REQUEST,
-    MT_SYSTEM_MGMT_STATUS,
-)
-from open_vi.isolator.publishers import (
-    MT_CONTROL_STATUS,
-    MT_FLIGHT_CAPABILITY,
-    MT_FLIGHT_CAPABILITY_STATUS,
-    MT_RESPONSE_PLAN_EXECUTION_STATUS,
-    MT_ROUTE_PLAN_EXECUTION_STATUS,
-)
 from open_vi.platform import StubPlatform
 
 
@@ -49,9 +44,11 @@ def _iso(bus: InMemoryAsb, platform: StubPlatform | None = None) -> Isolator:
 
 def test_mechanical_damage_publishes_fault() -> None:
     bus = InMemoryAsb()
-    iso = _iso(bus)
+    platform = StubPlatform()
+    iso = _iso(bus, platform)
     attach_isolator(iso)
-    iso.publish_contingency("MECHANICAL_DAMAGE")
+    platform.inject_contingency("MECHANICAL_DAMAGE")
+    iso.publish_faults_once()
     assert len(bus.published[MT_MA_FAULT]) == 1
     fault = bus.published[MT_MA_FAULT][-1]
     assert local_name(parse_xml(fault)) == "MA_Fault"
@@ -61,9 +58,12 @@ def test_mechanical_damage_publishes_fault() -> None:
 
 def test_sensor_failure_publishes_subsystem_then_fault() -> None:
     bus = InMemoryAsb()
-    iso = _iso(bus)
+    platform = StubPlatform()
+    iso = _iso(bus, platform)
     attach_isolator(iso)
-    iso.publish_contingency("SENSOR_FAILURE")
+    platform.inject_contingency("SENSOR_FAILURE")
+    iso.publish_subsystem_status_once()
+    iso.publish_faults_once()
     assert len(bus.published[MT_SUBSYSTEM_STATUS]) == 1
     assert "DEGRADED" in bus.published[MT_SUBSYSTEM_STATUS][-1]
     assert len(bus.published[MT_MA_FAULT]) == 1
@@ -72,9 +72,12 @@ def test_sensor_failure_publishes_subsystem_then_fault() -> None:
 
 def test_collision_avoidance_status_then_capability() -> None:
     bus = InMemoryAsb()
-    iso = _iso(bus)
+    platform = StubPlatform()
+    iso = _iso(bus, platform)
     attach_isolator(iso)
-    iso.publish_contingency("COLLISION_AVOIDANCE")
+    platform.inject_contingency("COLLISION_AVOIDANCE")
+    iso.publish_capability_status_once()
+    iso.publish_flight_capability_once()
     assert len(bus.published[MT_FLIGHT_CAPABILITY_STATUS]) == 1
     status = bus.published[MT_FLIGHT_CAPABILITY_STATUS][-1]
     assert "UNAVAILABLE" in status

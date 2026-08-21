@@ -10,16 +10,17 @@ from open_vi.codec.command import (
     build_flight_command_status,
     parse_flight_commands,
 )
+from open_vi.codec.mts import (
+    MT_FLIGHT_ACTIVITY,
+    MT_FLIGHT_COMMAND,
+    MT_FLIGHT_COMMAND_STATUS,
+    MT_MA_TASK,
+)
 from open_vi.codec.task import build_ma_task
 from open_vi.domain import CommandResult, FlightCommandRequest, is_live_activity
 from open_vi.isolator.context import IsolatorContext
-from open_vi.isolator.handlers.task import MT_MA_TASK
 
 LOGGER = logging.getLogger(__name__)
-
-MT_FLIGHT_COMMAND = "MA_FlightCommand"
-MT_FLIGHT_COMMAND_STATUS = "MA_FlightCommandStatus"
-MT_FLIGHT_ACTIVITY = "MA_FlightActivity"
 
 
 class FlightCommandHandler:

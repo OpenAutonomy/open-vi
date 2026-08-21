@@ -6,32 +6,26 @@ import pytest
 
 from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb, topic_dest
+from open_vi.codec.mts import (
+    MT_ACTIVATION_COMMAND,
+    MT_CONTROL_REQUEST,
+    MT_FLIGHT_COMMAND,
+    MT_MA_RESPONSE,
+    MT_QUERY_DATA_REQUEST,
+    MT_QUERY_DATA_REQUEST_STATUS,
+    MT_ROUTE_PLAN,
+    MT_ROUTE_VALIDATION_COMMAND,
+    MT_SERVICE_STATUS,
+    MT_SERVICE_STATUS_DATA_REQUEST,
+    MT_SUBSYSTEM_STATUS_DATA_REQUEST,
+    MT_SYSTEM_MGMT_REQUEST,
+    MT_SYSTEM_NOTIFICATION,
+    MT_TASK_COMMAND,
+)
 from open_vi.codec.notification import build_sample_ma_response
 from open_vi.codec.xmlutil import el, message_envelope, tostring
 from open_vi.config import IsolatorConfig
 from open_vi.isolator import Isolator
-from open_vi.isolator.handlers.control import MT_CONTROL_REQUEST
-from open_vi.isolator.handlers.failsafe import (
-    MT_MA_RESPONSE,
-    MT_SYSTEM_NOTIFICATION,
-)
-from open_vi.isolator.handlers.flight_command import MT_FLIGHT_COMMAND
-from open_vi.isolator.handlers.heartbeat import (
-    MT_SERVICE_STATUS,
-    MT_SERVICE_STATUS_DATA_REQUEST,
-    MT_SUBSYSTEM_STATUS_DATA_REQUEST,
-)
-from open_vi.isolator.handlers.query import (
-    MT_QUERY_DATA_REQUEST,
-    MT_QUERY_DATA_REQUEST_STATUS,
-)
-from open_vi.isolator.handlers.route import (
-    MT_ACTIVATION_COMMAND,
-    MT_ROUTE_PLAN,
-    MT_ROUTE_VALIDATION_COMMAND,
-)
-from open_vi.isolator.handlers.system_mgmt import MT_SYSTEM_MGMT_REQUEST
-from open_vi.isolator.handlers.task import MT_TASK_COMMAND
 from open_vi.platform import StubPlatform
 
 _EXPECTED_INBOUND = frozenset(
@@ -168,21 +162,32 @@ def test_query_missing_request_id_drops() -> None:
 
 def test_contingency_clear_readvertises() -> None:
     bus = InMemoryAsb()
-    iso = _iso(bus)
+    platform = StubPlatform()
+    iso = Isolator(
+        bus,
+        platform=platform,
+        config=IsolatorConfig(
+            tick_republish_status=False,
+            publish_vehicle_state=False,
+            publish_status_package=False,
+        ),
+    )
     attach_isolator(iso)
-    iso.publish_contingency("COLLISION_AVOIDANCE")
+    platform.inject_contingency("COLLISION_AVOIDANCE")
+    iso.publish_capability_status_once()
+    iso.publish_flight_capability_once()
     before = len(bus.published.get("MA_FlightCapability", ()))
-    iso.publish_contingency("CLEAR")
+    platform.inject_contingency("CLEAR")
+    iso.advertise_once()
     after = len(bus.published.get("MA_FlightCapability", ()))
     assert after > before
     assert "AVAILABLE" in bus.published["MA_FlightCapabilityStatus"][-1]
 
 
 def test_contingency_unknown_kind_raises() -> None:
-    bus = InMemoryAsb()
-    iso = _iso(bus)
+    platform = StubPlatform()
     with pytest.raises(ValueError, match="Unknown contingency"):
-        iso.publish_contingency("NOT_A_REAL_KIND")
+        platform.inject_contingency("NOT_A_REAL_KIND")
 
 
 def test_command_path_via_attach() -> None:
@@ -190,10 +195,7 @@ def test_command_path_via_attach() -> None:
     from uuid import uuid4
 
     from open_vi.codec.command import build_sample_waypoint_command
-    from open_vi.isolator.handlers.flight_command import (
-        MT_FLIGHT_ACTIVITY,
-        MT_FLIGHT_COMMAND_STATUS,
-    )
+    from open_vi.codec.mts import MT_FLIGHT_ACTIVITY, MT_FLIGHT_COMMAND_STATUS
 
     bus = InMemoryAsb()
     iso = _iso(bus)

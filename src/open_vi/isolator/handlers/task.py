@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import logging
 
+from open_vi.codec.mts import (
+    MT_TASK_COMMAND,
+    MT_TASK_COMMAND_STATUS,
+    MT_TASK_STATUS,
+)
 from open_vi.codec.task import (
     build_task_command_status,
     build_task_status,
@@ -12,11 +17,6 @@ from open_vi.codec.task import (
 from open_vi.isolator.context import IsolatorContext
 
 LOGGER = logging.getLogger(__name__)
-
-MT_TASK_COMMAND = "MA_TaskCommand"
-MT_TASK_COMMAND_STATUS = "MA_TaskCommandStatus"
-MT_TASK_STATUS = "TaskStatus"
-MT_MA_TASK = "MA_Task"
 
 _EXECUTION_FOR_COMMAND = {
     "ACCEPTED": "EXECUTING",

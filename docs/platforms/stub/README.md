@@ -38,8 +38,10 @@ on the offer.
 `inject_contingency` is Stub-only and is not on `PlatformPort`.
 `MECHANICAL_DAMAGE` sets a fault. `SENSOR_FAILURE` sets a fault and
 `DEGRADED`. `COLLISION_AVOIDANCE` marks the offer `UNAVAILABLE` /
-`CONSTRAINT_COLLISION_AVOIDANCE`. `CLEAR` restores operate. Isolator
-publishes the matching outs via `publishers.publish_contingency`.
+`CONSTRAINT_COLLISION_AVOIDANCE`. `CLEAR` restores operate. Tests
+then call Isolator publish helpers (`publish_faults_once`,
+`advertise_once`, …) so Isolator only emits what the platform
+already reports.
 
 ## Run
 

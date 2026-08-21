@@ -6,6 +6,18 @@ import logging
 from uuid import uuid4
 
 from open_vi.codec.command import build_flight_activity
+from open_vi.codec.mts import (
+    MT_ACTIVATION_COMMAND,
+    MT_ACTIVATION_STATUS,
+    MT_FILE_LOCATION,
+    MT_FILE_METADATA,
+    MT_FLIGHT_ACTIVITY,
+    MT_ROUTE_PLAN,
+    MT_ROUTE_VALIDATION,
+    MT_ROUTE_VALIDATION_COMMAND,
+    MT_ROUTE_VALIDATION_STATUS,
+    MT_SYSTEM_NOTIFICATION,
+)
 from open_vi.codec.notification import build_system_notification
 from open_vi.codec.route import (
     build_file_location_for_route,
@@ -28,19 +40,8 @@ from open_vi.domain import (
 from open_vi.isolator import publishers
 from open_vi.isolator.compliance import STATUS_LADDER
 from open_vi.isolator.context import IsolatorContext
-from open_vi.isolator.handlers.flight_command import MT_FLIGHT_ACTIVITY
 
 LOGGER = logging.getLogger(__name__)
-
-MT_ACTIVATION_COMMAND = "MA_MissionPlanActivationCommand"
-MT_ACTIVATION_STATUS = "MA_MissionPlanActivationCommandStatus"
-MT_ROUTE_PLAN = "MA_RoutePlan"
-MT_SYSTEM_NOTIFICATION = "MA_SystemNotification"
-MT_FILE_LOCATION = "FileLocation"
-MT_FILE_METADATA = "FileMetadata"
-MT_ROUTE_VALIDATION_COMMAND = "RoutePlanValidationCommand"
-MT_ROUTE_VALIDATION = "RoutePlanValidation"
-MT_ROUTE_VALIDATION_STATUS = "RoutePlanValidationCommandStatus"
 
 
 class RouteHandler:

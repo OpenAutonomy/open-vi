@@ -6,6 +6,15 @@ from uuid import uuid4
 
 from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
+from open_vi.codec.mts import (
+    MT_AIRFIELD_REPORT,
+    MT_FILE_LOCATION,
+    MT_FILE_METADATA,
+    MT_FLIGHT_CAPABILITY,
+    MT_QUERY_DATA_REQUEST,
+    MT_QUERY_DATA_REQUEST_STATUS,
+    MT_ROUTE_PLAN,
+)
 from open_vi.codec.query import (
     build_sample_query_data_request,
     parse_query_kinds,
@@ -14,17 +23,6 @@ from open_vi.codec.route import build_sample_route_plan
 from open_vi.codec.xmlutil import local_name, parse_xml
 from open_vi.config import IsolatorConfig
 from open_vi.isolator import Isolator
-from open_vi.isolator.handlers.query import (
-    MT_AIRFIELD_REPORT,
-    MT_FLIGHT_CAPABILITY,
-    MT_QUERY_DATA_REQUEST,
-    MT_QUERY_DATA_REQUEST_STATUS,
-)
-from open_vi.isolator.handlers.route import (
-    MT_FILE_LOCATION,
-    MT_FILE_METADATA,
-    MT_ROUTE_PLAN,
-)
 from open_vi.platform import StubPlatform
 
 

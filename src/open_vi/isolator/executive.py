@@ -171,12 +171,21 @@ class Isolator:
         """Publish ControlStatus, execution status, and SubsystemStatus."""
         publishers.publish_status_package(self.ctx)
 
-    def publish_contingency(self, kind: str) -> None:
-        """Inject a Stub contingency and publish its Loose Direction1 outs.
+    def publish_faults_once(self) -> None:
+        """Publish ``MA_Fault`` from the platform fault list."""
+        publishers.publish_faults(self.ctx)
 
-        Stays off :class:`PlatformPort`. Only meaningful with Stub.
-        """
-        publishers.publish_contingency(self.ctx, kind)
+    def publish_subsystem_status_once(self) -> None:
+        """Publish ``SubsystemStatus`` from the platform."""
+        publishers.publish_subsystem_status(self.ctx)
+
+    def publish_capability_status_once(self) -> None:
+        """Publish ``MA_FlightCapabilityStatus`` only."""
+        publishers.publish_capability_status(self.ctx)
+
+    def publish_flight_capability_once(self) -> None:
+        """Publish ``MA_FlightCapability`` only."""
+        publishers.publish_flight_capability(self.ctx)
 
     def publish_vehicle_state_once(self) -> None:
         """Publish the five Receive Vehicle State Data outs."""

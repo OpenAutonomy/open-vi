@@ -10,14 +10,15 @@ from open_vi.codec.control import (
     build_control_request_status,
     parse_control_request,
 )
+from open_vi.codec.mts import (
+    MT_CONTROL_ASSIGNMENT,
+    MT_CONTROL_REQUEST,
+    MT_CONTROL_REQUEST_STATUS,
+)
 from open_vi.isolator.compliance import STATUS_LADDER
 from open_vi.isolator.context import IsolatorContext
 
 LOGGER = logging.getLogger(__name__)
-
-MT_CONTROL_REQUEST = "MA_ControlRequest"
-MT_CONTROL_REQUEST_STATUS = "MA_ControlRequestStatus"
-MT_CONTROL_ASSIGNMENT = "MA_ControlAssignment"
 
 _APPROVAL_FOR_LADDER = {
     "QUEUED": "PENDING",

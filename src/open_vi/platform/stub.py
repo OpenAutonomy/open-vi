@@ -263,8 +263,8 @@ class StubPlatform(PlatformPort):
         ``CLEAR`` restores operate, a cleared fault, and
         ``AVAILABLE``. Other *kind* values raise ``ValueError``.
 
-        Isolator publishes the matching outs via
-        ``publishers.publish_contingency``. This method is not on
+        Tests publish the matching outs from
+        ``get_faults()`` / ``snapshot()``. This method is not on
         :class:`PlatformPort`.
         """
         kind_u = kind.upper()

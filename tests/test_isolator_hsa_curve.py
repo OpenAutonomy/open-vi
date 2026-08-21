@@ -13,15 +13,15 @@ from open_vi.codec.command import (
     build_sample_hsa_csa_command,
     parse_flight_commands,
 )
-from open_vi.codec.xmlutil import local_name, parse_xml
-from open_vi.config import IsolatorConfig
-from open_vi.identity import SystemIdentity
-from open_vi.isolator import Isolator
-from open_vi.isolator.handlers.flight_command import (
+from open_vi.codec.mts import (
     MT_FLIGHT_ACTIVITY,
     MT_FLIGHT_COMMAND,
     MT_FLIGHT_COMMAND_STATUS,
 )
+from open_vi.codec.xmlutil import local_name, parse_xml
+from open_vi.config import IsolatorConfig
+from open_vi.identity import SystemIdentity
+from open_vi.isolator import Isolator
 from open_vi.platform import StubPlatform
 
 
