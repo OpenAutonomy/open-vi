@@ -9,6 +9,7 @@ from open_vi.asb import InMemoryAsb
 from open_vi.codec.mts import (
     MT_ACTIVATION_COMMAND,
     MT_ACTIVATION_STATUS,
+    MT_MISSION_PLAN_ACTIVATION_STATUS,
     MT_QUERY_DATA_REQUEST,
     MT_QUERY_DATA_REQUEST_STATUS,
 )
@@ -74,6 +75,8 @@ def test_route_deactivate_single_status() -> None:
     )
     assert len(bus.published[MT_ACTIVATION_STATUS]) == 1
     assert "COMPLETED" in bus.published[MT_ACTIVATION_STATUS][0]
+    assert len(bus.published[MT_MISSION_PLAN_ACTIVATION_STATUS]) == 1
+    assert "DEACTIVATED" in bus.published[MT_MISSION_PLAN_ACTIVATION_STATUS][0]
 
 
 def test_query_three_statuses() -> None:

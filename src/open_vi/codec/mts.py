@@ -32,7 +32,8 @@ MT_ROUTE_VALIDATION_COMMAND = "RoutePlanValidationCommand"
 MT_ROUTE_VALIDATION = "RoutePlanValidation"
 MT_ROUTE_VALIDATION_STATUS = "RoutePlanValidationCommandStatus"
 
-# Plan execution
+# Plan execution / activation state
+MT_MISSION_PLAN_ACTIVATION_STATUS = "MissionPlanActivationStatus"
 MT_RESPONSE_PLAN_EXECUTION_STATUS = "ResponsePlanExecutionStatus"
 MT_ROUTE_PLAN_EXECUTION_STATUS = "RoutePlanExecutionStatus"
 MT_MISSION_PLAN_EXECUTION_STATUS = "MA_MissionPlanExecutionStatus"
@@ -90,6 +91,7 @@ __all__ = [
     "MT_MA_FAULT",
     "MT_MA_RESPONSE",
     "MT_MA_TASK",
+    "MT_MISSION_PLAN_ACTIVATION_STATUS",
     "MT_MISSION_PLAN_EXECUTION_STATUS",
     "MT_NAVIGATION_REPORT",
     "MT_POSITION_REPORT_DETAILED",

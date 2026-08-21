@@ -40,6 +40,9 @@
 
 ### Added
 
+- Inbound route DEACTIVATE publishes `MissionPlanActivationStatus`
+  (`DEACTIVATED`) for the mission and route plan. Completes
+  Volume §1.2.5.4 Receive Deactivate Route.
 - PX4 `HSA_CSA`: Isolator parses heading / speed / altitude onto
   `FlightCommandRequest`; `Px4MavlinkAdapter` flies an offboard
   hold (`GROUNDSPEED`, `TRUE_NORTH`, AGL/HAE). Curve following

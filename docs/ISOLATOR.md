@@ -73,7 +73,7 @@ concern: parse, then `RouteStore` and/or `PlatformPort`, then publish.
 | --- | --- | --- |
 | `flight_command` | `MA_FlightCommand` | `MA_FlightCommandStatus` (and `MA_FlightActivity` if accepted; `MA_Task` if rejected) |
 | `heartbeat` | `ServiceStatus`, `ServiceStatusDataRequest`, `SubsystemStatusDataRequest` | Matching status / request-status |
-| `route` | `MA_MissionPlanActivationCommand`, `MA_RoutePlan`, `RoutePlanValidationCommand` | Activation status, notification, File*, validation (`MA_FlightActivity` on ACTIVATE) |
+| `route` | `MA_MissionPlanActivationCommand`, `MA_RoutePlan`, `RoutePlanValidationCommand` | Activation status, notification, File*, validation (`MA_FlightActivity` on ACTIVATE; `MissionPlanActivationStatus` on DEACTIVATE) |
 | `failsafe` | `MA_Response` | `MA_SystemNotification` |
 | `system_mgmt` | `MA_SystemManagementRequest` | `MA_SystemManagementRequestStatus` |
 | `query` | `QueryDataRequest` | `QueryDataRequestStatus` plus capability, File*/`MA_RoutePlan`, or `AirfieldReport` |
@@ -89,7 +89,9 @@ publish `MA_FlightCommand` / `MA_FlightCommandStatus`. It publishes
 `ResponsePlanExecutionStatus`, `RoutePlanExecutionStatus`, and
 `MA_MissionPlanExecutionStatus` as `EXECUTING`. Route-sourced
 completion is `COMPLETED`; DEACTIVATE of an executing plan is
-`FAILED`. The status package republishes that family on the tick.
+`FAILED`. Inbound DEACTIVATE also publishes
+`MissionPlanActivationStatus` as `DEACTIVATED`. The status package
+republishes the execution family on the tick.
 
 Route, query, and control publish `QUEUED`, `PROCESSING`, then
 `COMPLETED`. Advertise, TSPI, faults, subsystem status, and the

@@ -302,6 +302,45 @@ def build_route_activation_status(
     return tostring(root)
 
 
+def build_mission_plan_activation_status(
+    identity: SystemIdentity,
+    *,
+    mission_plan_id: UUID,
+    plan_activation_state: str,
+    route_plan_id: UUID | None = None,
+    schema_version: str = SCHEMA_VERSION,
+    mode: str = "SIMULATION",
+) -> bytes:
+    """Build ``MissionPlanActivationStatus`` for a mission and route.
+
+    *plan_activation_state* is a ``PlanActivationStateEnum`` token
+    (``DEACTIVATED`` after inbound DEACTIVATE). When *route_plan_id*
+    is set, ``SubPlanActivationState`` lists that route in the same
+    state.
+    """
+    children = [
+        id_type("MissionPlanID", mission_plan_id),
+        el("PlanActivationState", text=plan_activation_state),
+    ]
+    if route_plan_id is not None:
+        children.append(
+            el(
+                "SubPlanActivationState",
+                el("ActivationState", text=plan_activation_state),
+                el("Plans", id_type("RoutePlanID", route_plan_id)),
+            )
+        )
+    data = el("MessageData", *children)
+    root = message_envelope(
+        "MissionPlanActivationStatus",
+        identity,
+        data,
+        schema_version=schema_version,
+        mode=mode,
+    )
+    return tostring(root)
+
+
 def build_file_metadata_for_route(
     identity: SystemIdentity,
     stored: StoredRoutePlan,

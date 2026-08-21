@@ -71,7 +71,7 @@ when the platform accepts.
 | 1.2.5.1 | Activate Route | Supported | Parses the stored path; submits Capability NEW or Activity UPDATE. Publishes `MA_FlightActivity`. Taxi, ATC hold, and payload actions are not implemented. |
 | 1.2.5.2 | Convert and Upload Route | Partial | Stores `MA_RoutePlan`, notifies, and emits File*. No native VMS conversion. |
 | 1.2.5.3 | Prepare for Route Activation | Supported | Isolator state `READY_FOR_ACTIVATION`. |
-| 1.2.5.4 | Receive Deactivate Route | Partial | DEACTIVATE from ready is store-only. From ACTIVATED, Capability CANCEL clears the live activity and publishes `FAILED` execution status. No `MissionPlanActivationStatus`. |
+| 1.2.5.4 | Receive Deactivate Route | Supported | DEACTIVATE from ready is store-only. From ACTIVATED, Capability CANCEL clears the live activity and publishes `FAILED` execution status. Both publish `MissionPlanActivationStatus` as `DEACTIVATED`. |
 | 1.2.5.5 | Validate Route Plan | Partial | VALID if stored XML parses to a finite non-empty path, else INVALID. `WeatherAreaData` is ignored. Envelope rejects stay on ACTIVATE (backend). |
 | 1.2.5.6 | VI Deactivate Route | Not supported | No VI-initiated `MissionPlanActivationStatus` / `RoutePlanExecutionStatus` abort. |
 
@@ -140,7 +140,7 @@ Direction is relative to VI. Core unless noted.
 | MA_TaskCommand | in | Supported | |
 | MA_TaskCommandStatus | out | Supported | |
 | MA_Task | inout | Partial | Reject suggest only |
-| MissionPlanActivationStatus | out | Not supported | |
+| MissionPlanActivationStatus | out | Partial | On inbound DEACTIVATE (`DEACTIVATED`). No VI-initiated abort. |
 | NavigationReport | out | Partial | Percent; no fuel mass/duration |
 | QueryDataRequest | in | Partial | Capability, route, airfield |
 | QueryDataRequestStatus | out | Partial | No `Result` |

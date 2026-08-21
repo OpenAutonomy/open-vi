@@ -12,6 +12,7 @@ from open_vi.codec.mts import (
     MT_FILE_LOCATION,
     MT_FILE_METADATA,
     MT_FLIGHT_ACTIVITY,
+    MT_MISSION_PLAN_ACTIVATION_STATUS,
     MT_ROUTE_PLAN,
     MT_ROUTE_VALIDATION,
     MT_ROUTE_VALIDATION_COMMAND,
@@ -22,6 +23,7 @@ from open_vi.codec.notification import build_system_notification
 from open_vi.codec.route import (
     build_file_location_for_route,
     build_file_metadata_for_route,
+    build_mission_plan_activation_status,
     build_route_activation_status,
     build_route_plan_validation,
     build_route_plan_validation_command_status,
@@ -86,6 +88,7 @@ class RouteHandler:
                 elif req.command_type == "DEACTIVATE":
                     result = self._deactivate_vehicle(ctx, req, result)
             self._publish_statuses(ctx, req, result)
+            self._publish_plan_activation_status(ctx, req, result)
             LOGGER.info(
                 "Route %s %s → %s (%s)",
                 req.command_type,
@@ -255,6 +258,35 @@ class RouteHandler:
                     mode=mode,
                 ),
             )
+
+    def _publish_plan_activation_status(
+        self,
+        ctx: IsolatorContext,
+        req: RouteActivationRequest,
+        result: RouteActivationResult,
+    ) -> None:
+        """Publish ``MissionPlanActivationStatus`` after inbound DEACTIVATE.
+
+        Only on ``ACCEPTED`` → ``DEACTIVATED``. Rejects leave the
+        stored plan state unchanged, so this out is omitted.
+        """
+        if (
+            req.command_type != "DEACTIVATE"
+            or result.processing_state != "ACCEPTED"
+            or result.plan_state != "DEACTIVATED"
+        ):
+            return
+        ctx.bus.publish(
+            MT_MISSION_PLAN_ACTIVATION_STATUS,
+            build_mission_plan_activation_status(
+                ctx.identity,
+                mission_plan_id=req.mission_plan_id,
+                plan_activation_state="DEACTIVATED",
+                route_plan_id=req.route_plan_id,
+                schema_version=ctx.schema_version,
+                mode=ctx.message_mode,
+            ),
+        )
 
     def _handle_route_plan(self, xml: str, ctx: IsolatorContext) -> None:
         try:

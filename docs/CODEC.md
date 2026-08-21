@@ -42,7 +42,7 @@ degrees. Convert at this boundary (`geo.py`).
 | `path.py` | Shared Path / Point2D waypoint parse and build |
 | `vehicle_state.py` | TSPI outs (`MA_PositionReportDetailed`, `NavigationReport`, …) |
 | `status.py` | `ServiceStatus`, `SubsystemStatus`, `MA_Fault` |
-| `route.py` | Route plan / activation, File* |
+| `route.py` | Route plan / activation, File*, `MissionPlanActivationStatus` |
 | `notification.py` | `MA_SystemNotification`, `MA_Response` |
 | `query.py` | `QueryDataRequest`, `AirfieldReport` |
 | `system_mgmt.py` | `MA_SystemManagementRequest` |

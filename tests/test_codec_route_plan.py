@@ -9,6 +9,7 @@ import pytest
 
 from open_vi.codec.ns import SCHEMA_VERSION
 from open_vi.codec.route import (
+    build_mission_plan_activation_status,
     build_sample_route_plan,
     parse_route_plan_waypoints,
 )
@@ -83,3 +84,22 @@ def test_parse_follows_path_segment_links() -> None:
         assert got.latitude_deg == pytest.approx(lat, abs=1e-4)
         assert got.longitude_deg == pytest.approx(lon, abs=1e-4)
         assert got.altitude_m == pytest.approx(alt)
+
+
+def test_build_mission_plan_activation_status() -> None:
+    identity = SystemIdentity.named("1")
+    mission_id = uuid4()
+    route_id = uuid4()
+    xml = build_mission_plan_activation_status(
+        identity,
+        mission_plan_id=mission_id,
+        plan_activation_state="DEACTIVATED",
+        route_plan_id=route_id,
+    )
+    root = parse_xml(xml)
+    assert local_name(root) == "MissionPlanActivationStatus"
+    body = xml.decode("utf-8")
+    assert "DEACTIVATED" in body
+    assert mission_id.hex in body.replace("-", "")
+    assert route_id.hex in body.replace("-", "")
+    assert "SubPlanActivationState" in body

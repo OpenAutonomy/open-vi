@@ -15,6 +15,7 @@ from open_vi.codec.mts import (
     MT_FLIGHT_ACTIVITY,
     MT_FLIGHT_COMMAND,
     MT_FLIGHT_COMMAND_STATUS,
+    MT_MISSION_PLAN_ACTIVATION_STATUS,
     MT_MISSION_PLAN_EXECUTION_STATUS,
     MT_RESPONSE_PLAN_EXECUTION_STATUS,
     MT_ROUTE_PLAN,
@@ -276,6 +277,49 @@ def test_receive_deactivate_route() -> None:
     assert "COMPLETED" in status
     assert "DEACTIVATED" in status
     assert "ACCEPTED" in status
+    activation = bus.published[MT_MISSION_PLAN_ACTIVATION_STATUS]
+    assert len(activation) == 1
+    assert local_name(parse_xml(activation[0])) == (
+        "MissionPlanActivationStatus"
+    )
+    assert "DEACTIVATED" in activation[0]
+    assert mission_id.hex in activation[0].replace("-", "")
+    assert route_id.hex in activation[0].replace("-", "")
+
+
+def test_receive_deactivate_from_ready() -> None:
+    bus = InMemoryAsb()
+    route_id = uuid4()
+    mission_id = uuid4()
+    iso = Isolator(
+        bus,
+        platform=StubPlatform(),
+        config=IsolatorConfig(tick_republish_status=False),
+    )
+    iso.ctx.routes.prime(
+        route_id,
+        mission_plan_id=mission_id,
+        state="READY_FOR_ACTIVATION",
+        xml="<rp/>",
+    )
+    attach_isolator(iso)
+    bus.publish(
+        MT_ACTIVATION_COMMAND,
+        build_sample_route_activation_command(
+            iso.identity,
+            command_id=uuid4(),
+            mission_plan_id=mission_id,
+            route_plan_id=route_id,
+            command_type="DEACTIVATE",
+        ),
+    )
+    assert "DEACTIVATED" in bus.published[MT_ACTIVATION_STATUS][0]
+    activation = bus.published[MT_MISSION_PLAN_ACTIVATION_STATUS][-1]
+    assert "DEACTIVATED" in activation
+    assert mission_id.hex in activation.replace("-", "")
+    stored = iso.ctx.routes.get(route_id)
+    assert stored is not None
+    assert stored.plan_state == "DEACTIVATED"
 
 
 def test_invalid_route_transition_rejected() -> None:
@@ -301,6 +345,7 @@ def test_invalid_route_transition_rejected() -> None:
     assert len(bus.published[MT_ACTIVATION_STATUS]) == 1
     assert "REJECTED" in bus.published[MT_ACTIVATION_STATUS][0]
     assert "FAILED" in bus.published[MT_ACTIVATION_STATUS][0]
+    assert MT_MISSION_PLAN_ACTIVATION_STATUS not in bus.published
 
 
 def test_validate_stored_route_plan() -> None:
@@ -457,6 +502,10 @@ def test_deactivate_after_activate_clears_activity() -> None:
     failed = bus.published[MT_ROUTE_PLAN_EXECUTION_STATUS][-1]
     assert "FAILED" in failed
     assert route_id.hex in failed.replace("-", "")
+    activation = bus.published[MT_MISSION_PLAN_ACTIVATION_STATUS][-1]
+    assert "DEACTIVATED" in activation
+    assert mission_id.hex in activation.replace("-", "")
+    assert route_id.hex in activation.replace("-", "")
 
 
 def test_activate_while_live_is_activity_update() -> None:
