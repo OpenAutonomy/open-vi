@@ -14,11 +14,15 @@ from open_vi.domain.flight import (
     CommandResult,
     FlightActivitySnapshot,
     FlightCommandRequest,
+    HsaCsaSetpoint,
     Waypoint,
+    finite_waypoint_geometry,
     is_live_activity,
+    validate_hsa_setpoint,
     validate_waypoint_path,
 )
 from open_vi.domain.route import (
+    PlanExecutionSnapshot,
     RouteActivationRequest,
     RouteActivationResult,
     StoredRoutePlan,
@@ -38,6 +42,8 @@ __all__ = [
     "FlightModeProfile",
     "FlightActivitySnapshot",
     "FlightCommandRequest",
+    "HsaCsaSetpoint",
+    "PlanExecutionSnapshot",
     "PlatformSnapshot",
     "RouteActivationRequest",
     "RouteActivationResult",
@@ -46,6 +52,8 @@ __all__ = [
     "SubsystemStatusSnapshot",
     "TspiSnapshot",
     "Waypoint",
+    "finite_waypoint_geometry",
     "is_live_activity",
+    "validate_hsa_setpoint",
     "validate_waypoint_path",
 ]

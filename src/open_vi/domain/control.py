@@ -27,6 +27,7 @@ class ControlOffer:
     capability_label: str = "flight-capability"
     accepted_interfaces: tuple[str, ...] = ("CAPABILITY_COMMAND",)
     waypoint_profile: FlightModeProfile | None = None
+    hsa_profile: FlightModeProfile | None = None
 
 
 @dataclass(frozen=True)

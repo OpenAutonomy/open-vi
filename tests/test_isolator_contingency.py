@@ -30,6 +30,7 @@ from open_vi.isolator.publishers import (
     MT_FLIGHT_CAPABILITY,
     MT_FLIGHT_CAPABILITY_STATUS,
     MT_RESPONSE_PLAN_EXECUTION_STATUS,
+    MT_ROUTE_PLAN_EXECUTION_STATUS,
 )
 from open_vi.platform import StubPlatform
 
@@ -117,7 +118,10 @@ def test_publish_status_package() -> None:
     assert len(bus.published[MT_CONTROL_STATUS]) == 1
     assert "CAPABILITY_COMMAND" in bus.published[MT_CONTROL_STATUS][-1]
     assert len(bus.published[MT_RESPONSE_PLAN_EXECUTION_STATUS]) == 1
-    assert "ACTUAL" in bus.published[MT_RESPONSE_PLAN_EXECUTION_STATUS][-1]
+    idle = bus.published[MT_RESPONSE_PLAN_EXECUTION_STATUS][-1]
+    assert "ACTUAL" in idle
+    assert "EXECUTING" not in idle
+    assert MT_ROUTE_PLAN_EXECUTION_STATUS not in bus.published
     assert len(bus.published[MT_SUBSYSTEM_STATUS]) == 1
 
 

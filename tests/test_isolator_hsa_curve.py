@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
+
 from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
 from open_vi.codec.command import (
@@ -34,6 +36,10 @@ def test_parse_hsa_csa_command() -> None:
     assert len(cmds) == 1
     assert cmds[0].mode == "HSA_CSA"
     assert cmds[0].command_id == command_id
+    assert cmds[0].hsa is not None
+    assert cmds[0].hsa.heading_deg == pytest.approx(90.0)
+    assert cmds[0].hsa.speed_mps == pytest.approx(5.0)
+    assert cmds[0].hsa.altitude_m == pytest.approx(50.0)
 
 
 def test_parse_curve_following_command() -> None:

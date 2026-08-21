@@ -1,7 +1,7 @@
 """PX4 / SITL :class:`PlatformPort` via MAVLink (pymavlink).
 
-Telemetry and ``WAYPOINT_FOLLOWING`` only. Isolator and the codec
-never import this module or MAVLink types —
+Telemetry, ``WAYPOINT_FOLLOWING``, and ``HSA_CSA`` (offboard hold).
+Isolator and the codec never import this module or MAVLink types —
 ``make_platform("px4")`` loads it. Arm, takeoff, and mission start
 stay inside the adapter; Mission Autonomy sends
 ``MA_FlightCommand``, not UCI arm. Default link is
@@ -28,12 +28,14 @@ from open_vi.domain import (
     FlightActivitySnapshot,
     FlightCommandRequest,
     FlightModeProfile,
+    HsaCsaSetpoint,
     PlatformSnapshot,
     ServiceStatusSnapshot,
     SubsystemStatusSnapshot,
     TspiSnapshot,
     Waypoint,
     is_live_activity,
+    validate_hsa_setpoint,
     validate_waypoint_path,
 )
 from open_vi.platform.port import PlatformPort
@@ -110,7 +112,17 @@ def advance_mission_waypoints(
 
 DEFAULT_MAVLINK_URL = "udpin:127.0.0.1:14540"
 _HEARTBEAT_STALE_S = 10.0
-_ACCEPTED_MODES = frozenset({"WAYPOINT_FOLLOWING"})
+_OFFBOARD_HZ = 10.0
+_OFFBOARD_PRIME = 5
+
+
+@dataclass
+class _ResolvedHsa:
+    """Live offboard vector (NED yaw / groundspeed / AGL)."""
+
+    heading_deg: float
+    speed_mps: float
+    rel_alt_m: float
 
 
 @dataclass
@@ -150,9 +162,11 @@ class Px4MavlinkAdapter(PlatformPort):
     items are relative to home. Completes when
     ``MISSION_ITEM_REACHED`` hits the last waypoint.
 
-    HSA_CSA and CURVE_FOLLOWING are rejected with
-    ``CAPABILITY_NOT_SUPPORTED``. Waypoint paths are checked against
-    a relative-altitude envelope before upload.
+    ``HSA_CSA`` streams an offboard heading/speed/altitude hold.
+    ``CURVE_FOLLOWING`` is rejected with
+    ``CAPABILITY_NOT_SUPPORTED``. Waypoint paths use the 10–500 m
+    AGL envelope; HSA uses 0–500 m AGL so a hold at home HAE is
+    inside the advertised bound. Both compare on a 0.1 m grid.
     ``apply_system_management`` writes ``SENS_BARO_QNH`` and the local
     TSPI snapshot.
     """
@@ -203,7 +217,7 @@ class Px4MavlinkAdapter(PlatformPort):
         )
         self._conn: Any | None = connection
         self._offer = ControlOffer(
-            capability_types=("WAYPOINT_FOLLOWING",),
+            capability_types=("WAYPOINT_FOLLOWING", "HSA_CSA"),
             capability_label="px4-flight-capability",
         )
         self._activity: FlightActivitySnapshot | None = None
@@ -221,6 +235,10 @@ class Px4MavlinkAdapter(PlatformPort):
         self._io_lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._offboard_stop = threading.Event()
+        self._offboard_thread: threading.Thread | None = None
+        self._hsa_live: _ResolvedHsa | None = None
+        self._home_hae_frozen: float | None = None
         self._kollsman_hpa = 1013.25
         if autoconnect and self._conn is None:
             self.connect()
@@ -269,7 +287,8 @@ class Px4MavlinkAdapter(PlatformPort):
         self._thread.start()
 
     def close(self) -> None:
-        """Stop the reader thread and close the MAVLink connection."""
+        """Stop reader and offboard threads; close the MAVLink connection."""
+        self._stop_offboard()
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
@@ -283,7 +302,7 @@ class Px4MavlinkAdapter(PlatformPort):
                 LOGGER.debug("PX4 connection close failed", exc_info=True)
 
     def snapshot(self) -> PlatformSnapshot:
-        """WAYPOINT_FOLLOWING offer plus link-based readiness."""
+        """Waypoint + HSA offer plus link-based readiness."""
         if self._link_ok():
             readiness = ControlReadiness(
                 available=True,
@@ -299,34 +318,34 @@ class Px4MavlinkAdapter(PlatformPort):
             capability_types=self._offer.capability_types,
             capability_label=self._offer.capability_label,
             accepted_interfaces=self._offer.accepted_interfaces,
-            waypoint_profile=self._waypoint_profile(),
+            waypoint_profile=self._rel_profile(self._min_rel_alt_m),
+            hsa_profile=self._rel_profile(0.0),
         )
         return PlatformSnapshot(offer=offer, readiness=readiness)
 
-    def _waypoint_profile(self) -> FlightModeProfile:
+    def _rel_profile(self, min_rel_m: float) -> FlightModeProfile:
         """AGL envelope, or HAE once home is known."""
         home = self._home_hae_m()
         if home is None:
             return FlightModeProfile(
-                min_altitude_m=self._min_rel_alt_m,
+                min_altitude_m=min_rel_m,
                 max_altitude_m=self._max_rel_alt_m,
                 altitude_ref="AGL",
             )
         return FlightModeProfile(
-            min_altitude_m=home + self._min_rel_alt_m,
+            min_altitude_m=home + min_rel_m,
             max_altitude_m=home + self._max_rel_alt_m,
             altitude_ref="WGS_HAE",
         )
 
     def submit_flight_command(self, cmd: FlightCommandRequest) -> CommandResult:
-        """Accept ``WAYPOINT_FOLLOWING`` NEW when idle, UPDATE, or CANCEL.
+        """Accept waypoint or HSA NEW when idle, UPDATE, or CANCEL.
 
         Rejects when the link is down, Capability NEW arrives while an
         activity is live, Activity is not UPDATE against the live id,
-        the mode is not ``WAYPOINT_FOLLOWING``, or waypoints are
-        missing. On accept, runs the mission upload / arm / start path
-        and returns ``ACTIVE_UNCONSTRAINED``. Completion is later, via
-        :meth:`poll_command_updates`.
+        or the mode is unsupported. Waypoint accept uploads a mission.
+        HSA streams an offboard hold until CANCEL. Waypoint completion
+        is later, via :meth:`poll_command_updates`.
         """
         snap = self.snapshot()
         if not snap.readiness.available:
@@ -339,6 +358,8 @@ class Px4MavlinkAdapter(PlatformPort):
             return self._submit_activity(cmd)
         if cmd.command_state == "CANCEL":
             if cmd.command_id in self._commands:
+                self._stop_offboard()
+                self._hold_if_linked()
                 with self._lock:
                     self._commands[cmd.command_id] = "CANCELED"
                     self._activity = None
@@ -375,7 +396,7 @@ class Px4MavlinkAdapter(PlatformPort):
                     "is live; use Activity UPDATE"
                 ),
             )
-        rejected = self._execute_waypoints_or_reject(cmd)
+        rejected = self._execute_or_reject(cmd)
         if rejected is not None:
             return rejected
         activity_id = uuid4()
@@ -415,7 +436,7 @@ class Px4MavlinkAdapter(PlatformPort):
                 reason="INVALID_INPUT_PARAMETER",
                 reason_description="Unknown or idle ActivityID",
             )
-        rejected = self._execute_waypoints_or_reject(cmd)
+        rejected = self._execute_or_reject(cmd)
         if rejected is not None:
             return rejected
         with self._lock:
@@ -427,20 +448,22 @@ class Px4MavlinkAdapter(PlatformPort):
             new_activity=False,
         )
 
-    def _execute_waypoints_or_reject(
+    def _execute_or_reject(
         self, cmd: FlightCommandRequest
     ) -> CommandResult | None:
-        """Upload waypoints, or return a reject.
+        """Fly waypoints or HSA, or return a reject.
 
         ``None`` means the vehicle ran.
         """
-        if cmd.mode not in _ACCEPTED_MODES:
+        if cmd.mode == "HSA_CSA":
+            return self._execute_hsa_or_reject(cmd)
+        if cmd.mode != "WAYPOINT_FOLLOWING":
             return CommandResult(
                 processing_state="REJECTED",
                 reason="CAPABILITY_UNAVAILABLE",
                 reason_description=(
-                    "PX4 adapter v0 accepts WAYPOINT_FOLLOWING only; "
-                    f"got {cmd.mode}"
+                    "PX4 adapter accepts WAYPOINT_FOLLOWING and "
+                    f"HSA_CSA; got {cmd.mode}"
                 ),
                 validation_results=("CAPABILITY_NOT_SUPPORTED",),
             )
@@ -452,16 +475,195 @@ class Px4MavlinkAdapter(PlatformPort):
         )
         if rejected is not None:
             return rejected
+        self._stop_offboard()
         try:
             self._execute_waypoint_following(cmd.waypoints)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             LOGGER.exception("PX4 waypoint execution failed")
             return CommandResult(
                 processing_state="REJECTED",
-                reason="FAILED",
+                reason="STATE_OR_SETTINGS",
                 reason_description=f"Waypoint execution failed: {exc}",
             )
         return None
+
+    def _execute_hsa_or_reject(
+        self, cmd: FlightCommandRequest
+    ) -> CommandResult | None:
+        """Start or replace an HSA offboard hold, or return a reject."""
+        rejected = validate_hsa_setpoint(
+            cmd.hsa,
+            min_rel_alt_m=0.0,
+            max_rel_alt_m=self._max_rel_alt_m,
+            home_hae_m=self._home_hae_m(),
+        )
+        if rejected is not None:
+            return rejected
+        try:
+            self._execute_hsa_csa(cmd.hsa or HsaCsaSetpoint())
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            LOGGER.exception("PX4 HSA_CSA execution failed")
+            return CommandResult(
+                processing_state="REJECTED",
+                reason="STATE_OR_SETTINGS",
+                reason_description=f"HSA_CSA execution failed: {exc}",
+            )
+        return None
+
+    def _execute_hsa_csa(self, hsa: HsaCsaSetpoint) -> None:
+        """Hold or replace an offboard heading/speed/altitude vector."""
+        live = self._resolve_hsa(hsa)
+        already = (
+            self._offboard_thread is not None
+            and self._offboard_thread.is_alive()
+        )
+        with self._lock:
+            self._hsa_live = live
+            self._mission_last_seq = None
+        if already:
+            LOGGER.info(
+                "PX4 HSA_CSA setpoint updated hdg=%.1f spd=%.1f alt=%.1f",
+                live.heading_deg,
+                live.speed_mps,
+                live.rel_alt_m,
+            )
+            return
+        airborne = self._relative_alt_m() >= 2.0
+        try:
+            with self._io_lock:
+                if airborne:
+                    self._hold_locked()
+                self._prime_offboard_locked()
+                if not self._set_mode_locked("OFFBOARD"):
+                    raise RuntimeError("PX4 OFFBOARD mode not available")
+                self._arm_locked(force=True)
+                if not airborne:
+                    self._wait_airborne_locked(live.rel_alt_m)
+            self._start_offboard_thread()
+        except Exception:
+            self._stop_offboard()
+            raise
+        LOGGER.info(
+            "PX4 HSA_CSA offboard hdg=%.1f spd=%.1f alt=%.1f",
+            live.heading_deg,
+            live.speed_mps,
+            live.rel_alt_m,
+        )
+
+    def _resolve_hsa(self, hsa: HsaCsaSetpoint) -> _ResolvedHsa:
+        """Fill omitted axes from telemetry.
+
+        On the ground, climb uses takeoff altitude.
+        """
+        with self._lock:
+            heading = self._cache.heading_deg
+            speed = self._cache.groundspeed_mps
+            rel = self._cache.relative_alt_m
+        if hsa.heading_deg is not None:
+            heading = hsa.heading_deg
+        if hsa.speed_mps is not None:
+            speed = hsa.speed_mps
+        if hsa.altitude_m is not None:
+            if hsa.altitude_ref == "WGS_HAE":
+                home = self._home_hae_m()
+                if home is not None:
+                    rel = float(hsa.altitude_m) - home
+                else:
+                    rel = float(hsa.altitude_m)
+            else:
+                rel = float(hsa.altitude_m)
+        if rel < 2.0:
+            rel = self._takeoff_alt_m
+        return _ResolvedHsa(
+            heading_deg=heading,
+            speed_mps=speed,
+            rel_alt_m=rel,
+        )
+
+    def _start_offboard_thread(self) -> None:
+        """Stream setpoints at ``_OFFBOARD_HZ`` until stop."""
+        self._offboard_stop.clear()
+        self._offboard_thread = threading.Thread(
+            target=self._offboard_loop,
+            name="open-vi-px4-offboard",
+            daemon=True,
+        )
+        self._offboard_thread.start()
+
+    def _stop_offboard(self) -> None:
+        """Join the offboard writer and clear the live vector."""
+        self._offboard_stop.set()
+        thread = self._offboard_thread
+        if thread is not None:
+            thread.join(timeout=2.0)
+            self._offboard_thread = None
+        with self._lock:
+            self._hsa_live = None
+
+    def _hold_if_linked(self) -> None:
+        """LOITER/HOLD when a link exists. Best-effort."""
+        if self._conn is None:
+            return
+        with self._io_lock:
+            self._hold_locked()
+
+    def _offboard_loop(self) -> None:
+        """Send LOCAL_NED setpoints until ``_offboard_stop``."""
+        period = 1.0 / _OFFBOARD_HZ
+        while not self._offboard_stop.wait(period):
+            try:
+                with self._io_lock:
+                    self._send_offboard_setpoint_locked()
+            except Exception:  # pylint: disable=broad-exception-caught
+                LOGGER.exception("PX4 offboard setpoint failed")
+                return
+
+    def _prime_offboard_locked(self) -> None:
+        """Send a few setpoints before switching OFFBOARD."""
+        for _ in range(_OFFBOARD_PRIME):
+            self._send_offboard_setpoint_locked()
+
+    def _send_offboard_setpoint_locked(self) -> None:
+        """One SET_POSITION_TARGET_LOCAL_NED. Holds ``_io_lock``."""
+        # pylint: disable-next=import-outside-toplevel
+        from pymavlink import mavutil
+
+        with self._lock:
+            live = self._hsa_live
+        if live is None:
+            return
+        conn = self._require_conn()
+        heading_rad = math.radians(live.heading_deg)
+        vx = live.speed_mps * math.cos(heading_rad)
+        vy = live.speed_mps * math.sin(heading_rad)
+        z_down = -live.rel_alt_m
+        ignore = (
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_X_IGNORE
+            | mavutil.mavlink.POSITION_TARGET_TYPEMASK_Y_IGNORE
+            | mavutil.mavlink.POSITION_TARGET_TYPEMASK_VZ_IGNORE
+            | mavutil.mavlink.POSITION_TARGET_TYPEMASK_AX_IGNORE
+            | mavutil.mavlink.POSITION_TARGET_TYPEMASK_AY_IGNORE
+            | mavutil.mavlink.POSITION_TARGET_TYPEMASK_AZ_IGNORE
+            | mavutil.mavlink.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
+        )
+        conn.mav.set_position_target_local_ned_send(
+            0,
+            conn.target_system,
+            conn.target_component,
+            mavutil.mavlink.MAV_FRAME_LOCAL_NED,
+            ignore,
+            0.0,
+            0.0,
+            z_down,
+            vx,
+            vy,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            heading_rad,
+            0.0,
+        )
 
     def poll_command_updates(self) -> list[tuple[UUID, CommandResult]]:
         """Drain terminal states queued by ``MISSION_ITEM_REACHED``."""
@@ -682,13 +884,23 @@ class Px4MavlinkAdapter(PlatformPort):
         LOGGER.info("PX4 mission complete cmd=%s seq=%s", cid.hex, seq)
 
     def _home_hae_m(self) -> float | None:
-        """Home HAE from GLOBAL_POSITION_INT: AMSL minus relative-to-home."""
+        """Home HAE from GLOBAL_POSITION_INT: AMSL minus relative-to-home.
+
+        The first fix is frozen so the advertised HAE envelope and the
+        accept check use the same origin while GPS home jitters.
+        """
         with self._lock:
+            if self._home_hae_frozen is not None:
+                return self._home_hae_frozen
             alt = self._cache.alt_m
             rel = self._cache.relative_alt_m
         if alt == 0.0 and rel == 0.0:
             return None
-        return alt - rel
+        home = alt - rel
+        with self._lock:
+            if self._home_hae_frozen is None:
+                self._home_hae_frozen = home
+            return self._home_hae_frozen
 
     def _mission_rel_alt_m(self, altitude_m: float | None) -> float:
         """A-GRA Point2D altitude is HAE; PX4 items are relative to home."""
@@ -921,22 +1133,34 @@ class Px4MavlinkAdapter(PlatformPort):
         conn = self._require_conn()
         # param2=21196 forces arm in SITL when prechecks would block.
         force_param = 21196.0 if force else 0.0
-        conn.mav.command_long_send(
-            conn.target_system,
-            conn.target_component,
-            mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
-            0,
-            1.0,
-            force_param,
-            0,
-            0,
-            0,
-            0,
-            0,
-        )
-        self._wait_command_ack_locked(
-            mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM
-        )
+        last_error: Exception | None = None
+        for _ in range(5):
+            conn.mav.command_long_send(
+                conn.target_system,
+                conn.target_component,
+                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                0,
+                1.0,
+                force_param,
+                0,
+                0,
+                0,
+                0,
+                0,
+            )
+            try:
+                self._wait_command_ack_locked(
+                    mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM
+                )
+                last_error = None
+                break
+            except RuntimeError as exc:
+                last_error = exc
+                if "result=1" not in str(exc):
+                    raise
+                time.sleep(0.2)
+        if last_error is not None:
+            raise last_error
         deadline = time.monotonic() + 10.0
         while time.monotonic() < deadline:
             msg = conn.recv_match(type="HEARTBEAT", blocking=True, timeout=1.0)
@@ -956,7 +1180,9 @@ class Px4MavlinkAdapter(PlatformPort):
         conn = self._require_conn()
         deadline = time.monotonic() + 60.0
         while time.monotonic() < deadline:
-            msg = conn.recv_match(blocking=True, timeout=1.0)
+            if self._hsa_live is not None:
+                self._send_offboard_setpoint_locked()
+            msg = conn.recv_match(blocking=True, timeout=0.1)
             if msg is not None:
                 self._ingest(msg)
             if self._relative_alt_m() >= airborne_m:

@@ -11,7 +11,8 @@ UCI/A-GRA XML on the Abstract Service Bus.
 It is one process: Isolator logic plus one vehicle backend behind
 `PlatformPort`. Isolator owns A-GRA sequences, including the route ladder.
 The default backend is `StubPlatform`. `Px4MavlinkAdapter` is a SITL cut
-for telemetry and `WAYPOINT_FOLLOWING`. A new vehicle is a new adapter; it
+for telemetry, `WAYPOINT_FOLLOWING`, and `HSA_CSA`. A new vehicle is a
+new adapter; it
 is not a change to the Isolator.
 
 Goals:
@@ -58,7 +59,7 @@ BROKER_HOST=host.docker.internal docker compose -f compose/vi.yml up --build
 CI publishes `ghcr.io/openautonomy/open-vi` from `main`. Either path
 is Stub on STOMP `:61613`. PX4 SITL is `--platform px4` once a
 vehicle is listening on `udpin:127.0.0.1:14540`. See
-[docs/PX4.md](docs/PX4.md).
+[docs/platforms/px4/README.md](docs/platforms/px4/README.md).
 
 ```bash
 pytest
@@ -75,14 +76,14 @@ schema version are in `src/open_vi/codec/ns.py`.
 Published at
 [openautonomy.github.io/open-vi](https://openautonomy.github.io/open-vi/).
 
-- [docs/FEATURES.md](docs/FEATURES.md) — ASK 5.0a VI coverage
+- [docs/FEATURES.md](docs/FEATURES.md) — ASK 5.0a Isolator coverage
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — layers, ports, and an example path
 - [docs/ISOLATOR.md](docs/ISOLATOR.md) — sequences, handlers, and `RouteStore`
 - [docs/PLATFORM.md](docs/PLATFORM.md) — `PlatformPort` methods
+- [docs/platforms](docs/platforms/README.md) — Stub and PX4 backends
 - [docs/ADDING_A_VEHICLE.md](docs/ADDING_A_VEHICLE.md) — adding a backend
 - [docs/CODEC.md](docs/CODEC.md) — parse and build
 - [docs/ASB.md](docs/ASB.md) — STOMP and the in-memory bus
-- [docs/PX4.md](docs/PX4.md) — PX4 SITL backend
 
 ## FAQs
 
@@ -90,7 +91,7 @@ Published at
 1. [How is the Vehicle Interface put together?](docs/ARCHITECTURE.md)
 1. [How do I add a vehicle?](docs/ADDING_A_VEHICLE.md)
 1. [What does Isolator own versus the platform?](docs/ISOLATOR.md)
-1. [How do I run PX4 SITL?](docs/PX4.md)
+1. [How do I run PX4 SITL?](docs/platforms/px4/README.md)
 
 ## Contributing
 

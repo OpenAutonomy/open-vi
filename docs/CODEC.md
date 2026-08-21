@@ -37,6 +37,7 @@ degrees. Convert at this boundary (`geo.py`).
 | --- | --- |
 | `capability.py` | `MA_FlightCapability`, `MA_FlightCapabilityStatus` |
 | `command.py` | `MA_FlightCommand`, status, activity |
+| `path.py` | Shared Path / Point2D waypoint parse and build |
 | `vehicle_state.py` | TSPI outs (`MA_PositionReportDetailed`, `NavigationReport`, …) |
 | `status.py` | `ServiceStatus`, `SubsystemStatus`, `MA_Fault` |
 | `route.py` | Route plan / activation, File* |
@@ -45,4 +46,4 @@ degrees. Convert at this boundary (`geo.py`).
 | `system_mgmt.py` | `MA_SystemManagementRequest` |
 | `control.py` | `MA_ControlRequest`, `MA_ControlAssignment` |
 | `task.py` | `MA_TaskCommand`, `TaskStatus`, `MA_Task` |
-| `control_status.py` | `ControlStatus`, `ResponsePlanExecutionStatus` |
+| `control_status.py` | `ControlStatus`, `ResponsePlanExecutionStatus`, `RoutePlanExecutionStatus`, `MA_MissionPlanExecutionStatus` |

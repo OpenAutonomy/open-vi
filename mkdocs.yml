@@ -41,10 +41,17 @@ nav:
   - Architecture: ARCHITECTURE.md
   - Isolator: ISOLATOR.md
   - Platform: PLATFORM.md
+  - Platforms:
+    - Overview: platforms/README.md
+    - Stub:
+      - Description: platforms/stub/README.md
+      - Features: platforms/stub/FEATURES.md
+    - PX4:
+      - Description: platforms/px4/README.md
+      - Features: platforms/px4/FEATURES.md
   - Adding a vehicle: ADDING_A_VEHICLE.md
   - Codec: CODEC.md
   - ASB: ASB.md
-  - PX4: PX4.md
   - API: api.md
   - Contributing: CONTRIBUTING.md
 

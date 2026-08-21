@@ -20,7 +20,9 @@ from open_vi.codec.command import (
 )
 from open_vi.codec.control_status import (
     build_control_status,
+    build_mission_plan_execution_status,
     build_response_plan_execution_status,
+    build_route_plan_execution_status,
 )
 from open_vi.codec.status import build_ma_fault, build_subsystem_status
 from open_vi.codec.vehicle_state import (
@@ -29,7 +31,7 @@ from open_vi.codec.vehicle_state import (
     build_position_report_detailed,
     build_weather_observation,
 )
-from open_vi.domain import FlightActivitySnapshot
+from open_vi.domain import FlightActivitySnapshot, PlanExecutionSnapshot
 from open_vi.isolator.context import IsolatorContext
 from open_vi.isolator.handlers.flight_command import (
     MT_FLIGHT_ACTIVITY,
@@ -47,48 +49,126 @@ MT_NAVIGATION_REPORT = "NavigationReport"
 MT_COMPONENT_STATUS = "ComponentStatus"
 MT_CONTROL_STATUS = "ControlStatus"
 MT_RESPONSE_PLAN_EXECUTION_STATUS = "ResponsePlanExecutionStatus"
+MT_ROUTE_PLAN_EXECUTION_STATUS = "RoutePlanExecutionStatus"
+MT_MISSION_PLAN_EXECUTION_STATUS = "MA_MissionPlanExecutionStatus"
 
 
 def publish_command_updates(ctx: IsolatorContext) -> None:
     """Publish status for commands the platform has newly completed.
 
-    Polls ``PlatformPort.poll_command_updates``. Every update becomes
-    ``MA_FlightCommandStatus``. A ``COMPLETED`` command also publishes
-    ``MA_FlightActivity`` when the platform still has an active activity.
+    Polls ``PlatformPort.poll_command_updates``. Direct flight
+    commands become ``MA_FlightCommandStatus``. A route-sourced
+    command id is skipped so ACTIVATE does not leak a command MA
+    never sent.     A ``COMPLETED`` command still publishes
+    ``MA_FlightActivity`` when the platform has an activity and
+    clears ``active_activity_id`` when that activity is
+    ``COMPLETED``. A route-sourced ``COMPLETED`` also sets
+    ``route_execution_state`` and publishes the plan-execution
+    family.
     """
     for command_id, result in ctx.platform.poll_command_updates():
-        ctx.bus.publish(
-            MT_FLIGHT_COMMAND_STATUS,
-            build_flight_command_status(
-                ctx.identity,
-                command_id=command_id,
-                result=result,
-                schema_version=ctx.schema_version,
-                mode=ctx.message_mode,
-            ),
-        )
-        LOGGER.info(
-            "FlightCommand %s → %s",
-            command_id.hex,
-            result.processing_state,
-        )
+        route_sourced = command_id == ctx.state.route_flight_command_id
+        if not route_sourced:
+            ctx.bus.publish(
+                MT_FLIGHT_COMMAND_STATUS,
+                build_flight_command_status(
+                    ctx.identity,
+                    command_id=command_id,
+                    result=result,
+                    schema_version=ctx.schema_version,
+                    mode=ctx.message_mode,
+                ),
+            )
+            LOGGER.info(
+                "FlightCommand %s → %s",
+                command_id.hex,
+                result.processing_state,
+            )
+        else:
+            LOGGER.info(
+                "Route-sourced command %s → %s",
+                command_id.hex,
+                result.processing_state,
+            )
+            if result.processing_state == "COMPLETED":
+                ctx.state.route_execution_state = "COMPLETED"
         if result.processing_state != "COMPLETED":
             continue
         activity = ctx.platform.active_flight_activity()
-        if activity is None:
-            continue
-        ctx.bus.publish(
-            MT_FLIGHT_ACTIVITY,
-            build_flight_activity(
-                ctx.identity,
-                activity,
-                schema_version=ctx.schema_version,
-                mode=ctx.message_mode,
-                object_state="UPDATED",
-            ),
-        )
-        if activity.activity_state == "COMPLETED":
+        if activity is not None:
+            ctx.bus.publish(
+                MT_FLIGHT_ACTIVITY,
+                build_flight_activity(
+                    ctx.identity,
+                    activity,
+                    schema_version=ctx.schema_version,
+                    mode=ctx.message_mode,
+                    object_state="UPDATED",
+                ),
+            )
+        if route_sourced:
+            publish_plan_execution(ctx)
+        if activity is not None and activity.activity_state == "COMPLETED":
             ctx.state.active_activity_id = None
+
+
+def plan_execution_for_publish(
+    ctx: IsolatorContext,
+) -> PlanExecutionSnapshot | None:
+    """Live route execution, or ``None`` when no route is executing.
+
+    Requires both ``active_route_plan_id`` and ``route_execution_state``.
+    ``mission_plan_id`` comes from :class:`~open_vi.isolator.routes.RouteStore`.
+    """
+    route_id = ctx.state.active_route_plan_id
+    execution_state = ctx.state.route_execution_state
+    if route_id is None or execution_state is None:
+        return None
+    stored = ctx.routes.get(route_id)
+    mission_id = stored.mission_plan_id if stored is not None else None
+    return PlanExecutionSnapshot(
+        execution_state=execution_state,
+        route_plan_id=route_id,
+        mission_plan_id=mission_id,
+        activity_id=ctx.state.active_activity_id,
+    )
+
+
+def publish_plan_execution(ctx: IsolatorContext) -> None:
+    """Publish ResponsePlan, then Route/Mission when a snapshot exists."""
+    snapshot = plan_execution_for_publish(ctx)
+    schema = ctx.schema_version
+    mode = ctx.message_mode
+    ctx.bus.publish(
+        MT_RESPONSE_PLAN_EXECUTION_STATUS,
+        build_response_plan_execution_status(
+            ctx.identity,
+            snapshot=snapshot,
+            schema_version=schema,
+            mode=mode,
+        ),
+    )
+    if snapshot is None:
+        return
+    ctx.bus.publish(
+        MT_ROUTE_PLAN_EXECUTION_STATUS,
+        build_route_plan_execution_status(
+            ctx.identity, snapshot, schema_version=schema, mode=mode
+        ),
+    )
+    if snapshot.mission_plan_id is None:
+        return
+    ctx.bus.publish(
+        MT_MISSION_PLAN_EXECUTION_STATUS,
+        build_mission_plan_execution_status(
+            ctx.identity, snapshot, schema_version=schema, mode=mode
+        ),
+    )
+    LOGGER.info(
+        "Published plan execution %s route=%s",
+        snapshot.execution_state,
+        snapshot.route_plan_id.hex,
+    )
 
 
 def flight_activity_for_publish(ctx: IsolatorContext) -> FlightActivitySnapshot:
@@ -173,7 +253,7 @@ def publish_capability_status(ctx: IsolatorContext) -> None:
 def publish_status_package(ctx: IsolatorContext) -> None:
     """Publish the three periodic status outs, in harness order.
 
-    ``ControlStatus``, ``ResponsePlanExecutionStatus``, then
+    ``ControlStatus``, the plan-execution family, then
     ``SubsystemStatus``. Gated by ``publish_status_package`` on
     Isolator start and tick.
     """
@@ -194,12 +274,7 @@ def publish_status_package(ctx: IsolatorContext) -> None:
             mode=mode,
         ),
     )
-    bus.publish(
-        MT_RESPONSE_PLAN_EXECUTION_STATUS,
-        build_response_plan_execution_status(
-            ctx.identity, schema_version=schema, mode=mode
-        ),
-    )
+    publish_plan_execution(ctx)
     bus.publish(
         MT_SUBSYSTEM_STATUS,
         build_subsystem_status(
@@ -208,7 +283,7 @@ def publish_status_package(ctx: IsolatorContext) -> None:
     )
     LOGGER.info(
         "Published status package: ControlStatus, "
-        "ResponsePlanExecutionStatus, SubsystemStatus"
+        "plan execution, SubsystemStatus"
     )
 
 

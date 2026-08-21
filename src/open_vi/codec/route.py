@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from open_vi.codec.ns import SCHEMA_VERSION
+from open_vi.codec.path import build_path_element, parse_path_waypoints
 from open_vi.codec.xmlutil import (
     el,
     find_one,
@@ -24,6 +25,7 @@ from open_vi.domain import (
     RouteActivationRequest,
     RouteActivationResult,
     StoredRoutePlan,
+    Waypoint,
 )
 from open_vi.identity import SystemIdentity
 
@@ -232,6 +234,20 @@ def parse_route_plan_id(xml: str | bytes) -> UUID:
     return plan_id
 
 
+def parse_route_plan_waypoints(xml: str | bytes) -> tuple[Waypoint, ...]:
+    """Extract Path / Point2D waypoints from stored MA_RoutePlan XML.
+
+    Returns an empty tuple when MessageData is missing or has no
+    geometry. Radians on the wire become degrees on
+    :class:`~open_vi.domain.Waypoint`.
+    """
+    root = parse_xml(xml)
+    data = find_one(root, "MessageData")
+    if data is None:
+        return ()
+    return parse_path_waypoints(data)
+
+
 def build_route_activation_status(
     identity: SystemIdentity,
     *,
@@ -253,11 +269,18 @@ def build_route_activation_status(
         else:
             command_status = "COMPLETED"
     state = plan_state or result.plan_state
-    status = el(
-        "ActivationStatus",
+    status_kids = [
         el("CommandProcessingState", text=processing),
         el("CommandStatus", text=command_status),
-    )
+    ]
+    if result.reason:
+        reason_kids = [el("Reason", text=result.reason)]
+        if result.reason_description:
+            reason_kids.append(
+                el("Description", text=result.reason_description)
+            )
+        status_kids.append(el("CommandProcessingStateReason", *reason_kids))
+    status = el("ActivationStatus", *status_kids)
     by_state = el(
         "ActivationCommandByState",
         el("PlanActivationCommandState", text=state),
@@ -435,19 +458,32 @@ def build_sample_route_activation_command(
     return tostring(root)
 
 
+_SAMPLE_WAYPOINT = Waypoint(
+    latitude_deg=38.0, longitude_deg=-77.0, altitude_m=100.0
+)
+
+
 def build_sample_route_plan(
     identity: SystemIdentity,
     *,
     route_plan_id: UUID,
+    waypoints: tuple[Waypoint, ...] | None = None,
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
 ) -> bytes:
-    """Minimal MA_RoutePlan for unit tests (RoutePlanID + placeholder)."""
-    data = el(
-        "MessageData",
+    """Minimal MA_RoutePlan for unit tests (RoutePlanID + Path).
+
+    *waypoints* defaults to the same sample point FlightCommand uses.
+    Pass an empty tuple for a plan with no geometry.
+    """
+    path_points = (_SAMPLE_WAYPOINT,) if waypoints is None else waypoints
+    data_kids = [
         id_type("RoutePlanID", route_plan_id),
         el("ForPlanningUseOnly", text="false"),
-    )
+    ]
+    if path_points:
+        data_kids.append(build_path_element(path_points))
+    data = el("MessageData", *data_kids)
     root = message_envelope(
         "MA_RoutePlan",
         identity,

@@ -39,17 +39,22 @@ A-GRA route ladder.
 | `close()` | Release backend resources (default no-op; PX4 closes MAVLink) |
 
 Isolator maps these domain structs to UCI through the codec. The route
-ladder is `RouteStore` on Isolator, not this ABC. `inject_contingency` is
-Stub-only and stays off the port.
+ladder is `RouteStore` on Isolator, not this ABC. ACTIVATE and
+DEACTIVATE call `submit_flight_command` with a waypoint path or
+CANCEL. `inject_contingency` is Stub-only and stays off the port.
 
 ## Backends
 
 `StubPlatform` is the default for tests and `open-vi`. It is deterministic
-state: accept/reject, TSPI, and status.
+state: accept/reject, TSPI, and status. Description is in
+[platforms/stub](platforms/stub/README.md). Coverage is in
+[platforms/stub/FEATURES.md](platforms/stub/FEATURES.md).
 
-`Px4MavlinkAdapter` is telemetry and `WAYPOINT_FOLLOWING` (mission upload,
-arm, takeoff, mission start). Install and SITL are in
-[PX4.md](PX4.md).
+`Px4MavlinkAdapter` is telemetry, `WAYPOINT_FOLLOWING` (mission
+upload, arm, takeoff, mission start), and `HSA_CSA` (offboard
+hold). Description and SITL are in
+[platforms/px4](platforms/px4/README.md). Coverage is in
+[platforms/px4/FEATURES.md](platforms/px4/FEATURES.md).
 
 `import open_vi.platform` loads the port and Stub. PX4 is imported only
 inside `make_platform("px4")`.

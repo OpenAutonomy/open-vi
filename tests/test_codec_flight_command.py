@@ -10,6 +10,7 @@ import pytest
 from open_vi.codec.capability import build_flight_capability
 from open_vi.codec.command import (
     build_flight_command_status,
+    build_sample_hsa_csa_command,
     parse_flight_commands,
 )
 from open_vi.codec.xmlutil import local_name, parse_xml, tostring
@@ -102,6 +103,7 @@ def test_capability_omits_profile_when_unset() -> None:
         capability_id=uuid4(),
     )
     assert b"WaypointFollowingPerformanceProfile" not in xml
+    assert b"HSA_CSA_PerformanceProfile" not in xml
 
 
 def test_capability_includes_waypoint_profile() -> None:
@@ -120,3 +122,74 @@ def test_capability_includes_waypoint_profile() -> None:
     assert b"MinAltitude" in xml
     assert b"MaxAltitude" in xml
     assert b"AGL" in xml
+
+
+def test_capability_includes_hsa_profile() -> None:
+    xml = build_flight_capability(
+        SystemIdentity.named("1"),
+        ControlOffer(
+            hsa_profile=FlightModeProfile(
+                min_altitude_m=10.0,
+                max_altitude_m=500.0,
+                altitude_ref="AGL",
+            )
+        ),
+        capability_id=uuid4(),
+    )
+    assert b"HSA_CSA_PerformanceProfile" in xml
+    assert b"MinAltitude" in xml
+    assert b"AGL" in xml
+
+
+def test_parse_hsa_heading_speed_agl() -> None:
+    identity = SystemIdentity.named("1")
+    command_id = uuid4()
+    xml = build_sample_hsa_csa_command(
+        identity,
+        command_id=command_id,
+        capability_id=uuid4(),
+        heading_deg=90.0,
+        speed_mps=5.0,
+        altitude_m=50.0,
+    )
+    cmds = parse_flight_commands(xml)
+    assert len(cmds) == 1
+    assert cmds[0].mode == "HSA_CSA"
+    assert cmds[0].hsa is not None
+    assert cmds[0].hsa.heading_deg == pytest.approx(90.0)
+    assert cmds[0].hsa.speed_mps == pytest.approx(5.0)
+    assert cmds[0].hsa.speed_ref == "GROUNDSPEED"
+    assert cmds[0].hsa.altitude_m == pytest.approx(50.0)
+    assert cmds[0].hsa.altitude_ref == "AGL"
+    assert cmds[0].hsa.heading_ref == "TRUE_NORTH"
+    assert cmds[0].hsa.direction_kind == "HEADING"
+    assert cmds[0].hsa.unsupported is None
+
+
+def test_parse_hsa_omits_speed() -> None:
+    xml = build_sample_hsa_csa_command(
+        SystemIdentity.named("1"),
+        command_id=uuid4(),
+        capability_id=uuid4(),
+        heading_deg=45.0,
+        speed_mps=None,
+        altitude_m=40.0,
+    )
+    hsa = parse_flight_commands(xml)[0].hsa
+    assert hsa is not None
+    assert hsa.speed_mps is None
+    assert hsa.heading_deg == pytest.approx(45.0)
+    assert hsa.altitude_m == pytest.approx(40.0)
+
+
+def test_parse_hsa_mach_is_unsupported() -> None:
+    xml = build_sample_hsa_csa_command(
+        SystemIdentity.named("1"),
+        command_id=uuid4(),
+        capability_id=uuid4(),
+        include_mach=True,
+        speed_mps=None,
+    )
+    hsa = parse_flight_commands(xml)[0].hsa
+    assert hsa is not None
+    assert hsa.unsupported == "MACH"

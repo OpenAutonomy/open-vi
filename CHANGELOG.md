@@ -2,14 +2,48 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- HSA altitude envelope is 0–500 m AGL (home HAE through home+500)
+  and is compared on a 0.1 m grid, so a hold at the advertised
+  home/current HAE is accepted. Waypoint following stays 10–500 m
+  AGL. Home HAE is frozen after the first fix so the offer and the
+  accept check do not drift.
+- PX4 execution rejects use `STATE_OR_SETTINGS` (a
+  `CannotComplyEnum` token). `FAILED` is a processing state and
+  was rejected by schema validation on C2.
+- HSA offboard primes setpoints, then OFFBOARD, then arm. A
+  ground hold near home HAE climbs to takeoff altitude.
+
+### Changed
+
+- Platform docs live under `docs/platforms/{stub,px4}/` (README plus
+  FEATURES). Isolator Volume coverage stays in
+  [docs/FEATURES.md](docs/FEATURES.md).
+
 ### Removed
 
+- `docs/PX4.md` (moved to `docs/platforms/px4/`).
 - `compose/asb.yml`.
 - `COMPLIANCE_MODE`. Route, query, and control always publish
   `QUEUED`, `PROCESSING`, then `COMPLETED`.
 
 ### Added
 
+- PX4 `HSA_CSA`: Isolator parses heading / speed / altitude onto
+  `FlightCommandRequest`; `Px4MavlinkAdapter` flies an offboard
+  hold (`GROUNDSPEED`, `TRUE_NORTH`, AGL/HAE). Curve following
+  stays rejected.
+- Live plan-execution status: `ResponsePlanExecutionStatus` carries
+  the activated route when one is flying; Isolator also publishes
+  `RoutePlanExecutionStatus` and `MA_MissionPlanExecutionStatus`
+  (`EXECUTING` on ACTIVATE, `COMPLETED` on route-sourced finish,
+  `FAILED` on DEACTIVATE of an executing plan).
+- Route ACTIVATE submits stored `MA_RoutePlan` waypoints as
+  `WAYPOINT_FOLLOWING` on `PlatformPort` (Capability NEW, or
+  Activity UPDATE when an activity is already live). DEACTIVATE
+  from ACTIVATED cancels that command. Validation is VALID only
+  when the stored path parses to a finite non-empty waypoint list.
 - PX4 Flight Autonomy for waypoint following: envelope
   validation with Volume `ValidationResult` reasons,
   `WaypointFollowingPerformanceProfile` min/max altitude on
