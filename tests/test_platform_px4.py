@@ -7,7 +7,12 @@ from uuid import uuid4
 
 import pytest
 
-from open_vi.domain import ControlReadiness, FlightCommandRequest, Waypoint
+from open_vi.domain import (
+    ControlReadiness,
+    FlightCommandRequest,
+    HsaCsaSetpoint,
+    Waypoint,
+)
 from open_vi.platform import make_platform
 from open_vi.platform.px4 import Px4MavlinkAdapter
 
@@ -30,11 +35,13 @@ class _FakeConn:
         self.target_system = 1
         self.target_component = 1
         self.param_sets: list[tuple[tuple[object, ...], dict[str, object]]] = []
+        self.position_targets: list[tuple[tuple[object, ...], dict]] = []
         self.mav = SimpleNamespace(
             mission_count_send=lambda *a, **k: None,
             mission_item_int_send=lambda *a, **k: None,
             command_long_send=lambda *a, **k: None,
             param_set_send=self._param_set,
+            set_position_target_local_ned_send=self._set_ned,
         )
 
         self._queue: list[object] = []
@@ -42,6 +49,9 @@ class _FakeConn:
 
     def _param_set(self, *args: object, **kwargs: object) -> None:
         self.param_sets.append((args, kwargs))
+
+    def _set_ned(self, *args: object, **kwargs: object) -> None:
+        self.position_targets.append((args, kwargs))
 
     def push(self, msg: object) -> None:
         self._queue.append(msg)
@@ -61,6 +71,7 @@ class _FakeConn:
             "TAKEOFF": (29, 4, 2),
             "MISSION": (29, 4, 4),
             "HOLD": (29, 4, 3),
+            "OFFBOARD": (29, 4, 6),
         }
 
     def set_mode(self, *args: object) -> None:
@@ -155,12 +166,19 @@ def test_px4_telemetry_and_snapshot() -> None:
     plat._ingest(conn._queue.pop(0))  # pylint: disable=protected-access
     snap = plat.snapshot()
     assert snap.readiness.available
-    assert snap.offer.capability_types == ("WAYPOINT_FOLLOWING",)
+    assert snap.offer.capability_types == (
+        "WAYPOINT_FOLLOWING",
+        "HSA_CSA",
+    )
+    assert snap.offer.hsa_profile is not None
     profile = snap.offer.waypoint_profile
     assert profile is not None
     assert profile.altitude_ref == "WGS_HAE"
     assert profile.min_altitude_m == pytest.approx(130.0)
     assert profile.max_altitude_m == pytest.approx(620.0)
+    hsa_profile = snap.offer.hsa_profile
+    assert hsa_profile.min_altitude_m == pytest.approx(120.0)
+    assert hsa_profile.max_altitude_m == pytest.approx(620.0)
     state = plat.get_vehicle_state()
     assert state.latitude_deg == pytest.approx(38.8895)
     assert state.longitude_deg == pytest.approx(-77.0353)
@@ -188,7 +206,27 @@ def test_px4_rejects_when_link_down() -> None:
     )
 
 
-def test_px4_rejects_hsa_csa() -> None:
+def test_px4_rejects_curve_following() -> None:
+    conn = _FakeConn()
+    plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg("HEARTBEAT", base_mode=0)
+    )
+    result = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="CURVE_FOLLOWING",
+            waypoints=(),
+        )
+    )
+    assert result.processing_state == "REJECTED"
+    assert result.validation_results == ("CAPABILITY_NOT_SUPPORTED",)
+    plat.close()
+
+
+def test_px4_rejects_hsa_magnetic() -> None:
     conn = _FakeConn()
     plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
     plat._ingest(  # pylint: disable=protected-access
@@ -200,7 +238,33 @@ def test_px4_rejects_hsa_csa() -> None:
             capability_id=uuid4(),
             command_state="NEW",
             mode="HSA_CSA",
-            waypoints=(),
+            hsa=HsaCsaSetpoint(
+                heading_deg=90.0,
+                heading_ref="MAGNETIC_NORTH",
+            ),
+        )
+    )
+    assert result.processing_state == "REJECTED"
+    assert result.validation_results == ("CAPABILITY_NOT_SUPPORTED",)
+    plat.close()
+
+
+def test_px4_rejects_hsa_tas() -> None:
+    conn = _FakeConn()
+    plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg("HEARTBEAT", base_mode=0)
+    )
+    result = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="HSA_CSA",
+            hsa=HsaCsaSetpoint(
+                speed_mps=10.0,
+                speed_ref="TRUE_AIRSPEED",
+            ),
         )
     )
     assert result.processing_state == "REJECTED"
@@ -611,4 +675,242 @@ def test_px4_qnh_writes_param() -> None:
 def test_px4_qnh_link_down_rejected() -> None:
     plat = Px4MavlinkAdapter(connection=None, autoconnect=False)
     assert plat.apply_system_management(qnh_kpa=101.325) == "REJECTED"
+    plat.close()
+
+
+def _hsa_in_band() -> HsaCsaSetpoint:
+    return HsaCsaSetpoint(
+        altitude_m=50.0,
+        altitude_ref="AGL",
+        speed_mps=5.0,
+        speed_ref="GROUNDSPEED",
+        heading_deg=90.0,
+        direction_kind="HEADING",
+        heading_ref="TRUE_NORTH",
+    )
+
+
+def test_px4_hsa_accepts_and_streams(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("pymavlink")
+    plat = _airborne_px4(monkeypatch)
+    conn = plat._conn
+    assert conn is not None
+    result = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="HSA_CSA",
+            hsa=_hsa_in_band(),
+        )
+    )
+    assert result.processing_state == "ACCEPTED"
+    assert result.activity_id is not None
+    assert plat.active_flight_activity() is not None
+    assert conn.position_targets
+    live = plat._hsa_live  # pylint: disable=protected-access
+    assert live is not None
+    assert live.heading_deg == pytest.approx(90.0)
+    assert live.speed_mps == pytest.approx(5.0)
+    assert live.rel_alt_m == pytest.approx(50.0)
+    plat.close()
+    assert plat._offboard_thread is None  # pylint: disable=protected-access
+
+
+def test_px4_hsa_empty_holds_current(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("pymavlink")
+    plat = _airborne_px4(monkeypatch)
+    result = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="HSA_CSA",
+            hsa=HsaCsaSetpoint(),
+        )
+    )
+    assert result.processing_state == "ACCEPTED"
+    live = plat._hsa_live  # pylint: disable=protected-access
+    assert live is not None
+    assert live.heading_deg == pytest.approx(0.0)
+    assert live.speed_mps == pytest.approx(0.0)
+    assert live.rel_alt_m == pytest.approx(30.0)
+    plat.close()
+
+
+def test_px4_hsa_ground_hae_climbs_to_takeoff() -> None:
+    plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg("HEARTBEAT", base_mode=0)
+    )
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=0,
+            lon=0,
+            alt=489429,
+            relative_alt=0,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=0,
+        )
+    )
+    live = plat._resolve_hsa(  # pylint: disable=protected-access
+        HsaCsaSetpoint(altitude_m=489.4, altitude_ref="WGS_HAE")
+    )
+    assert live.rel_alt_m == pytest.approx(30.0)
+    plat.close()
+
+
+def test_px4_hsa_execution_fail_uses_state_or_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plat = _airborne_px4(monkeypatch)
+
+    def fail(_hsa: HsaCsaSetpoint) -> None:
+        raise RuntimeError("COMMAND_ACK command=400 result=1")
+
+    monkeypatch.setattr(plat, "_execute_hsa_csa", fail)
+    result = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="HSA_CSA",
+            hsa=_hsa_in_band(),
+        )
+    )
+    assert result.processing_state == "REJECTED"
+    assert result.reason == "STATE_OR_SETTINGS"
+    plat.close()
+
+
+def test_px4_hsa_activity_update_replaces_vector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("pymavlink")
+    plat = _airborne_px4(monkeypatch)
+    first = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="HSA_CSA",
+            hsa=_hsa_in_band(),
+        )
+    )
+    assert first.processing_state == "ACCEPTED"
+    live_id = first.activity_id
+    updated = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="UPDATE",
+            mode="HSA_CSA",
+            choice="Activity",
+            activity_id=live_id,
+            hsa=HsaCsaSetpoint(
+                altitude_m=60.0,
+                altitude_ref="AGL",
+                speed_mps=8.0,
+                speed_ref="GROUNDSPEED",
+                heading_deg=180.0,
+                heading_ref="TRUE_NORTH",
+            ),
+        )
+    )
+    assert updated.processing_state == "ACCEPTED"
+    assert updated.new_activity is False
+    assert updated.activity_id == live_id
+    live = plat._hsa_live  # pylint: disable=protected-access
+    assert live is not None
+    assert live.heading_deg == pytest.approx(180.0)
+    assert live.speed_mps == pytest.approx(8.0)
+    assert live.rel_alt_m == pytest.approx(60.0)
+    plat.close()
+
+
+def test_px4_hsa_cancel_stops_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("pymavlink")
+    plat = _airborne_px4(monkeypatch)
+    command_id = uuid4()
+    first = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=command_id,
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="HSA_CSA",
+            hsa=_hsa_in_band(),
+        )
+    )
+    assert first.processing_state == "ACCEPTED"
+    canceled = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=command_id,
+            capability_id=uuid4(),
+            command_state="CANCEL",
+            mode="HSA_CSA",
+        )
+    )
+    assert canceled.processing_state == "CANCELED"
+    assert plat.active_flight_activity() is None
+    assert plat._hsa_live is None  # pylint: disable=protected-access
+    assert plat._offboard_thread is None  # pylint: disable=protected-access
+    plat.close()
+
+
+def test_px4_hsa_capability_new_while_live_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("pymavlink")
+    plat = _airborne_px4(monkeypatch)
+    first = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="HSA_CSA",
+            hsa=_hsa_in_band(),
+        )
+    )
+    assert first.processing_state == "ACCEPTED"
+    second = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="HSA_CSA",
+            hsa=_hsa_in_band(),
+        )
+    )
+    assert second.processing_state == "REJECTED"
+    assert plat.active_flight_activity() is not None
+    plat.close()
+
+
+def test_px4_hsa_rejects_out_of_envelope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plat = _airborne_px4(monkeypatch)
+    conn = plat._conn
+    assert conn is not None
+    result = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="HSA_CSA",
+            hsa=HsaCsaSetpoint(altitude_m=501.0, altitude_ref="AGL"),
+        )
+    )
+    assert result.processing_state == "REJECTED"
+    assert result.validation_results == ("PERFORMANCE_LIMIT_EXCEEDED",)
+    assert conn.position_targets == []
     plat.close()

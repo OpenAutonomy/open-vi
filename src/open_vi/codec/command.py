@@ -6,6 +6,7 @@ from uuid import UUID
 
 from open_vi.codec.geo import deg_to_rad, format_uci_angle, rad_to_deg
 from open_vi.codec.ns import SCHEMA_VERSION
+from open_vi.codec.path import build_path_element, parse_path_waypoints
 from open_vi.codec.xmlutil import (
     el,
     find_all,
@@ -22,6 +23,7 @@ from open_vi.domain import (
     CommandResult,
     FlightActivitySnapshot,
     FlightCommandRequest,
+    HsaCsaSetpoint,
     Waypoint,
 )
 from open_vi.identity import SystemIdentity
@@ -84,7 +86,8 @@ def parse_flight_commands(xml: str | bytes) -> list[FlightCommandRequest]:
             if find_one(choice_el, tag) is not None:
                 mode = mode_name
                 break
-        waypoints = _parse_waypoints(choice_el)
+        waypoints = parse_path_waypoints(choice_el)
+        hsa = parse_hsa_csa(choice_el) if mode == "HSA_CSA" else None
         requests.append(
             FlightCommandRequest(
                 command_id=parse_uuid_text(command_id_text),
@@ -94,135 +97,73 @@ def parse_flight_commands(xml: str | bytes) -> list[FlightCommandRequest]:
                 waypoints=waypoints,
                 choice=choice_name,
                 activity_id=activity_id,
+                hsa=hsa,
             )
         )
     return requests
 
 
-def _parse_waypoints(node) -> tuple[Waypoint, ...]:
-    """Extract waypoints; UCI lat/lon are radians on the wire.
+def parse_hsa_csa(node) -> HsaCsaSetpoint:
+    """Parse ``HSA_CSA`` altitude / speed / direction under *node*.
 
-    A-GRA PathSegment lists are not necessarily in flight order. Walk
-    ``FirstInPathSegmentID`` / ``NextPathSegment`` when present (A-GRA
-    ``EndPoint`` / ``Point2D`` layout). Fall back to document-order
-    ``Position`` / ``Point2D`` for older sample XML.
+    Degrees in the returned setpoint. Mach and SpeedOptimization are
+    flagged ``unsupported`` — no conversion is invented.
     """
-    chained = _waypoints_from_path_links(node)
-    if chained:
-        return chained
-    return _waypoints_document_order(node)
-
-
-def _hex_id(text: str | None) -> str | None:
-    if not text:
-        return None
-    return text.replace("-", "").strip().lower()
-
-
-def _direct_named(node, *names):
-    wanted = set(names)
-    return [child for child in list(node) if local_name(child) in wanted]
-
-
-def _waypoints_from_path_links(node) -> tuple[Waypoint, ...]:
-    points: list[Waypoint] = []
-    for path in (child for child in node.iter() if local_name(child) == "Path"):
-        points.extend(_path_segment_waypoints(path))
-    return tuple(points)
-
-
-def _path_segment_waypoints(path) -> list[Waypoint]:
-    segs = _direct_named(path, "PathSegment", "Segment")
-    if not segs:
-        return []
-    by_id: dict[str, object] = {}
-    for seg in segs:
-        sid_node = find_one(seg, "PathSegmentID")
-        sid = _hex_id(
-            find_text(sid_node, "UUID") if sid_node is not None else None
-        )
-        if sid:
-            by_id[sid] = seg
-    start = None
-    for child in list(path):
-        if local_name(child) == "FirstInPathSegmentID":
-            start = _hex_id(find_text(child, "UUID"))
+    hsa_el = find_one(node, "HSA_CSA")
+    if hsa_el is None:
+        return HsaCsaSetpoint()
+    if find_one(hsa_el, "MachValue") is not None:
+        return HsaCsaSetpoint(unsupported="MACH")
+    if find_one(hsa_el, "SpeedOptimization") is not None:
+        return HsaCsaSetpoint(unsupported="SPEED_OPTIMIZATION")
+    altitude_m = None
+    altitude_ref = None
+    alt_wrap = None
+    for child in list(hsa_el):
+        if local_name(child) == "Altitude":
+            alt_wrap = child
             break
-    ordered: list = []
-    seen: set[str] = set()
-    cur = start
-    while cur and cur not in seen:
-        seen.add(cur)
-        seg = by_id.get(cur)
-        if seg is None:
-            break
-        ordered.append(seg)
-        nxt = None
-        for child in list(seg):
-            if local_name(child) == "NextPathSegment":
-                nxt = child
-                break
-        cur = None
-        if nxt is not None:
-            nid_node = find_one(nxt, "PathSegmentID")
-            nid = find_text(nid_node, "UUID") if nid_node is not None else None
-            cur = _hex_id(nid)
-    if not ordered:
-        ordered = segs
-    points: list[Waypoint] = []
-    for seg in ordered:
-        wp = _waypoint_from_segment(seg)
-        if wp is not None:
-            points.append(wp)
-    return points
-
-
-def _waypoint_from_segment(seg) -> Waypoint | None:
-    point = None
-    for candidate in seg.iter():
-        if local_name(candidate) in {"Point2D", "Position"}:
-            point = candidate
-            break
-    if point is None:
-        return None
-    lat_text = find_text(point, "Latitude")
-    lon_text = find_text(point, "Longitude")
-    if not lat_text or not lon_text:
-        return None
-    alt_text = find_text(point, "Altitude")
-    return Waypoint(
-        latitude_deg=rad_to_deg(float(lat_text)),
-        longitude_deg=rad_to_deg(float(lon_text)),
-        altitude_m=float(alt_text) if alt_text else None,
-    )
-
-
-def _waypoints_document_order(node) -> tuple[Waypoint, ...]:
-    """Scan nested Position/Point2D when no PathSegment chain exists."""
-    points: list[Waypoint] = []
-    for candidate in node.iter():
-        lat_text = None
-        lon_text = None
-        alt_text = None
-        for child in list(candidate):
+    if alt_wrap is not None:
+        for child in list(alt_wrap):
             name = local_name(child)
-            text = (child.text or "").strip()
-            if name == "Latitude":
-                lat_text = text
-            elif name == "Longitude":
-                lon_text = text
-            elif name == "Altitude":
-                alt_text = text
-        if not lat_text or not lon_text:
-            continue
-        points.append(
-            Waypoint(
-                latitude_deg=rad_to_deg(float(lat_text)),
-                longitude_deg=rad_to_deg(float(lon_text)),
-                altitude_m=float(alt_text) if alt_text else None,
-            )
-        )
-    return tuple(points)
+            if name == "AltitudeReference" and child.text:
+                altitude_ref = child.text.strip()
+            elif name == "Altitude" and child.text:
+                altitude_m = float(child.text.strip())
+    speed_mps = None
+    speed_ref = None
+    speed_value = find_one(hsa_el, "SpeedValue")
+    if speed_value is not None:
+        speed_text = find_text(speed_value, "Value")
+        if speed_text:
+            speed_mps = float(speed_text)
+        speed_ref = find_text(speed_value, "Reference")
+    heading_deg = None
+    direction_kind = None
+    heading_ref = None
+    direction = find_one(hsa_el, "Direction")
+    if direction is not None:
+        choice = None
+        for child in list(direction):
+            name = local_name(child)
+            if name in {"Heading", "Course"}:
+                choice = child
+                direction_kind = name.upper()
+                break
+        if choice is not None:
+            heading_ref = find_text(choice, "Reference")
+            value_text = find_text(choice, "Value")
+            if value_text:
+                heading_deg = rad_to_deg(float(value_text))
+    return HsaCsaSetpoint(
+        altitude_m=altitude_m,
+        altitude_ref=altitude_ref,
+        speed_mps=speed_mps,
+        speed_ref=speed_ref,
+        heading_deg=heading_deg,
+        direction_kind=direction_kind,
+        heading_ref=heading_ref,
+    )
 
 
 def build_flight_command_status(
@@ -358,35 +299,70 @@ def _activity_shell(
     return el("Activity", *children)
 
 
-def _waypoint_following_mode(waypoints: tuple[Waypoint, ...]):
-    path_id = UUID(int=1)
-    path_children = [
-        id_type("PathID", path_id, "path-1"),
-        el("PathType", text="PRIMARY"),
-    ]
-    for index, wp in enumerate(waypoints, start=1):
-        point_kids = [
-            el("Latitude", text=format_uci_angle(deg_to_rad(wp.latitude_deg))),
+def _hsa_csa_mode(
+    *,
+    heading_deg: float | None,
+    speed_mps: float | None,
+    altitude_m: float | None,
+    altitude_ref: str = "AGL",
+    speed_ref: str = "GROUNDSPEED",
+    heading_ref: str = "TRUE_NORTH",
+    direction_kind: str = "HEADING",
+    include_mach: bool = False,
+):
+    """Build an ``HSA_CSA`` FlightControlMode element."""
+    kids = []
+    if altitude_m is not None:
+        kids.append(
             el(
-                "Longitude",
-                text=format_uci_angle(deg_to_rad(wp.longitude_deg)),
-            ),
-        ]
-        if wp.altitude_m is not None:
-            point_kids.append(el("Altitude", text=str(wp.altitude_m)))
-        path_children.append(
-            el(
-                "Segment",
-                id_type("PathSegmentID", UUID(int=index)),
-                el("Position", *point_kids),
+                "Altitude",
+                el("AltitudeReference", text=altitude_ref),
+                el("Altitude", text=str(altitude_m)),
             )
         )
+    if include_mach:
+        kids.append(el("Speed", el("SpeedChoice", el("MachValue", text="0.2"))))
+    elif speed_mps is not None:
+        kids.append(
+            el(
+                "Speed",
+                el(
+                    "SpeedChoice",
+                    el(
+                        "SpeedValue",
+                        el("Value", text=str(speed_mps)),
+                        el("Reference", text=speed_ref),
+                    ),
+                ),
+            )
+        )
+    if heading_deg is not None:
+        tag = "Course" if direction_kind == "COURSE" else "Heading"
+        kids.append(
+            el(
+                "Direction",
+                el(
+                    tag,
+                    el(
+                        "Value",
+                        text=format_uci_angle(deg_to_rad(heading_deg)),
+                    ),
+                    el("Reference", text=heading_ref),
+                ),
+            )
+        )
+    return el("HSA_CSA", *kids)
+
+
+def _waypoint_following_mode(waypoints: tuple[Waypoint, ...]):
+    path = build_path_element(waypoints)
+    path_id = UUID(int=1)
     route = el(
         "Route",
         el("Detailed", text="false"),
         id_type("FirstInRoutePathID", path_id),
         el("RouteProjection", text="GREAT_CIRCLE"),
-        el("Path", *path_children),
+        path,
     )
     return el("WaypointFollowing", route)
 
@@ -464,13 +440,67 @@ def build_sample_hsa_csa_command(
     *,
     command_id: UUID,
     capability_id: UUID,
+    heading_deg: float | None = 90.0,
+    speed_mps: float | None = 5.0,
+    altitude_m: float | None = 50.0,
+    altitude_ref: str = "AGL",
+    speed_ref: str = "GROUNDSPEED",
+    heading_ref: str = "TRUE_NORTH",
+    direction_kind: str = "HEADING",
+    include_mach: bool = False,
+    command_state: str = "NEW",
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
 ) -> bytes:
-    """Minimal MA_FlightCommand (empty HSA_CSA) for unit tests."""
-    capability = _capability_shell(command_id, capability_id, el("HSA_CSA"))
+    """Minimal MA_FlightCommand (HSA_CSA vector) for unit tests."""
+    capability = _capability_shell(
+        command_id,
+        capability_id,
+        _hsa_csa_mode(
+            heading_deg=heading_deg,
+            speed_mps=speed_mps,
+            altitude_m=altitude_m,
+            altitude_ref=altitude_ref,
+            speed_ref=speed_ref,
+            heading_ref=heading_ref,
+            direction_kind=direction_kind,
+            include_mach=include_mach,
+        ),
+        command_state=command_state,
+    )
     return _flight_command_bytes(
         identity, capability, schema_version=schema_version, mode=mode
+    )
+
+
+def build_sample_hsa_csa_activity_update(
+    identity: SystemIdentity,
+    *,
+    command_id: UUID,
+    activity_id: UUID,
+    heading_deg: float | None = 180.0,
+    speed_mps: float | None = 8.0,
+    altitude_m: float | None = 60.0,
+    altitude_ref: str = "AGL",
+    capability_id: UUID | None = None,
+    schema_version: str = SCHEMA_VERSION,
+    mode: str = "SIMULATION",
+) -> bytes:
+    """Activity-choice MA_FlightCommand (HSA_CSA UPDATE) for unit tests."""
+    activity = _activity_shell(
+        command_id,
+        activity_id,
+        _hsa_csa_mode(
+            heading_deg=heading_deg,
+            speed_mps=speed_mps,
+            altitude_m=altitude_m,
+            altitude_ref=altitude_ref,
+        ),
+        command_state="UPDATE",
+        capability_id=capability_id,
+    )
+    return _flight_command_bytes(
+        identity, activity, schema_version=schema_version, mode=mode
     )
 
 

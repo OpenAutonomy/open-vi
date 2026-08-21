@@ -4,7 +4,8 @@ An adapter owns the vehicle protocol: the link, framing, and mapping into
 `open_vi.domain`. Isolator owns A-GRA sequences, including the route ladder
 and File*. A new vehicle is a new `PlatformPort`; it is not a change to
 Isolator, codec, or the bus. The port methods are in [PLATFORM.md](PLATFORM.md).
-PX4 is the worked example ([PX4.md](PX4.md), `src/open_vi/platform/px4.py`).
+PX4 is the worked example ([platforms/px4](platforms/px4/README.md),
+`src/open_vi/platform/px4.py`).
 
 ## Contract
 
@@ -20,7 +21,8 @@ The design depends on four rules:
    through `PlatformPort` and returns domain values.
 3. **Do not implement the route ladder.** Isolator `RouteStore` owns
    upload → prepare → activate → deactivate and stored `MA_RoutePlan`
-   bytes. ACTIVATE does not call the vehicle.
+   bytes. ACTIVATE submits a waypoint `FlightCommandRequest` through
+   the port; the adapter does not parse or store the plan.
 4. **Do not put `inject_contingency` on the ABC.** That is Stub-only, for
    unit tests. Report readiness through `snapshot()`.
 
@@ -32,7 +34,8 @@ The design depends on four rules:
    not load it.
 3. Test the adapter in isolation (unit or SITL). Keep Isolator sequence
    coverage on `StubPlatform`.
-4. List the backend in [PLATFORM.md](PLATFORM.md).
+4. List the backend in [PLATFORM.md](PLATFORM.md) and add
+   `docs/platforms/<name>/` (README and FEATURES).
 
 ## Checklist
 

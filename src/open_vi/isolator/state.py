@@ -19,4 +19,7 @@ class IsolatorState:
     controller_service_id: uuid.UUID | None = None
     control_type: str | None = None
     stored_route_ids: list[uuid.UUID] = field(default_factory=list)
+    active_route_plan_id: uuid.UUID | None = None
+    route_flight_command_id: uuid.UUID | None = None
+    route_execution_state: str | None = None
     active_task_id: uuid.UUID | None = None

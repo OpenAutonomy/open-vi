@@ -27,6 +27,7 @@ class RouteActivationResult:
     emit_pair: bool = True  # False → single status (DEACTIVATE Loose)
     reason: str | None = None
     reason_description: str | None = None
+    awaiting_vehicle: bool = False
 
 
 @dataclass(frozen=True)
@@ -38,3 +39,14 @@ class StoredRoutePlan:
     sha256_hex: str
     mission_plan_id: UUID | None = None
     plan_state: str = "READY_FOR_UPLOAD"
+
+
+@dataclass(frozen=True)
+class PlanExecutionSnapshot:
+    """Live route/mission execution for Isolator outs (not UCI)."""
+
+    execution_state: str  # EXECUTING | COMPLETED | FAILED
+    route_plan_id: UUID
+    mission_plan_id: UUID | None = None
+    activity_id: UUID | None = None
+    source: str = "ACTUAL"

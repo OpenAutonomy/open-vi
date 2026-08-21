@@ -2,7 +2,7 @@
 #
 #   BROKER_HOST=host.docker.internal docker compose -f compose/vi.yml up --build
 #
-# PX4: VI_PLATFORM=px4 (see docs/PX4.md).
+# PX4: VI_PLATFORM=px4 (see docs/platforms/px4/README.md).
 
 services:
   open-vi:

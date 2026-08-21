@@ -12,12 +12,12 @@ Install and run from the
 
 ## Documentation
 
-- [Features](FEATURES.md) — ASK 5.0a VI coverage
+- [Features](FEATURES.md) — ASK 5.0a Isolator coverage
 - [Architecture](ARCHITECTURE.md) — layers, ports, and an example path
 - [Isolator](ISOLATOR.md) — sequences, handlers, and `RouteStore`
 - [Platform](PLATFORM.md) — `PlatformPort` methods
+- [Platforms](platforms/README.md) — Stub and PX4 backends
 - [Adding a vehicle](ADDING_A_VEHICLE.md) — adding a backend
 - [Codec](CODEC.md) — parse and build
 - [ASB](ASB.md) — STOMP and the in-memory bus
-- [PX4](PX4.md) — PX4 SITL backend
 - [API](api.md) — generated from source docstrings

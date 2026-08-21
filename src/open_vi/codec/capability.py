@@ -26,7 +26,7 @@ def build_flight_capability(
         capability_children.append(el("AcceptedInterface", text=iface))
     for cap_type in offer.capability_types:
         capability_children.append(el("CapabilityType", text=cap_type))
-    profile_el = _waypoint_performance_profile(offer.waypoint_profile)
+    profile_el = _performance_profile_block(offer)
     if profile_el is not None:
         capability_children.append(profile_el)
 
@@ -45,10 +45,22 @@ def build_flight_capability(
     return tostring(root)
 
 
-def _waypoint_performance_profile(
-    profile: FlightModeProfile | None,
-):
-    """WaypointFollowingPerformanceProfile, or None when unset."""
+def _performance_profile_block(offer: ControlOffer):
+    """HSA and waypoint min/max, or None when both are unset."""
+    kids = []
+    hsa = _mode_limits(offer.hsa_profile)
+    if hsa is not None:
+        kids.append(el("HSA_CSA_PerformanceProfile", *hsa))
+    waypoint = _mode_limits(offer.waypoint_profile)
+    if waypoint is not None:
+        kids.append(el("WaypointFollowingPerformanceProfile", *waypoint))
+    if not kids:
+        return None
+    return el("FlightCapabilityPerformanceProfile", *kids)
+
+
+def _mode_limits(profile: FlightModeProfile | None):
+    """MinAltitude / MaxAltitude children, or None when unset."""
     if profile is None:
         return None
     kids = []
@@ -68,12 +80,7 @@ def _waypoint_performance_profile(
                 profile.altitude_ref,
             )
         )
-    if not kids:
-        return None
-    return el(
-        "FlightCapabilityPerformanceProfile",
-        el("WaypointFollowingPerformanceProfile", *kids),
-    )
+    return kids or None
 
 
 def _altitude_limit(tag: str, altitude_m: float, altitude_ref: str):

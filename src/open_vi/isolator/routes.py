@@ -3,13 +3,14 @@
 :class:`RouteStore` sits next to session state. Route and query
 handlers read and write it; they do not ask
 :class:`~open_vi.platform.port.PlatformPort`.
-``ACTIVATE`` never calls the vehicle. Plans are opaque XML plus a
-sha256 — this module does not parse waypoints.
+``ACTIVATE`` and ``DEACTIVATE`` from ``ACTIVATED`` return
+``awaiting_vehicle`` so the handler can submit or cancel on the
+port, then :meth:`commit`. This module does not parse waypoints.
 
-The store jumps to the terminal plan state. Mid-states
-(``PREPARING_FOR_UPLOAD``, ``UPLOADING``, …) live on
-:class:`RouteActivationResult` so the handler can walk the
-status ladder. ``prime`` is a test helper.
+The store jumps to the terminal plan state for upload/prepare
+steps. Mid-states (``PREPARING_FOR_UPLOAD``, ``UPLOADING``, …)
+live on :class:`RouteActivationResult` so the handler can walk
+the status ladder. ``prime`` is a test helper.
 """
 
 from __future__ import annotations
@@ -79,8 +80,10 @@ class RouteStore:
     Ladder: ``PREPARE_FOR_UPLOAD`` → ``UPLOAD`` →
     ``PREPARE_FOR_ACTIVATION`` → ``ACTIVATE``, or ``DEACTIVATE`` from
     ``READY_FOR_ACTIVATION`` / ``ACTIVATED``. Unknown commands and
-    illegal from-states are ``REJECTED``. ``UPLOAD`` also rejects
-    when no XML has been ingested.
+    illegal from-states are ``REJECTED``. ``UPLOAD`` and ``ACTIVATE``
+    also reject when no XML has been ingested. ``ACTIVATE`` and
+    ``DEACTIVATE`` from ``ACTIVATED`` do not set the terminal state
+    until the handler :meth:`commit`.
     """
 
     def __init__(self) -> None:
@@ -138,13 +141,16 @@ class RouteStore:
     def handle_activation(
         self, req: RouteActivationRequest
     ) -> RouteActivationResult:
-        """Accept or reject one activation command and set the terminal state.
+        """Accept or reject one activation command.
 
         Mid-state and ``emit_pair`` go on the result for the handler.
-        ``DEACTIVATE`` sets ``emit_pair`` false so the handler
-        publishes a single status. ``PREPARE_FOR_UPLOAD`` may create
-        a record with no XML; ``UPLOAD`` then requires a prior
-        :meth:`ingest`.
+        ``DEACTIVATE`` from ready sets ``emit_pair`` false so the
+        handler publishes a single status. ``ACTIVATE`` and
+        ``DEACTIVATE`` from ``ACTIVATED`` set ``awaiting_vehicle``
+        and do not change plan state — the handler
+        :meth:`commit` after the platform accepts. ``PREPARE_FOR_UPLOAD``
+        may create a record with no XML; ``UPLOAD`` and ``ACTIVATE``
+        require a prior :meth:`ingest`.
         """
         transition = _ROUTE_TRANSITIONS.get(req.command_type)
         if transition is None:
@@ -170,7 +176,7 @@ class RouteStore:
                     f"Cannot {req.command_type} from state {current}"
                 ),
             )
-        if req.command_type == "UPLOAD" and (
+        if req.command_type in {"UPLOAD", "ACTIVATE"} and (
             record is None or record.xml is None
         ):
             return RouteActivationResult(
@@ -178,7 +184,9 @@ class RouteStore:
                 plan_state=current or "INACTIVE",
                 emit_pair=False,
                 reason="INVALID_INPUT_PARAMETER",
-                reason_description="No stored MA_RoutePlan for UPLOAD",
+                reason_description=(
+                    f"No stored MA_RoutePlan for {req.command_type}"
+                ),
             )
         if record is None:
             record = _RouteRecord(
@@ -187,6 +195,21 @@ class RouteStore:
             )
             self._routes[req.route_plan_id] = record
         record.mission_plan_id = req.mission_plan_id
+        if req.command_type == "ACTIVATE":
+            return RouteActivationResult(
+                processing_state="ACCEPTED",
+                plan_state=record.state,
+                progress_state=mid,
+                emit_pair=True,
+                awaiting_vehicle=True,
+            )
+        if req.command_type == "DEACTIVATE" and record.state == "ACTIVATED":
+            return RouteActivationResult(
+                processing_state="ACCEPTED",
+                plan_state=record.state,
+                emit_pair=False,
+                awaiting_vehicle=True,
+            )
         record.state = terminal
         return RouteActivationResult(
             processing_state="ACCEPTED",
@@ -194,6 +217,18 @@ class RouteStore:
             progress_state=mid,
             emit_pair=emit_pair,
         )
+
+    def commit(self, route_plan_id: UUID, terminal: str) -> None:
+        """Set the terminal plan state after the handler finishes I/O.
+
+        Used for ``ACTIVATE`` (after the platform accepts) and
+        ``DEACTIVATE`` from ``ACTIVATED`` (after cancel). Unknown ids
+        are ignored.
+        """
+        record = self._routes.get(route_plan_id)
+        if record is None:
+            return
+        record.state = terminal
 
     def prime(
         self,

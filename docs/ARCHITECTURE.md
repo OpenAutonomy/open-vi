@@ -9,7 +9,8 @@ What the ASK 5.0a Volume requires, and what Isolator covers, is in
 [FEATURES.md](FEATURES.md). The bus face is in [ASB.md](ASB.md),
 sequences are in [ISOLATOR.md](ISOLATOR.md),
 parse and build are in [CODEC.md](CODEC.md), the vehicle port is in
-[PLATFORM.md](PLATFORM.md), and PX4 is in [PX4.md](PX4.md). How to add a
+[PLATFORM.md](PLATFORM.md), and backends are in
+[platforms](platforms/README.md). How to add a
 backend is in [ADDING_A_VEHICLE.md](ADDING_A_VEHICLE.md).
 
 ## Topology
@@ -44,7 +45,7 @@ flowchart LR
 | Isolator | Sequences, accept/reject, route ladder and File*, outbound capability / status / TSPI |
 | `PlatformPort` | Snapshot, flight command, TSPI, QNH, faults |
 | `StubPlatform` | Default backend for tests and `open-vi` |
-| `Px4MavlinkAdapter` | SITL: telemetry and `WAYPOINT_FOLLOWING` |
+| `Px4MavlinkAdapter` | SITL: telemetry, `WAYPOINT_FOLLOWING`, `HSA_CSA` |
 
 ## Layers
 

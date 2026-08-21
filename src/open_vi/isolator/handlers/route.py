@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from uuid import uuid4
 
+from open_vi.codec.command import build_flight_activity
 from open_vi.codec.notification import build_system_notification
 from open_vi.codec.route import (
     build_file_location_for_route,
@@ -14,11 +15,20 @@ from open_vi.codec.route import (
     build_route_plan_validation_command_status,
     parse_route_activation_commands,
     parse_route_plan_id,
+    parse_route_plan_waypoints,
     parse_route_validation_command,
 )
-from open_vi.domain import RouteActivationRequest, RouteActivationResult
+from open_vi.domain import (
+    FlightCommandRequest,
+    RouteActivationRequest,
+    RouteActivationResult,
+    finite_waypoint_geometry,
+    is_live_activity,
+)
+from open_vi.isolator import publishers
 from open_vi.isolator.compliance import STATUS_LADDER
 from open_vi.isolator.context import IsolatorContext
+from open_vi.isolator.handlers.flight_command import MT_FLIGHT_ACTIVITY
 
 LOGGER = logging.getLogger(__name__)
 
@@ -66,6 +76,14 @@ class RouteHandler:
             return
         for req in commands:
             result = ctx.routes.handle_activation(req)
+            if (
+                result.awaiting_vehicle
+                and result.processing_state == "ACCEPTED"
+            ):
+                if req.command_type == "ACTIVATE":
+                    result = self._activate_vehicle(ctx, req, result)
+                elif req.command_type == "DEACTIVATE":
+                    result = self._deactivate_vehicle(ctx, req, result)
             self._publish_statuses(ctx, req, result)
             LOGGER.info(
                 "Route %s %s → %s (%s)",
@@ -74,6 +92,132 @@ class RouteHandler:
                 result.processing_state,
                 result.plan_state,
             )
+
+    def _activate_vehicle(
+        self,
+        ctx: IsolatorContext,
+        req: RouteActivationRequest,
+        pending: RouteActivationResult,
+    ) -> RouteActivationResult:
+        """Submit WAYPOINT_FOLLOWING; commit ACTIVATED only on accept."""
+        stored = ctx.routes.get(req.route_plan_id)
+        if stored is None:
+            return RouteActivationResult(
+                processing_state="REJECTED",
+                plan_state=pending.plan_state,
+                emit_pair=False,
+                reason="INVALID_INPUT_PARAMETER",
+                reason_description="No stored MA_RoutePlan for ACTIVATE",
+            )
+        try:
+            waypoints = parse_route_plan_waypoints(stored.xml)
+        except ValueError:
+            waypoints = ()
+        if not finite_waypoint_geometry(waypoints):
+            return RouteActivationResult(
+                processing_state="REJECTED",
+                plan_state=pending.plan_state,
+                emit_pair=False,
+                reason="INVALID_INPUT_PARAMETER",
+                reason_description="MA_RoutePlan has no flyable waypoints",
+            )
+        live = ctx.platform.active_flight_activity()
+        command_id = uuid4()
+        if is_live_activity(live):
+            activity_id = ctx.state.active_activity_id
+            if activity_id is None and live is not None:
+                activity_id = live.activity_id
+            cmd = FlightCommandRequest(
+                command_id=command_id,
+                capability_id=ctx.state.capability_id,
+                command_state="UPDATE",
+                mode="WAYPOINT_FOLLOWING",
+                waypoints=waypoints,
+                choice="Activity",
+                activity_id=activity_id,
+            )
+        else:
+            cmd = FlightCommandRequest(
+                command_id=command_id,
+                capability_id=ctx.state.capability_id,
+                command_state="NEW",
+                mode="WAYPOINT_FOLLOWING",
+                waypoints=waypoints,
+                choice="Capability",
+            )
+        flight = ctx.platform.submit_flight_command(cmd)
+        if flight.processing_state != "ACCEPTED":
+            return RouteActivationResult(
+                processing_state="REJECTED",
+                plan_state=pending.plan_state,
+                emit_pair=False,
+                reason=flight.reason,
+                reason_description=flight.reason_description,
+            )
+        ctx.routes.commit(req.route_plan_id, "ACTIVATED")
+        ctx.state.route_flight_command_id = command_id
+        ctx.state.active_route_plan_id = req.route_plan_id
+        ctx.state.route_execution_state = "EXECUTING"
+        if flight.activity_id is not None:
+            ctx.state.active_activity_id = flight.activity_id
+        activity = ctx.platform.active_flight_activity()
+        if activity is not None:
+            ctx.bus.publish(
+                MT_FLIGHT_ACTIVITY,
+                build_flight_activity(
+                    ctx.identity,
+                    activity,
+                    schema_version=ctx.schema_version,
+                    mode=ctx.message_mode,
+                    object_state="NEW" if flight.new_activity else "UPDATED",
+                ),
+            )
+        publishers.publish_plan_execution(ctx)
+        return RouteActivationResult(
+            processing_state="ACCEPTED",
+            plan_state="ACTIVATED",
+            progress_state=pending.progress_state,
+            emit_pair=True,
+        )
+
+    def _deactivate_vehicle(
+        self,
+        ctx: IsolatorContext,
+        req: RouteActivationRequest,
+        pending: RouteActivationResult,
+    ) -> RouteActivationResult:
+        """CANCEL a route-sourced command, then commit DEACTIVATED."""
+        command_id = ctx.state.route_flight_command_id
+        if command_id is not None:
+            cancel = ctx.platform.submit_flight_command(
+                FlightCommandRequest(
+                    command_id=command_id,
+                    capability_id=ctx.state.capability_id,
+                    command_state="CANCEL",
+                    mode=None,
+                    choice="Capability",
+                )
+            )
+            if cancel.processing_state == "REJECTED":
+                return RouteActivationResult(
+                    processing_state="REJECTED",
+                    plan_state=pending.plan_state,
+                    emit_pair=False,
+                    reason=cancel.reason,
+                    reason_description=cancel.reason_description,
+                )
+            ctx.state.route_execution_state = "FAILED"
+            publishers.publish_plan_execution(ctx)
+        ctx.routes.commit(req.route_plan_id, "DEACTIVATED")
+        ctx.state.route_flight_command_id = None
+        ctx.state.active_route_plan_id = None
+        ctx.state.active_activity_id = None
+        ctx.state.route_execution_state = None
+        return RouteActivationResult(
+            processing_state="ACCEPTED",
+            plan_state="DEACTIVATED",
+            emit_pair=False,
+        )
 
     def _publish_statuses(
         self,
@@ -202,7 +346,14 @@ class RouteHandler:
             )
             return
         stored = ctx.routes.get(cmd.route_plan_id)
-        validation_state = "VALID" if stored is not None else "INVALID"
+        validation_state = "INVALID"
+        if stored is not None:
+            try:
+                waypoints = parse_route_plan_waypoints(stored.xml)
+            except ValueError:
+                waypoints = ()
+            if finite_waypoint_geometry(waypoints):
+                validation_state = "VALID"
         validation_id = uuid4()
         ctx.bus.publish(
             MT_ROUTE_VALIDATION,
