@@ -238,12 +238,12 @@ def test_activate_route() -> None:
     assert "COMPLETED" in bus.published[MT_ACTIVATION_STATUS][2]
     activity = platform.active_flight_activity()
     assert activity is not None
-    assert iso.ctx.state.active_activity_id == activity.activity_id
-    assert iso.ctx.state.active_route_plan_id == route_id
-    assert iso.ctx.state.route_flight_command_id is not None
+    assert iso.ctx.flight.activity_id == activity.activity_id
+    assert iso.ctx.execution.plan_id == route_id
+    assert iso.ctx.execution.command_id is not None
     assert len(bus.published[MT_FLIGHT_ACTIVITY]) == 1
     assert "NEW" in bus.published[MT_FLIGHT_ACTIVITY][0]
-    assert iso.ctx.state.route_execution_state == "EXECUTING"
+    assert iso.ctx.execution.state == "EXECUTING"
     response = bus.published[MT_RESPONSE_PLAN_EXECUTION_STATUS][-1]
     assert "EXECUTING" in response
     assert route_id.hex in response.replace("-", "")
@@ -455,9 +455,9 @@ def test_deactivate_after_activate_clears_activity() -> None:
     stored = iso.ctx.routes.get(route_id)
     assert stored is not None
     assert stored.plan_state == "DEACTIVATED"
-    assert iso.ctx.state.route_flight_command_id is None
-    assert iso.ctx.state.active_route_plan_id is None
-    assert iso.ctx.state.route_execution_state is None
+    assert iso.ctx.execution.command_id is None
+    assert iso.ctx.execution.plan_id is None
+    assert iso.ctx.execution.state is None
     failed = bus.published[MT_ROUTE_PLAN_EXECUTION_STATUS][-1]
     assert "FAILED" in failed
     assert route_id.hex in failed.replace("-", "")
@@ -536,7 +536,7 @@ def test_route_sourced_complete_skips_flight_command_status() -> None:
             command_type="ACTIVATE",
         ),
     )
-    command_id = iso.ctx.state.route_flight_command_id
+    command_id = iso.ctx.execution.command_id
     assert command_id is not None
     assert platform.complete_flight_command(command_id) == command_id
     iso.publish_command_updates_once()
@@ -544,8 +544,8 @@ def test_route_sourced_complete_skips_flight_command_status() -> None:
     stored = iso.ctx.routes.get(route_id)
     assert stored is not None
     assert stored.plan_state == "ACTIVATED"
-    assert iso.ctx.state.active_activity_id is None
-    assert iso.ctx.state.route_execution_state == "COMPLETED"
+    assert iso.ctx.flight.activity_id is None
+    assert iso.ctx.execution.state == "COMPLETED"
     assert "COMPLETED" in bus.published[MT_ROUTE_PLAN_EXECUTION_STATUS][-1]
     assert "COMPLETED" in bus.published[MT_RESPONSE_PLAN_EXECUTION_STATUS][-1]
 

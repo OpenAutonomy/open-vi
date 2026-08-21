@@ -31,7 +31,6 @@ def test_advertise_publishes_capability_then_status() -> None:
         MT_FLIGHT_CAPABILITY,
         MT_FLIGHT_CAPABILITY_STATUS,
     ]
-    assert iso.ctx.state.advertised
     assert iso.ctx.state.last_availability == "AVAILABLE"
 
 

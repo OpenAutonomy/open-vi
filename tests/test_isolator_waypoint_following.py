@@ -94,7 +94,7 @@ def test_waypoint_command_accepted_publishes_status_and_activity() -> None:
     assert local_name(parse_xml(activity)) == "MA_FlightActivity"
     assert "ACTIVE_UNCONSTRAINED" in activity
     assert "VehicleCommandState" in activity
-    assert iso.ctx.state.active_activity_id is not None
+    assert iso.ctx.flight.activity_id is not None
     assert platform.active_flight_activity() is not None
 
 

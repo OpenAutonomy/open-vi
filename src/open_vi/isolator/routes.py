@@ -1,7 +1,8 @@
 """Isolator-owned route ladder and retained ``MA_RoutePlan`` bytes.
 
-:class:`RouteStore` sits next to session state. Route and query
-handlers read and write it; they do not ask
+:class:`RouteStore` sits next to
+:class:`~open_vi.isolator.execution.RouteExecution`.
+Route and query handlers read and write it; they do not ask
 :class:`~open_vi.platform.port.PlatformPort`.
 ``ACTIVATE`` and ``DEACTIVATE`` from ``ACTIVATED`` return
 ``awaiting_vehicle`` so the handler can submit or cancel on the
@@ -119,6 +120,18 @@ class RouteStore:
             sha256_hex=digest,
             mission_plan_id=record.mission_plan_id,
             plan_state=record.state,
+        )
+
+    def ingested_ids(self) -> tuple[UUID, ...]:
+        """Ids of plans that have XML, in ingest order.
+
+        Same rule as :meth:`get`: a PREPARE-only record (no XML) is
+        omitted. Query walks this instead of a second Isolator list.
+        """
+        return tuple(
+            route_id
+            for route_id, record in self._routes.items()
+            if record.xml is not None and record.sha256_hex is not None
         )
 
     def get(self, route_plan_id: UUID) -> StoredRoutePlan | None:

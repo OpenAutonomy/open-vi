@@ -124,7 +124,7 @@ class RouteHandler:
         live = ctx.platform.active_flight_activity()
         command_id = uuid4()
         if is_live_activity(live):
-            activity_id = ctx.state.active_activity_id
+            activity_id = ctx.flight.activity_id
             if activity_id is None and live is not None:
                 activity_id = live.activity_id
             cmd = FlightCommandRequest(
@@ -155,11 +155,9 @@ class RouteHandler:
                 reason_description=flight.reason_description,
             )
         ctx.routes.commit(req.route_plan_id, "ACTIVATED")
-        ctx.state.route_flight_command_id = command_id
-        ctx.state.active_route_plan_id = req.route_plan_id
-        ctx.state.route_execution_state = "EXECUTING"
+        ctx.execution.activate(req.route_plan_id, command_id)
         if flight.activity_id is not None:
-            ctx.state.active_activity_id = flight.activity_id
+            ctx.flight.begin(flight.activity_id)
         activity = ctx.platform.active_flight_activity()
         if activity is not None:
             ctx.bus.publish(
@@ -187,7 +185,7 @@ class RouteHandler:
         pending: RouteActivationResult,
     ) -> RouteActivationResult:
         """CANCEL a route-sourced command, then commit DEACTIVATED."""
-        command_id = ctx.state.route_flight_command_id
+        command_id = ctx.execution.command_id
         if command_id is not None:
             cancel = ctx.platform.submit_flight_command(
                 FlightCommandRequest(
@@ -206,13 +204,11 @@ class RouteHandler:
                     reason=cancel.reason,
                     reason_description=cancel.reason_description,
                 )
-            ctx.state.route_execution_state = "FAILED"
+            ctx.execution.mark_failed()
             publishers.publish_plan_execution(ctx)
         ctx.routes.commit(req.route_plan_id, "DEACTIVATED")
-        ctx.state.route_flight_command_id = None
-        ctx.state.active_route_plan_id = None
-        ctx.state.active_activity_id = None
-        ctx.state.route_execution_state = None
+        ctx.execution.clear()
+        ctx.flight.clear()
         return RouteActivationResult(
             processing_state="ACCEPTED",
             plan_state="DEACTIVATED",
@@ -268,8 +264,6 @@ class RouteHandler:
         body = xml if isinstance(xml, str) else xml.decode("utf-8")
         already = ctx.routes.get(route_plan_id) is not None
         stored = ctx.routes.ingest(route_plan_id, body)
-        if route_plan_id not in ctx.state.stored_route_ids:
-            ctx.state.stored_route_ids.append(route_plan_id)
         if already:
             LOGGER.info(
                 "Updated stored %s %s (no File* re-emit)",

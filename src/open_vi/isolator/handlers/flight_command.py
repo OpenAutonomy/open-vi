@@ -84,7 +84,7 @@ class FlightCommandHandler:
                     object_state="NEW" if result.new_activity else "UPDATED",
                 )
                 ctx.bus.publish(MT_FLIGHT_ACTIVITY, activity_xml)
-                ctx.state.active_activity_id = activity.activity_id
+                ctx.flight.begin(activity.activity_id)
                 LOGGER.info(
                     "Published %s activity=%s",
                     MT_FLIGHT_ACTIVITY,
@@ -122,10 +122,7 @@ def _activity_reject_reason(
     """Activity UPDATE must name the live activity."""
     if cmd.command_state != "UPDATE":
         return "Activity commands require CommandState UPDATE"
-    if (
-        cmd.activity_id is None
-        or cmd.activity_id != ctx.state.active_activity_id
-    ):
+    if cmd.activity_id is None or cmd.activity_id != ctx.flight.activity_id:
         return "Unknown or idle ActivityID"
     return None
 

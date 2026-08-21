@@ -90,7 +90,7 @@ class QueryHandler:
                 ),
             )
         if "route" in kinds:
-            for route_id in ctx.state.stored_route_ids:
+            for route_id in ctx.routes.ingested_ids():
                 stored = ctx.routes.get(route_id)
                 if stored is None:
                     continue

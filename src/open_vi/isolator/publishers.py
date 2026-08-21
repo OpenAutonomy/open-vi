@@ -9,6 +9,7 @@ identity, session state) and publishes UCI XML on ``ctx.bus``.
 from __future__ import annotations
 
 import logging
+from uuid import UUID
 
 from open_vi.codec.capability import (
     build_flight_capability,
@@ -31,7 +32,11 @@ from open_vi.codec.vehicle_state import (
     build_position_report_detailed,
     build_weather_observation,
 )
-from open_vi.domain import FlightActivitySnapshot, PlanExecutionSnapshot
+from open_vi.domain import (
+    CommandResult,
+    FlightActivitySnapshot,
+    PlanExecutionSnapshot,
+)
 from open_vi.isolator.context import IsolatorContext
 from open_vi.isolator.handlers.flight_command import (
     MT_FLIGHT_ACTIVITY,
@@ -53,21 +58,22 @@ MT_ROUTE_PLAN_EXECUTION_STATUS = "RoutePlanExecutionStatus"
 MT_MISSION_PLAN_EXECUTION_STATUS = "MA_MissionPlanExecutionStatus"
 
 
-def publish_command_updates(ctx: IsolatorContext) -> None:
-    """Publish status for commands the platform has newly completed.
+def publish_command_updates(
+    ctx: IsolatorContext,
+    updates: list[tuple[UUID, CommandResult]],
+) -> None:
+    """Publish status for already-applied command completions.
 
-    Polls ``PlatformPort.poll_command_updates``. Direct flight
-    commands become ``MA_FlightCommandStatus``. A route-sourced
-    command id is skipped so ACTIVATE does not leak a command MA
-    never sent.     A ``COMPLETED`` command still publishes
-    ``MA_FlightActivity`` when the platform has an activity and
-    clears ``active_activity_id`` when that activity is
-    ``COMPLETED``. A route-sourced ``COMPLETED`` also sets
-    ``route_execution_state`` and publishes the plan-execution
+    Isolator applies session transitions, then calls this. Direct
+    flight commands become ``MA_FlightCommandStatus``. A
+    route-sourced command id is skipped so ACTIVATE does not leak a
+    command MA never sent. A ``COMPLETED`` command still publishes
+    ``MA_FlightActivity`` when the platform has an activity. A
+    route-sourced ``COMPLETED`` republishes the plan-execution
     family.
     """
-    for command_id, result in ctx.platform.poll_command_updates():
-        route_sourced = command_id == ctx.state.route_flight_command_id
+    for command_id, result in updates:
+        route_sourced = ctx.execution.is_sourced(command_id)
         if not route_sourced:
             ctx.bus.publish(
                 MT_FLIGHT_COMMAND_STATUS,
@@ -90,8 +96,6 @@ def publish_command_updates(ctx: IsolatorContext) -> None:
                 command_id.hex,
                 result.processing_state,
             )
-            if result.processing_state == "COMPLETED":
-                ctx.state.route_execution_state = "COMPLETED"
         if result.processing_state != "COMPLETED":
             continue
         activity = ctx.platform.active_flight_activity()
@@ -108,8 +112,6 @@ def publish_command_updates(ctx: IsolatorContext) -> None:
             )
         if route_sourced:
             publish_plan_execution(ctx)
-        if activity is not None and activity.activity_state == "COMPLETED":
-            ctx.state.active_activity_id = None
 
 
 def plan_execution_for_publish(
@@ -117,11 +119,11 @@ def plan_execution_for_publish(
 ) -> PlanExecutionSnapshot | None:
     """Live route execution, or ``None`` when no route is executing.
 
-    Requires both ``active_route_plan_id`` and ``route_execution_state``.
+    Requires both ``execution.plan_id`` and ``execution.state``.
     ``mission_plan_id`` comes from :class:`~open_vi.isolator.routes.RouteStore`.
     """
-    route_id = ctx.state.active_route_plan_id
-    execution_state = ctx.state.route_execution_state
+    route_id = ctx.execution.plan_id
+    execution_state = ctx.execution.state
     if route_id is None or execution_state is None:
         return None
     stored = ctx.routes.get(route_id)
@@ -130,7 +132,7 @@ def plan_execution_for_publish(
         execution_state=execution_state,
         route_plan_id=route_id,
         mission_plan_id=mission_id,
-        activity_id=ctx.state.active_activity_id,
+        activity_id=ctx.flight.activity_id,
     )
 
 
@@ -193,7 +195,7 @@ def advertise_control(ctx: IsolatorContext) -> None:
     """Publish the control offer, then its readiness status.
 
     Order is ``MA_FlightCapability`` then
-    ``MA_FlightCapabilityStatus``. Records ``state.advertised`` and
+    ``MA_FlightCapabilityStatus``. Records
     ``state.last_availability`` so the tick can skip a no-op republish
     unless availability changed or ``tick_republish_status`` is on.
     """
@@ -219,7 +221,6 @@ def advertise_control(ctx: IsolatorContext) -> None:
             mode=ctx.message_mode,
         ),
     )
-    ctx.state.advertised = True
     ctx.state.last_availability = snap.readiness.availability
     LOGGER.info(
         "Advertised %s then %s (%s)",

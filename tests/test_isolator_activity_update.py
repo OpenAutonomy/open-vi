@@ -80,7 +80,7 @@ def test_parse_sample_activity_update_command() -> None:
 def test_activity_update_keeps_activity_id() -> None:
     bus, platform, iso = _isolator()
     _start_waypoint(bus, iso)
-    live = iso.ctx.state.active_activity_id
+    live = iso.ctx.flight.activity_id
     assert live is not None
     first_activity = bus.published[MT_FLIGHT_ACTIVITY][-1]
     assert find_text(parse_xml(first_activity), "ObjectState") == "NEW"
@@ -105,7 +105,7 @@ def test_activity_update_keeps_activity_id() -> None:
 
     activity = parse_xml(bus.published[MT_FLIGHT_ACTIVITY][-1])
     assert find_text(activity, "ObjectState") == "UPDATED"
-    assert iso.ctx.state.active_activity_id == live
+    assert iso.ctx.flight.activity_id == live
     snap = platform.active_flight_activity()
     assert snap is not None
     assert snap.activity_id == live
@@ -147,7 +147,7 @@ def test_activity_update_idle_rejected() -> None:
 def test_activity_new_rejected() -> None:
     bus, _platform, iso = _isolator()
     _start_waypoint(bus, iso)
-    live = iso.ctx.state.active_activity_id
+    live = iso.ctx.flight.activity_id
     assert live is not None
     bus.publish(
         MT_FLIGHT_COMMAND,
@@ -167,7 +167,7 @@ def test_activity_new_rejected() -> None:
 def test_activity_cancel_rejected() -> None:
     bus, _platform, iso = _isolator()
     _start_waypoint(bus, iso)
-    live = iso.ctx.state.active_activity_id
+    live = iso.ctx.flight.activity_id
     assert live is not None
     bus.publish(
         MT_FLIGHT_COMMAND,
@@ -187,7 +187,7 @@ def test_activity_cancel_rejected() -> None:
 def test_capability_new_while_live_rejected() -> None:
     bus, _platform, iso = _isolator()
     _start_waypoint(bus, iso)
-    live = iso.ctx.state.active_activity_id
+    live = iso.ctx.flight.activity_id
     bus.publish(
         MT_FLIGHT_COMMAND,
         build_sample_waypoint_command(
@@ -199,7 +199,7 @@ def test_capability_new_while_live_rejected() -> None:
     status = bus.published[MT_FLIGHT_COMMAND_STATUS][-1]
     assert "REJECTED" in status
     assert "Activity UPDATE" in status
-    assert iso.ctx.state.active_activity_id == live
+    assert iso.ctx.flight.activity_id == live
     assert MT_MA_TASK in bus.published
 
 
@@ -223,10 +223,10 @@ def test_capability_update_rejected() -> None:
 def test_capability_new_after_completed_accepted() -> None:
     bus, platform, iso = _isolator()
     first = _start_waypoint(bus, iso)
-    first_activity = iso.ctx.state.active_activity_id
+    first_activity = iso.ctx.flight.activity_id
     assert platform.complete_flight_command(first) == first
     iso.publish_command_updates_once()
-    assert iso.ctx.state.active_activity_id is None
+    assert iso.ctx.flight.activity_id is None
     second = uuid4()
     bus.publish(
         MT_FLIGHT_COMMAND,
@@ -239,8 +239,8 @@ def test_capability_new_after_completed_accepted() -> None:
     status = parse_xml(bus.published[MT_FLIGHT_COMMAND_STATUS][-1])
     assert find_text(status, "CommandProcessingState") == "ACCEPTED"
     assert find_text(status, "NewActivity") == "true"
-    assert iso.ctx.state.active_activity_id is not None
-    assert iso.ctx.state.active_activity_id != first_activity
+    assert iso.ctx.flight.activity_id is not None
+    assert iso.ctx.flight.activity_id != first_activity
 
 
 def test_capability_cancel_after_new_still_works() -> None:

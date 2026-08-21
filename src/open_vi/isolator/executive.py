@@ -183,8 +183,26 @@ class Isolator:
         publishers.publish_vehicle_state(self.ctx)
 
     def publish_command_updates_once(self) -> None:
-        """Publish FlightCommandStatus for commands the platform completed."""
-        publishers.publish_command_updates(self.ctx)
+        """Apply session transitions, then publish command completions.
+
+        Route-sourced ``COMPLETED`` calls ``execution.complete`` before
+        emit so plan-execution outs see that state. After emit, a
+        ``COMPLETED`` platform activity calls ``flight.clear``.
+        """
+        updates = self.ctx.platform.poll_command_updates()
+        for command_id, result in updates:
+            if (
+                self.ctx.execution.is_sourced(command_id)
+                and result.processing_state == "COMPLETED"
+            ):
+                self.ctx.execution.complete()
+        publishers.publish_command_updates(self.ctx, updates)
+        for result in (pair[1] for pair in updates):
+            if result.processing_state != "COMPLETED":
+                continue
+            activity = self.ctx.platform.active_flight_activity()
+            if activity is not None and activity.activity_state == "COMPLETED":
+                self.ctx.flight.clear()
 
     def _advertise_control(self) -> None:
         """Publish MA_FlightCapability and MA_FlightCapabilityStatus."""

@@ -42,17 +42,27 @@ the tick loop. Handlers parse with the codec, call `RouteStore` and/or
 `PlatformPort`, and publish replies. A message with no request or response
 id is dropped.
 
+## Sessions
+
+`IsolatorState` holds single-owner fields: capability id, last
+availability, idle activity id, control assignment, and active task.
+Live activity is `FlightSession` (`begin` / `clear`). Live route
+execution is `RouteExecution` (`activate` / `complete` / `mark_failed`
+/ `clear`). Publishers read those objects; they do not write them.
+
 ## RouteStore
 
-`src/open_vi/isolator/routes.py` sits next to session state. It retains
-`MA_RoutePlan` bytes and a sha256, and it advances
-upload → prepare → activate → deactivate. `prime(...)` is for tests.
-`ACTIVATE` and `DEACTIVATE` from `ACTIVATED` return `awaiting_vehicle`
-so the handler can submit or cancel on the port, then `commit`.
+`src/open_vi/isolator/routes.py` retains `MA_RoutePlan` bytes and a
+sha256, and it advances upload → prepare → activate → deactivate.
+`prime(...)` is for tests. `ACTIVATE` and `DEACTIVATE` from
+`ACTIVATED` return `awaiting_vehicle` so the handler can submit or
+cancel on the port, then `commit`.
 
-`IsolatorState.stored_route_ids` lists plans the query handler may emit.
-The route handler parses waypoints and calls `PlatformPort` on
-ACTIVATE / DEACTIVATE; `RouteStore` itself does not.
+`RouteStore.ingested_ids()` lists plans the query handler may emit
+(XML present; same rule as `get()`). The route handler parses
+waypoints and calls `PlatformPort` on ACTIVATE / DEACTIVATE;
+`RouteStore` itself does not. Live EXECUTING / COMPLETED / FAILED
+is `RouteExecution`, not the ladder.
 
 ## Handlers
 

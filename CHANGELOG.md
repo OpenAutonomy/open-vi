@@ -17,6 +17,11 @@
 
 ### Changed
 
+- Isolator session memory is split: `FlightSession` owns the live
+  activity, `RouteExecution` owns live plan execution, and
+  `RouteStore.ingested_ids()` lists stored plans for query.
+  `IsolatorState` keeps single-owner fields only. Publishers no
+  longer write session state.
 - Platform docs live under `docs/platforms/{stub,px4}/` (README plus
   FEATURES). Isolator Volume coverage stays in
   [docs/FEATURES.md](docs/FEATURES.md).
