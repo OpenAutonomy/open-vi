@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
 from open_vi.codec.control import (
     build_sample_control_request,
@@ -54,7 +53,7 @@ def test_parse_sample_control_request() -> None:
 def test_acquire_publishes_status_and_assignment() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     request_id = uuid4()
     controller = uuid4()
     bus.publish(
@@ -84,7 +83,7 @@ def test_acquire_publishes_status_and_assignment() -> None:
 def test_second_acquire_without_steal_rejected() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     first = uuid4()
     second = uuid4()
     bus.publish(
@@ -111,7 +110,7 @@ def test_second_acquire_without_steal_rejected() -> None:
 def test_steal_replaces_controller() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     first = uuid4()
     second = uuid4()
     bus.publish(
@@ -138,7 +137,7 @@ def test_steal_replaces_controller() -> None:
 def test_release_unpairs() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     controller = uuid4()
     bus.publish(
         MT_CONTROL_REQUEST,
@@ -166,7 +165,7 @@ def test_release_unpairs() -> None:
 def test_missing_request_id_drops() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     from open_vi.codec.xmlutil import el, message_envelope, tostring
 
     bare = tostring(

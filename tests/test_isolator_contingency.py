@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
 from open_vi.codec.mts import (
     MT_CONTROL_STATUS,
@@ -46,7 +45,7 @@ def test_mechanical_damage_publishes_fault() -> None:
     bus = InMemoryAsb()
     platform = StubPlatform()
     iso = _iso(bus, platform)
-    attach_isolator(iso)
+    iso.attach()
     platform.inject_contingency("MECHANICAL_DAMAGE")
     iso.publish_faults_once()
     assert len(bus.published[MT_MA_FAULT]) == 1
@@ -60,7 +59,7 @@ def test_sensor_failure_publishes_subsystem_then_fault() -> None:
     bus = InMemoryAsb()
     platform = StubPlatform()
     iso = _iso(bus, platform)
-    attach_isolator(iso)
+    iso.attach()
     platform.inject_contingency("SENSOR_FAILURE")
     iso.publish_subsystem_status_once()
     iso.publish_faults_once()
@@ -74,7 +73,7 @@ def test_collision_avoidance_status_then_capability() -> None:
     bus = InMemoryAsb()
     platform = StubPlatform()
     iso = _iso(bus, platform)
-    attach_isolator(iso)
+    iso.attach()
     platform.inject_contingency("COLLISION_AVOIDANCE")
     iso.publish_capability_status_once()
     iso.publish_flight_capability_once()
@@ -91,7 +90,7 @@ def test_collision_avoidance_status_then_capability() -> None:
 def test_ma_failsafe_response_yields_notification() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     response_id = uuid4()
     bus.publish(
         MT_MA_RESPONSE,
@@ -132,7 +131,7 @@ def test_barometric_system_management_completed() -> None:
     bus = InMemoryAsb()
     platform = StubPlatform()
     iso = _iso(bus, platform)
-    attach_isolator(iso)
+    iso.attach()
     request_id = uuid4()
     bus.publish(
         MT_SYSTEM_MGMT_REQUEST,
@@ -150,7 +149,7 @@ def test_barometric_system_management_completed() -> None:
 def test_query_data_request_statuses() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     request_id = uuid4()
     bus.publish(
         MT_QUERY_DATA_REQUEST,

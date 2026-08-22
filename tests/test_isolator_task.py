@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
 from open_vi.codec.command import build_sample_waypoint_command
 from open_vi.codec.mts import (
@@ -60,7 +59,7 @@ def test_parse_sample_task_command() -> None:
 def test_task_command_accepted() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     task_id = uuid4()
     command_id = uuid4()
     bus.publish(
@@ -92,7 +91,7 @@ def test_flight_command_reject_suggests_task() -> None:
         )
     )
     iso = _iso(bus, platform=platform)
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_FLIGHT_COMMAND,
         build_sample_waypoint_command(
@@ -110,7 +109,7 @@ def test_flight_command_reject_suggests_task() -> None:
 def test_task_command_cancel_publishes_task_status() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     task_id = uuid4()
     command_id = uuid4()
     bus.publish(

@@ -95,8 +95,9 @@ against the catalog.
 Isolator owns identity, session state (`IsolatorState`,
 `FlightSession`, `RouteExecution`), `RouteStore`, the tick loop, and
 dispatch to handlers. The default SystemID is `open-vi` under this
-project's namespace UUID, not the official-harness SUT / 1 / nil parent. `Isolator.__init__` requires `platform: PlatformPort`.
-It does not default to Stub and does not import Stub.
+project's namespace UUID. `Isolator.__init__` requires
+`platform: PlatformPort`. It does not default to Stub and does not
+import Stub.
 
 `PlatformPort` is snapshot, flight command, TSPI, status, faults, and QNH.
 It does not own routes or File*. Backends implement the port. Isolator

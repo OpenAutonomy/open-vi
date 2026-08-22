@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
 from open_vi.codec.mts import (
     MT_AIRFIELD_REPORT,
@@ -62,7 +61,7 @@ def test_parse_query_kinds() -> None:
 def test_capability_query_republishes_flight_capability() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_QUERY_DATA_REQUEST,
         build_sample_query_data_request(iso.identity, request_id=uuid4()),
@@ -80,7 +79,7 @@ def test_capability_query_republishes_flight_capability() -> None:
 def test_airfield_query_publishes_report() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_QUERY_DATA_REQUEST,
         build_sample_query_data_request(
@@ -97,7 +96,7 @@ def test_airfield_query_publishes_report() -> None:
 def test_route_query_returns_file_star_and_plan() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     route_id = uuid4()
     bus.publish(
         MT_ROUTE_PLAN,
@@ -120,7 +119,7 @@ def test_route_query_returns_file_star_and_plan() -> None:
 def test_identifiers_only_returns_result_ids() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     route_id = uuid4()
     bus.publish(
         MT_ROUTE_PLAN,
@@ -148,7 +147,7 @@ def test_identifiers_only_returns_result_ids() -> None:
 def test_identifiers_only_empty_route_has_no_result() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_QUERY_DATA_REQUEST,
         build_sample_query_data_request(
@@ -167,7 +166,7 @@ def test_identifiers_only_empty_route_has_no_result() -> None:
 def test_route_checksum_mismatch_fails_query() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     route_id = uuid4()
     bus.publish(
         MT_ROUTE_PLAN,

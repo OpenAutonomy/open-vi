@@ -15,8 +15,8 @@ from open_vi.codec.mts import (
     MT_CONTROL_REQUEST,
     MT_CONTROL_REQUEST_STATUS,
 )
-from open_vi.isolator.compliance import STATUS_LADDER
 from open_vi.isolator.context import IsolatorContext
+from open_vi.isolator.handlers.base import STATUS_LADDER
 
 LOGGER = logging.getLogger(__name__)
 

@@ -8,7 +8,6 @@ import os
 import sys
 
 from open_vi.asb import InMemoryAsb, StompActiveMqAdapter
-from open_vi.codec.mts import MT_FLIGHT_CAPABILITY
 from open_vi.config import AsbConfig, IsolatorConfig
 from open_vi.isolator import Isolator
 from open_vi.platform import make_platform
@@ -39,11 +38,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Use InMemoryAsb instead of STOMP",
     )
     parser.add_argument(
-        "--once",
-        action="store_true",
-        help="Advertise once and exit (no tick loop)",
-    )
-    parser.add_argument(
         "--platform",
         choices=("stub", "px4"),
         default=os.environ.get("VI_PLATFORM", "stub"),
@@ -69,26 +63,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     isolator = Isolator(bus, platform=platform, config=config)
     LOGGER.info("Platform=%s", args.platform)
-    if args.once:
-        bus.connect()
-        try:
-            isolator.advertise_once()
-            if config.publish_status_package:
-                isolator.publish_status_package_once()
-            if config.publish_vehicle_state:
-                isolator.publish_vehicle_state_once()
-            if isinstance(bus, InMemoryAsb):
-                bodies = bus.published.get(MT_FLIGHT_CAPABILITY)
-                if bodies:
-                    xml = bodies[0]
-                    if not xml.endswith("\n"):
-                        xml += "\n"
-                    print(xml, end="")
-        finally:
-            bus.disconnect()
-            platform.close()
-        return 0
-
     LOGGER.info("Starting Isolator")
     try:
         isolator.run_forever()

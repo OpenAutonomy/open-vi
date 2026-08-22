@@ -6,7 +6,6 @@ from uuid import uuid4
 
 import pytest
 
-from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
 from open_vi.codec.command import (
     build_sample_activity_update_command,
@@ -35,7 +34,7 @@ def _isolator() -> tuple[InMemoryAsb, StubPlatform, Isolator]:
         platform=platform,
         config=IsolatorConfig(tick_republish_status=False),
     )
-    attach_isolator(iso)
+    iso.attach()
     return bus, platform, iso
 
 

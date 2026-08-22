@@ -6,7 +6,6 @@ from uuid import uuid4
 
 import pytest
 
-from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
 from open_vi.codec.command import (
     build_sample_curve_following_command,
@@ -65,7 +64,7 @@ def test_hsa_csa_accepted() -> None:
             tick_republish_status=False, publish_vehicle_state=False
         ),
     )
-    attach_isolator(iso)
+    iso.attach()
     command_id = uuid4()
     bus.publish(
         MT_FLIGHT_COMMAND,
@@ -93,7 +92,7 @@ def test_curve_following_accepted() -> None:
             tick_republish_status=False, publish_vehicle_state=False
         ),
     )
-    attach_isolator(iso)
+    iso.attach()
     command_id = uuid4()
     bus.publish(
         MT_FLIGHT_COMMAND,

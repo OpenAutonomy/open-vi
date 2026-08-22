@@ -6,7 +6,6 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
 from open_vi.codec.command import (
     build_sample_waypoint_command,
@@ -74,7 +73,7 @@ def test_waypoint_command_accepted_publishes_status_and_activity() -> None:
         platform=platform,
         config=IsolatorConfig(tick_republish_status=False),
     )
-    attach_isolator(iso)
+    iso.attach()
     iso.advertise_once()
 
     command_id = uuid4()
@@ -105,7 +104,7 @@ def test_unknown_control_mode_rejected() -> None:
         platform=StubPlatform(),
         config=IsolatorConfig(tick_republish_status=False),
     )
-    attach_isolator(iso)
+    iso.attach()
 
     # Capability command with no FlightControlMode → mode None → reject.
     identity = iso.identity
@@ -155,7 +154,7 @@ def test_unavailable_rejects() -> None:
         platform=platform,
         config=IsolatorConfig(tick_republish_status=False),
     )
-    attach_isolator(iso)
+    iso.attach()
     xml = build_sample_waypoint_command(
         iso.identity,
         command_id=uuid4(),
@@ -174,7 +173,7 @@ def test_completed_command_publishes_status_and_activity() -> None:
         platform=platform,
         config=IsolatorConfig(tick_republish_status=False),
     )
-    attach_isolator(iso)
+    iso.attach()
     command_id = uuid4()
     bus.publish(
         MT_FLIGHT_COMMAND,
@@ -206,7 +205,7 @@ def test_cancel_does_not_complete() -> None:
         platform=platform,
         config=IsolatorConfig(tick_republish_status=False),
     )
-    attach_isolator(iso)
+    iso.attach()
     command_id = uuid4()
     cap_id = iso.ctx.state.capability_id
     bus.publish(

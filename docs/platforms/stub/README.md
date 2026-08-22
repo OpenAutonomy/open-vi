@@ -47,7 +47,7 @@ already reports.
 ## Run
 
 ```bash
-open-vi --memory --once
+open-vi --memory
 open-vi
 ```
 

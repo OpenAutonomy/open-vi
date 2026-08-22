@@ -473,37 +473,6 @@ def build_sample_hsa_csa_command(
     )
 
 
-def build_sample_hsa_csa_activity_update(
-    identity: SystemIdentity,
-    *,
-    command_id: UUID,
-    activity_id: UUID,
-    heading_deg: float | None = 180.0,
-    speed_mps: float | None = 8.0,
-    altitude_m: float | None = 60.0,
-    altitude_ref: str = "AGL",
-    capability_id: UUID | None = None,
-    schema_version: str = SCHEMA_VERSION,
-    mode: str = "SIMULATION",
-) -> bytes:
-    """Activity-choice MA_FlightCommand (HSA_CSA UPDATE) for unit tests."""
-    activity = _activity_shell(
-        command_id,
-        activity_id,
-        _hsa_csa_mode(
-            heading_deg=heading_deg,
-            speed_mps=speed_mps,
-            altitude_m=altitude_m,
-            altitude_ref=altitude_ref,
-        ),
-        command_state="UPDATE",
-        capability_id=capability_id,
-    )
-    return _flight_command_bytes(
-        identity, activity, schema_version=schema_version, mode=mode
-    )
-
-
 def build_sample_curve_following_command(
     identity: SystemIdentity,
     *,

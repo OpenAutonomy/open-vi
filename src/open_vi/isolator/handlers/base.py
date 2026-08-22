@@ -1,10 +1,17 @@
-"""Inbound message handler protocol."""
+"""Inbound message handler protocol and shared reply policy."""
 
 from __future__ import annotations
 
 from typing import Protocol
 
 from open_vi.isolator.context import IsolatorContext
+
+STATUS_LADDER = ("QUEUED", "PROCESSING", "COMPLETED")
+"""Inbound command-status states for route, query, and control.
+
+DEACTIVATE is the exception: the route handler emits a single status.
+Query failure uses QUEUED / PROCESSING / FAILED locally.
+"""
 
 
 class MessageHandler(Protocol):

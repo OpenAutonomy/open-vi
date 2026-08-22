@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
 from open_vi.codec.mts import (
     MT_FLIGHT_CAPABILITY_STATUS,
@@ -39,7 +38,7 @@ def test_service_status_reply() -> None:
             publish_vehicle_state=False,
         ),
     )
-    attach_isolator(iso)
+    iso.attach()
 
     foreign_id = uuid4()
     bus.publish(
@@ -69,7 +68,7 @@ def test_service_status_data_request_bundle() -> None:
             publish_vehicle_state=False,
         ),
     )
-    attach_isolator(iso)
+    iso.attach()
     iso.advertise_once()
 
     request_id = uuid4()
@@ -129,7 +128,7 @@ def test_subsystem_status_data_request_opt() -> None:
             publish_vehicle_state=False,
         ),
     )
-    attach_isolator(iso)
+    iso.attach()
     request_id = uuid4()
     bus.publish(
         MT_SUBSYSTEM_STATUS_DATA_REQUEST,
@@ -154,7 +153,7 @@ def test_own_service_status_does_not_loop() -> None:
             publish_vehicle_state=False,
         ),
     )
-    attach_isolator(iso)
+    iso.attach()
     ours = platform.get_service_status()
     bus.publish(
         MT_SERVICE_STATUS,

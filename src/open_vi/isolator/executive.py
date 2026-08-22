@@ -17,11 +17,7 @@ from open_vi.config import IsolatorConfig
 from open_vi.identity import SystemIdentity
 from open_vi.isolator import publishers
 from open_vi.isolator.context import IsolatorContext
-from open_vi.isolator.handlers import (
-    MessageHandler,
-    collect_inbound_mts,
-    default_handlers,
-)
+from open_vi.isolator.handlers import collect_inbound_mts, default_handlers
 from open_vi.isolator.routes import RouteStore
 from open_vi.isolator.state import IsolatorState
 from open_vi.platform.port import PlatformPort
@@ -49,11 +45,9 @@ class Isolator:
         *,
         platform: PlatformPort,
         config: IsolatorConfig | None = None,
-        identity: SystemIdentity | None = None,
-        handlers: list[MessageHandler] | None = None,
     ) -> None:
         self.config = config or IsolatorConfig()
-        self.identity = identity or SystemIdentity.named(
+        self.identity = SystemIdentity.named(
             self.config.system_name,
             self.config.system_label,
             namespace_name=self.config.namespace_name,
@@ -67,9 +61,7 @@ class Isolator:
             state=IsolatorState(),
             routes=RouteStore(),
         )
-        self._handlers: list[MessageHandler] = (
-            list(handlers) if handlers is not None else default_handlers()
-        )
+        self._handlers = default_handlers()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._attached = False
@@ -78,16 +70,6 @@ class Isolator:
     def inbound_mts(self) -> tuple[str, ...]:
         """Unique inbound message types declared on the current handlers."""
         return collect_inbound_mts(self._handlers)
-
-    def add_handler(self, handler: MessageHandler) -> None:
-        """Append a handler.
-
-        If already attached, subscribe its inbound types.
-        """
-        self._handlers.append(handler)
-        if self._attached:
-            for mt in getattr(handler, "inbound_mts", ()):
-                self.ctx.bus.subscribe(mt)
 
     def attach(self) -> None:
         """Connect the bus, register ``dispatch``, and subscribe inbound types.

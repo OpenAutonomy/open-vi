@@ -34,7 +34,7 @@ Generated from source docstrings.
 
 ::: open_vi.isolator.executive
 
-::: open_vi.isolator.compliance
+::: open_vi.isolator.handlers
 
 ::: open_vi.isolator.routes
 

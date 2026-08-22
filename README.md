@@ -33,14 +33,6 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-Advertise once on an in-process bus (no broker):
-
-```bash
-open-vi --memory --once
-```
-
-That publishes `MA_FlightCapability` and prints the XML, then exits 0.
-
 There is no authentication and no TLS on the live bus. See
 [SECURITY.md](SECURITY.md).
 
@@ -49,6 +41,9 @@ There is no authentication and no TLS on the live bus. See
 ```bash
 open-vi
 ```
+
+`--memory` uses an in-process bus (no broker). Isolator still runs
+until interrupted.
 
 Or the VI image:
 

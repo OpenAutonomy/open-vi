@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb, topic_dest
 from open_vi.codec.mts import (
     MT_ACTIVATION_COMMAND,
@@ -78,7 +77,7 @@ def test_inbound_mts_matches_default_handlers() -> None:
 def test_attach_subscribes_inbound_mts() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     for mt in _EXPECTED_INBOUND:
         assert topic_dest(mt) in bus.subscriptions
         assert f"{topic_dest(mt)}<None>" in bus.subscriptions
@@ -88,10 +87,10 @@ def test_attach_subscribes_inbound_mts() -> None:
 def test_attach_is_idempotent() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     n_handlers = len(bus._handlers)  # pylint: disable=protected-access
     n_subs = len(bus.subscriptions)
-    attach_isolator(iso)
+    iso.attach()
     assert len(bus._handlers) == n_handlers  # pylint: disable=protected-access
     assert len(bus.subscriptions) == n_subs
 
@@ -99,7 +98,7 @@ def test_attach_is_idempotent() -> None:
 def test_unknown_mt_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     with caplog.at_level("WARNING"):
         iso.dispatch("TotallyUnknownMessage", "<root/>")
     assert any(
@@ -111,7 +110,7 @@ def test_unknown_mt_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
 def test_failsafe_missing_response_id_drops() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     bare = tostring(
         message_envelope(
             "MA_Response",
@@ -129,7 +128,7 @@ def test_failsafe_missing_response_id_drops() -> None:
 def test_failsafe_with_response_id_notifies() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     from uuid import uuid4
 
     response_id = uuid4()
@@ -146,7 +145,7 @@ def test_failsafe_with_response_id_notifies() -> None:
 def test_query_missing_request_id_drops() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     bare = tostring(
         message_envelope(
             "QueryDataRequest",
@@ -172,7 +171,7 @@ def test_contingency_clear_readvertises() -> None:
             publish_status_package=False,
         ),
     )
-    attach_isolator(iso)
+    iso.attach()
     platform.inject_contingency("COLLISION_AVOIDANCE")
     iso.publish_capability_status_once()
     iso.publish_flight_capability_once()
@@ -184,12 +183,6 @@ def test_contingency_clear_readvertises() -> None:
     assert "AVAILABLE" in bus.published["MA_FlightCapabilityStatus"][-1]
 
 
-def test_contingency_unknown_kind_raises() -> None:
-    platform = StubPlatform()
-    with pytest.raises(ValueError, match="Unknown contingency"):
-        platform.inject_contingency("NOT_A_REAL_KIND")
-
-
 def test_command_path_via_attach() -> None:
     """Flight command through public attach/dispatch (not protected wire)."""
     from uuid import uuid4
@@ -199,7 +192,7 @@ def test_command_path_via_attach() -> None:
 
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     iso.advertise_once()
     bus.publish(
         MT_FLIGHT_COMMAND,

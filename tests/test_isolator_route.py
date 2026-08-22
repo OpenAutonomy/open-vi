@@ -6,7 +6,6 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
 from open_vi.codec.command import build_sample_waypoint_command
 from open_vi.codec.mts import (
@@ -95,7 +94,7 @@ def test_by_mission_plan_activation() -> None:
         platform=StubPlatform(),
         config=IsolatorConfig(tick_republish_status=False),
     )
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_ACTIVATION_COMMAND,
         build_sample_by_mission_plan_activation_command(
@@ -119,7 +118,7 @@ def test_convert_and_upload_route() -> None:
         platform=platform,
         config=IsolatorConfig(tick_republish_status=False),
     )
-    attach_isolator(iso)
+    iso.attach()
 
     mission_id = uuid4()
     route_id = uuid4()
@@ -187,7 +186,7 @@ def test_prepare_for_route_activation() -> None:
     iso.ctx.routes.prime(
         route_id, mission_plan_id=mission_id, state="UPLOADED", xml="<rp/>"
     )
-    attach_isolator(iso)
+    iso.attach()
 
     bus.publish(
         MT_ACTIVATION_COMMAND,
@@ -220,7 +219,7 @@ def test_activate_route() -> None:
         state="READY_FOR_ACTIVATION",
         xml=_plan_xml(iso, route_id),
     )
-    attach_isolator(iso)
+    iso.attach()
 
     bus.publish(
         MT_ACTIVATION_COMMAND,
@@ -262,7 +261,7 @@ def test_receive_deactivate_route() -> None:
     iso.ctx.routes.prime(
         route_id, mission_plan_id=mission_id, state="ACTIVATED", xml="<rp/>"
     )
-    attach_isolator(iso)
+    iso.attach()
 
     bus.publish(
         MT_ACTIVATION_COMMAND,
@@ -304,7 +303,7 @@ def test_receive_deactivate_from_ready() -> None:
         state="READY_FOR_ACTIVATION",
         xml="<rp/>",
     )
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_ACTIVATION_COMMAND,
         build_sample_route_activation_command(
@@ -332,7 +331,7 @@ def test_invalid_route_transition_rejected() -> None:
         platform=platform,
         config=IsolatorConfig(tick_republish_status=False),
     )
-    attach_isolator(iso)
+    iso.attach()
 
     bus.publish(
         MT_ACTIVATION_COMMAND,
@@ -359,7 +358,7 @@ def test_validate_stored_route_plan() -> None:
         config=IsolatorConfig(tick_republish_status=False),
     )
     iso.ctx.routes.prime(route_id, xml=_plan_xml(iso, route_id))
-    attach_isolator(iso)
+    iso.attach()
     command_id = uuid4()
     bus.publish(
         MT_ROUTE_VALIDATION_COMMAND,
@@ -387,7 +386,7 @@ def test_validate_unknown_route_plan_invalid() -> None:
         platform=StubPlatform(),
         config=IsolatorConfig(tick_republish_status=False),
     )
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_ROUTE_VALIDATION_COMMAND,
         build_sample_route_validation_command(
@@ -409,7 +408,7 @@ def test_validate_opaque_route_plan_invalid() -> None:
         config=IsolatorConfig(tick_republish_status=False),
     )
     iso.ctx.routes.prime(route_id, xml="<rp/>")
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_ROUTE_VALIDATION_COMMAND,
         build_sample_route_validation_command(
@@ -437,7 +436,7 @@ def test_activate_without_waypoints_rejected() -> None:
         state="READY_FOR_ACTIVATION",
         xml="<rp/>",
     )
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_ACTIVATION_COMMAND,
         build_sample_route_activation_command(
@@ -472,7 +471,7 @@ def test_deactivate_after_activate_clears_activity() -> None:
         state="READY_FOR_ACTIVATION",
         xml=_plan_xml(iso, route_id),
     )
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_ACTIVATION_COMMAND,
         build_sample_route_activation_command(
@@ -518,7 +517,7 @@ def test_activate_while_live_is_activity_update() -> None:
         platform=platform,
         config=IsolatorConfig(tick_republish_status=False),
     )
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_FLIGHT_COMMAND,
         build_sample_waypoint_command(
@@ -572,7 +571,7 @@ def test_route_sourced_complete_skips_flight_command_status() -> None:
         state="READY_FOR_ACTIVATION",
         xml=_plan_xml(iso, route_id),
     )
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_ACTIVATION_COMMAND,
         build_sample_route_activation_command(
@@ -615,7 +614,7 @@ def test_status_package_republishes_executing() -> None:
         state="READY_FOR_ACTIVATION",
         xml=_plan_xml(iso, route_id),
     )
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_ACTIVATION_COMMAND,
         build_sample_route_activation_command(
@@ -639,7 +638,7 @@ def test_flight_command_only_skips_route_execution() -> None:
         platform=StubPlatform(),
         config=IsolatorConfig(tick_republish_status=False),
     )
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_FLIGHT_COMMAND,
         build_sample_waypoint_command(
@@ -671,7 +670,7 @@ def _activate_primed_route(
         state="READY_FOR_ACTIVATION",
         xml=_plan_xml(iso, route_id),
     )
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_ACTIVATION_COMMAND,
         build_sample_route_activation_command(
@@ -727,7 +726,7 @@ def test_direct_flight_fail_does_not_abort_route() -> None:
         platform=platform,
         config=IsolatorConfig(tick_republish_status=False),
     )
-    attach_isolator(iso)
+    iso.attach()
     command_id = uuid4()
     bus.publish(
         MT_FLIGHT_COMMAND,

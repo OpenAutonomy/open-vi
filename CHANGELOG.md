@@ -30,6 +30,13 @@
 
 ### Removed
 
+- CLI `--once` (advertise and print capability XML, then exit).
+  Isolator still advertises from `start` / `run_forever`.
+- `Isolator.add_handler` and the `handlers=` constructor argument.
+  Isolator always uses `default_handlers()`.
+- Codec `build_sample_hsa_csa_activity_update` (unused test builder).
+- `identity.NIL_UUID` and official-harness / SUT identity comments.
+- Duplicate `Dockerfile` (image build is `Containerfile`).
 - `Isolator.publish_contingency` and `publishers.publish_contingency`.
   Stub `inject_contingency` stays on tests; Isolator publishes
   faults, subsystem status, or capability from the platform.
@@ -37,6 +44,12 @@
 - `compose/asb.yml`.
 - `COMPLIANCE_MODE`. Route, query, and control always publish
   `QUEUED`, `PROCESSING`, then `COMPLETED`.
+- `isolator.compliance`. `STATUS_LADDER` lives on
+  `open_vi.isolator.handlers`.
+- Test helper `attach_isolator`; tests call `iso.attach()`.
+- `Isolator(..., identity=)`. Identity is always
+  `SystemIdentity.named(...)` from config.
+- `test_contingency_unknown_kind_raises` (Stub hook validation).
 
 ### Added
 

@@ -40,8 +40,8 @@ from open_vi.domain import (
     is_live_activity,
 )
 from open_vi.isolator import publishers
-from open_vi.isolator.compliance import STATUS_LADDER
 from open_vi.isolator.context import IsolatorContext
+from open_vi.isolator.handlers.base import STATUS_LADDER
 
 LOGGER = logging.getLogger(__name__)
 

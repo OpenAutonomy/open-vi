@@ -26,8 +26,8 @@ from open_vi.codec.route import (
     build_file_metadata_for_route,
 )
 from open_vi.codec.status import parse_request_id
-from open_vi.isolator.compliance import STATUS_LADDER
 from open_vi.isolator.context import IsolatorContext
+from open_vi.isolator.handlers.base import STATUS_LADDER
 
 LOGGER = logging.getLogger(__name__)
 

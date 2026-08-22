@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
 from open_vi.codec.mts import (
     MT_ACTIVATION_COMMAND,
@@ -35,7 +34,7 @@ def _iso(bus: InMemoryAsb) -> Isolator:
 def test_route_activation_three_statuses() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_ACTIVATION_COMMAND,
         build_sample_route_activation_command(
@@ -62,7 +61,7 @@ def test_route_deactivate_single_status() -> None:
     iso.ctx.routes.prime(
         route_id, mission_plan_id=mission_id, state="ACTIVATED", xml="<rp/>"
     )
-    attach_isolator(iso)
+    iso.attach()
     bus.publish(
         MT_ACTIVATION_COMMAND,
         build_sample_route_activation_command(
@@ -82,7 +81,7 @@ def test_route_deactivate_single_status() -> None:
 def test_query_three_statuses() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
-    attach_isolator(iso)
+    iso.attach()
     request_id = uuid4()
     bus.publish(
         MT_QUERY_DATA_REQUEST,

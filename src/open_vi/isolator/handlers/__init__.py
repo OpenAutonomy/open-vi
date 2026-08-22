@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 
-from open_vi.isolator.handlers.base import MessageHandler
+from open_vi.isolator.handlers.base import STATUS_LADDER, MessageHandler
 from open_vi.isolator.handlers.control import ControlHandler
 from open_vi.isolator.handlers.failsafe import FailsafeHandler
 from open_vi.isolator.handlers.flight_command import FlightCommandHandler
@@ -25,6 +25,7 @@ __all__ = [
     "MessageHandler",
     "QueryHandler",
     "RouteHandler",
+    "STATUS_LADDER",
     "SystemManagementHandler",
     "TaskHandler",
     "collect_inbound_mts",
