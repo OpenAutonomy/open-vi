@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-21
+
+Isolator-owned Core Volume rows that do not need a new peer or a
+new backend: query results, route DEACTIVATE / VI abort, control
+`SecondaryController`, and `WeatherAreaData` on validate. CLI and
+Isolator injection that was not product behavior is gone.
+
 ### Fixed
 
 - HSA altitude envelope is 0–500 m AGL (home HAE through home+500)
@@ -103,6 +110,8 @@
   [openautonomy.github.io/open-vi](https://openautonomy.github.io/open-vi/).
 - Container image on GHCR (`ghcr.io/openautonomy/open-vi`), built from
   `Containerfile` on a public push to `main`.
+
+[0.2.0]: https://github.com/OpenAutonomy/open-vi/releases/tag/v0.2.0
 
 ## [0.1.0] - 2026-08-17
 
