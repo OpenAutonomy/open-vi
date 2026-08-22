@@ -29,7 +29,7 @@ Activity UPDATE only. Unknown modes are `REJECTED`.
 | `submit_flight_command()` | Partial | Immediate accept/reject. No vehicle upload. |
 | `poll_command_updates()` | Supported | Drains `complete_flight_command` terminals. |
 | `active_flight_activity()` | Supported | Live `ACTIVE_UNCONSTRAINED` or none. |
-| `get_vehicle_state()` | Partial | Fixed TSPI. Fuel percent is a constant; no fuel mass/duration. |
+| `get_vehicle_state()` | Partial | Fixed TSPI. Fuel percent is a constant. Mass and duration stay unset unless the test snapshot sets them. |
 | `get_service_status()` | Supported | Process uptime. |
 | `get_subsystem_status()` | Supported | `OPERATE`, or `DEGRADED` after `SENSOR_FAILURE`. |
 | `get_faults()` | Partial | Cleared sentinel, or a SET fault after inject. No periodic BIT. |

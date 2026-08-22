@@ -166,13 +166,29 @@ def build_navigation_report(
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
 ) -> bytes:
-    """Build NavigationReport with fuel endurance percent."""
+    """Build NavigationReport with remaining endurance.
+
+    Always emits ``Percent``. ``Fuel`` (kg) and ``Duration``
+    (xs:duration) are included when the snapshot has them.
+    """
+    endurance_kids = []
+    mass = state.fuel_mass_kg
+    if mass is not None and math.isfinite(mass) and mass >= 0.0:
+        endurance_kids.append(el("Fuel", text=_num(mass)))
+    duration_s = state.fuel_duration_s
+    if (
+        duration_s is not None
+        and math.isfinite(duration_s)
+        and duration_s >= 0.0
+    ):
+        endurance_kids.append(el("Duration", text=f"PT{int(duration_s)}S"))
+    endurance_kids.append(el("Percent", text=_num(state.fuel_percent)))
     data = el(
         "MessageData",
         system_id(identity),
         el("Source", text="ACTUAL"),
         el("ContingencyLevel", text="NORMAL"),
-        el("Endurance", el("Percent", text=_num(state.fuel_percent))),
+        el("Endurance", *endurance_kids),
     )
     root = message_envelope(
         "NavigationReport",

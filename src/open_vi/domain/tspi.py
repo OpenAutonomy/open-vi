@@ -33,6 +33,8 @@ class TspiSnapshot:
     calibrated_airspeed_mps: float = 0.0
     mach: float = 0.0
     fuel_percent: float = 85.0
+    fuel_mass_kg: float | None = None
+    fuel_duration_s: float | None = None
     wind_north_mps: float = 1.0
     wind_east_mps: float = 0.5
     navigation_solution: str = "BLENDED"

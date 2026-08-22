@@ -14,6 +14,7 @@ from open_vi.codec.mts import (
 )
 from open_vi.codec.xmlutil import local_name, parse_xml
 from open_vi.config import IsolatorConfig
+from open_vi.domain import TspiSnapshot
 from open_vi.isolator import Isolator
 from open_vi.platform import StubPlatform
 
@@ -74,6 +75,8 @@ def test_navigation_and_weather_and_component() -> None:
     assert "ACTUAL" in nav
     assert "NORMAL" in nav
     assert "Percent" in nav
+    assert "Duration" not in nav
+    assert "Fuel" not in nav
 
     weather = bus.published[MT_WEATHER_OBSERVATION][-1]
     assert local_name(parse_xml(weather)) == "WeatherObservation"
@@ -85,6 +88,26 @@ def test_navigation_and_weather_and_component() -> None:
     assert local_name(parse_xml(component)) == "ComponentStatus"
     assert "OPERATIONAL" in component
     assert "engine" in component
+
+
+def test_navigation_emits_mass_and_duration_when_present() -> None:
+    bus = InMemoryAsb()
+    bus.connect()
+    iso = Isolator(
+        bus,
+        platform=StubPlatform(
+            vehicle_state=TspiSnapshot(
+                fuel_percent=50.0,
+                fuel_mass_kg=2.5,
+                fuel_duration_s=600.0,
+            )
+        ),
+    )
+    iso.publish_vehicle_state_once()
+    nav = bus.published[MT_NAVIGATION_REPORT][-1]
+    assert "PT600S" in nav
+    assert "2.5" in nav
+    assert "Percent" in nav
 
 
 def test_idle_activity_when_no_command() -> None:

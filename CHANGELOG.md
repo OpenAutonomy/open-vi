@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- PX4 `NavigationReport` endurance duration from
+  `BATTERY_STATUS.time_remaining`, or remaining capacity inferred
+  from consumed mAh and current. Fuel mass is omitted; SITL has
+  no mass sensor.
+
 ### Changed
 
 - PX4 `HSA_CSA` leftover refs convert onto the offboard hold:

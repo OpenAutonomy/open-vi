@@ -155,12 +155,15 @@ param ack is `REJECTED`.
 ## Telemetry
 
 A reader thread ingests HEARTBEAT, GLOBAL_POSITION_INT, ATTITUDE,
-VFR_HUD, WIND / WIND_COV, SCALED_PRESSURE, and SYS_STATUS.
-`snapshot()` is `AVAILABLE` while
+VFR_HUD, WIND / WIND_COV, SCALED_PRESSURE, SYS_STATUS, and
+`BATTERY_STATUS`. `snapshot()` is `AVAILABLE` while
 heartbeat and position are fresher than 10 s; otherwise
 `TEMPORARILY_UNAVAILABLE` / `PX4_LINK_DOWN`.
 `get_vehicle_state()` maps lat/lon/alt, NED speeds, attitude,
-airspeed, heading, and battery into `TspiSnapshot`.
+airspeed, heading, battery percent, and endurance duration into
+`TspiSnapshot`. Duration is `time_remaining` when PX4 estimates
+it, otherwise remaining mAh / current from consumed and
+percent. Fuel mass is omitted; SITL has no mass sensor.
 
 ## Tests
 

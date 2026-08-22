@@ -86,7 +86,7 @@ when the platform accepts.
 | 1.2.6.5 | Receive Barometric Pressure | Supported | `MA_SystemManagementRequest` QNH → `apply_system_management` → COMPLETED or REJECTED. |
 | 1.2.6.6 | Receive Execution Status | Supported | Live `ResponsePlanExecutionStatus` / `RoutePlanExecutionStatus` / `MA_MissionPlanExecutionStatus` on ACTIVATE, tick, COMPLETED, inbound DEACTIVATE-as-FAILED, and VI abort. Idle `ActivityPlanExecutionStatus`, `RouteActivityPlanExecutionStatus`, and `TaskPlanExecutionStatus` are SystemID + Source (no ActivityPlan / RouteActivityPlan / TaskPlan IDs). `TaskStatus` on task command. |
 | 1.2.6.7 | Receive Vehicle Performance Values | Supported | Isolator publishes `FlightCapabilityPerformanceProfile` from `snapshot()`. PX4 fills waypoint / HSA / curve altitude min/max. Airspeed and load-factor curves are the backend; Isolator does not invent them. |
-| 1.2.6.8 | Receive Vehicle State Data | Supported | Activity, `MA_PositionReportDetailed`, `WeatherObservation`, `NavigationReport`, `ComponentStatus` from `get_vehicle_state()`. Fuel mass/duration are the backend; Isolator does not invent them. |
+| 1.2.6.8 | Receive Vehicle State Data | Supported | Activity, `MA_PositionReportDetailed`, `WeatherObservation`, `NavigationReport`, `ComponentStatus` from `get_vehicle_state()`. Duration is emitted when the port has it. Fuel mass is the backend; Isolator does not invent it. |
 | 1.2.6.9 | Request Terrain Data | Not supported | MUC **MA Terrain Data**. No `ElevationRequest*`. |
 | 1.2.6.10 | Vehicle Status Reporting | Supported | Periodic `SubsystemStatus`. |
 | 1.2.6.11 | VI Responds to Query for Flight Capabilities | Supported | Query ladder then native `MA_FlightCapability`. `COMPLETED` includes `Result/ID` for the capability. |
@@ -141,7 +141,7 @@ Direction is relative to VI. Core unless noted.
 | MA_TaskCommandStatus | out | Supported | |
 | MA_Task | inout | Supported | Ingest + notify; reject suggest outbound |
 | MissionPlanActivationStatus | out | Supported | On inbound DEACTIVATE and VI abort (`DEACTIVATED`). |
-| NavigationReport | out | Supported | Percent from `get_vehicle_state()`. Fuel mass/duration are the backend. |
+| NavigationReport | out | Supported | Percent from `get_vehicle_state()`. Duration when the port has it. Fuel mass is the backend. |
 | QueryDataRequest | in | Supported | Capability, route, airfield |
 | QueryDataRequestStatus | out | Supported | Ladder; `Result/ID` on `COMPLETED`; `FAILED` reason on checksum mismatch |
 | ResponsePlanExecutionStatus | out | Supported | Idle Source, or live ExecutionState plus plan ids |

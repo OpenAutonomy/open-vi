@@ -113,6 +113,39 @@ def _wrap_heading_deg(heading_deg: float) -> float:
     return heading_deg % 360.0
 
 
+def _battery_duration_s(
+    *,
+    time_remaining_s: float | None,
+    battery_remaining: int | None,
+    current_battery_a: float | None,
+    current_consumed_mah: float | None,
+) -> float | None:
+    """Seconds left from ``time_remaining``, else consumed / current.
+
+    Capacity is inferred from consumed mAh and remaining percent.
+    Returns ``None`` when neither source is usable. Does not invent
+    a pack size.
+    """
+    if time_remaining_s is not None and time_remaining_s > 0.0:
+        return time_remaining_s
+    if (
+        battery_remaining is None
+        or current_battery_a is None
+        or current_consumed_mah is None
+    ):
+        return None
+    if battery_remaining <= 0 or current_battery_a <= 0.0:
+        return None
+    used_frac = 1.0 - (float(battery_remaining) / 100.0)
+    if used_frac <= 0.0 or current_consumed_mah <= 0.0:
+        return None
+    capacity_mah = current_consumed_mah / used_frac
+    remaining_mah = capacity_mah - current_consumed_mah
+    if remaining_mah <= 0.0:
+        return 0.0
+    return remaining_mah / current_battery_a * 3.6
+
+
 def _wind_ned(
     *,
     wind_north: float | None,
@@ -235,6 +268,9 @@ class _MavCache:
     static_pressure_pa: float | None = None
     temperature_k: float | None = None
     battery_remaining: int | None = None
+    time_remaining_s: float | None = None
+    current_battery_a: float | None = None
+    current_consumed_mah: float | None = None
     system_status: int = 0
     armed: bool = False
     base_mode: int = 0
@@ -923,6 +959,12 @@ class Px4MavlinkAdapter(PlatformPort):
             if c.battery_remaining is not None:
                 fuel = float(c.battery_remaining)
             heading_rad = math.radians(c.heading_deg)
+            duration_s = _battery_duration_s(
+                time_remaining_s=c.time_remaining_s,
+                battery_remaining=c.battery_remaining,
+                current_battery_a=c.current_battery_a,
+                current_consumed_mah=c.current_consumed_mah,
+            )
             return TspiSnapshot(
                 latitude_deg=c.lat_deg,
                 longitude_deg=c.lon_deg,
@@ -938,6 +980,7 @@ class Px4MavlinkAdapter(PlatformPort):
                 true_airspeed_mps=c.airspeed_mps,
                 calibrated_airspeed_mps=c.airspeed_mps,
                 fuel_percent=fuel,
+                fuel_duration_s=duration_s,
                 magnetic_heading_rad=heading_rad,
                 component_id=self._component_id,
                 component_label="px4",
@@ -1111,6 +1154,19 @@ class Px4MavlinkAdapter(PlatformPort):
             elif mtype == "SYS_STATUS":
                 rem = int(getattr(msg, "battery_remaining", -1))
                 self._cache.battery_remaining = rem if rem >= 0 else None
+            elif mtype == "BATTERY_STATUS":
+                rem = int(getattr(msg, "battery_remaining", -1))
+                if rem >= 0:
+                    self._cache.battery_remaining = rem
+                remaining_s = float(getattr(msg, "time_remaining", 0))
+                if math.isfinite(remaining_s) and remaining_s > 0.0:
+                    self._cache.time_remaining_s = remaining_s
+                current_ca = float(getattr(msg, "current_battery", -1))
+                if math.isfinite(current_ca) and current_ca >= 0.0:
+                    self._cache.current_battery_a = current_ca / 100.0
+                consumed = float(getattr(msg, "current_consumed", -1))
+                if math.isfinite(consumed) and consumed >= 0.0:
+                    self._cache.current_consumed_mah = consumed
             elif mtype == "MISSION_ITEM_REACHED":
                 seq = int(getattr(msg, "seq", -1))
                 self._maybe_complete_mission_locked(seq)

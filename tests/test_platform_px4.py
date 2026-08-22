@@ -189,6 +189,43 @@ def test_px4_telemetry_and_snapshot() -> None:
     assert state.longitude_deg == pytest.approx(-77.0353)
     assert state.altitude_m == pytest.approx(120.0)
     assert state.north_speed_mps == pytest.approx(1.0)
+    assert state.fuel_duration_s is None
+    assert state.fuel_mass_kg is None
+    plat.close()
+
+
+def test_px4_battery_time_remaining_is_duration() -> None:
+    plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "BATTERY_STATUS",
+            battery_remaining=50,
+            time_remaining=600,
+            current_battery=-1,
+            current_consumed=-1,
+        )
+    )
+    state = plat.get_vehicle_state()
+    assert state.fuel_percent == pytest.approx(50.0)
+    assert state.fuel_duration_s == pytest.approx(600.0)
+    assert state.fuel_mass_kg is None
+    plat.close()
+
+
+def test_px4_battery_duration_from_consumed_and_current() -> None:
+    plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "BATTERY_STATUS",
+            battery_remaining=50,
+            time_remaining=0,
+            current_battery=1000,
+            current_consumed=1000,
+        )
+    )
+    state = plat.get_vehicle_state()
+    # 50% left, 1000 mAh used → 1000 mAh remain; 10 A → 360 s
+    assert state.fuel_duration_s == pytest.approx(360.0)
     plat.close()
 
 

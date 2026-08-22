@@ -32,7 +32,7 @@ AGL so a hold at the advertised home HAE is inside the bound.
 | `submit_flight_command()` | Supported | `WAYPOINT_FOLLOWING`, `CURVE_FOLLOWING`, and `HSA_CSA`. Link down is `CAPABILITY_UNAVAILABLE`. |
 | `poll_command_updates()` | Supported | `COMPLETED` from `MISSION_ITEM_REACHED`. |
 | `active_flight_activity()` | Supported | Live mission activity or none. |
-| `get_vehicle_state()` | Partial | Lat/lon/alt, NED, attitude, airspeed, heading, battery. No fuel mass/duration. |
+| `get_vehicle_state()` | Supported | Lat/lon/alt, NED, attitude, airspeed, heading, battery percent, endurance duration from `BATTERY_STATUS`. Fuel mass is omitted (no mass sensor). |
 | `get_service_status()` | Supported | Process uptime. |
 | `get_subsystem_status()` | Supported | From SYS_STATUS when linked. |
 | `get_faults()` | Partial | Link-down and cleared sentinels. No periodic BIT. |
