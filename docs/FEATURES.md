@@ -54,9 +54,9 @@ here.
 
 | § | Interaction | Status | Notes |
 | --- | --- | --- | --- |
-| 1.2.4.1 | Checksum Validation | Partial | Stored routes emit `FileMetadata` with SHA-256. Query status has no `Result`; no FAILED reason path. |
-| 1.2.4.2 | Query for Missing Data | Partial | Query returns native MTs. No `QueryIdentifiersOnly` ID list. |
-| 1.2.4.3 | Route Plan Data Validation | Partial | Composition of the two rows above. |
+| 1.2.4.1 | Checksum Validation | Supported | Stored routes emit `FileMetadata` with SHA-256. Query `FAILED` with `RequestProcessingStateReason` if stored XML no longer matches that digest. |
+| 1.2.4.2 | Query for Missing Data | Supported | Native MTs by default. `QueryIdentifiersOnly` returns `Result/ID` and no bodies. An empty match is `COMPLETED` with no `Result`. |
+| 1.2.4.3 | Route Plan Data Validation | Supported | Composition of the two rows above. |
 
 ### 1.2.5 Route plan behaviors
 
@@ -89,7 +89,7 @@ when the platform accepts.
 | 1.2.6.8 | Receive Vehicle State Data | Partial | Activity, `MA_PositionReportDetailed`, `WeatherObservation`, `NavigationReport`, `ComponentStatus`. Kinematics are populated; fuel mass/duration are not. |
 | 1.2.6.9 | Request Terrain Data | Not supported | MUC **MA Terrain Data**. No `ElevationRequest*`. |
 | 1.2.6.10 | Vehicle Status Reporting | Supported | Periodic `SubsystemStatus`. |
-| 1.2.6.11 | VI Responds to Query for Flight Capabilities | Supported | Query ladder then native `MA_FlightCapability`. Status has no `Result`. |
+| 1.2.6.11 | VI Responds to Query for Flight Capabilities | Supported | Query ladder then native `MA_FlightCapability`. `COMPLETED` includes `Result/ID` for the capability. |
 
 ### 1.2.7 Weapon employment
 
@@ -143,7 +143,7 @@ Direction is relative to VI. Core unless noted.
 | MissionPlanActivationStatus | out | Supported | On inbound DEACTIVATE and VI abort (`DEACTIVATED`). |
 | NavigationReport | out | Partial | Percent; no fuel mass/duration |
 | QueryDataRequest | in | Partial | Capability, route, airfield |
-| QueryDataRequestStatus | out | Partial | No `Result` |
+| QueryDataRequestStatus | out | Supported | Ladder; `Result/ID` on `COMPLETED`; `FAILED` reason on checksum mismatch |
 | ResponsePlanExecutionStatus | out | Supported | Idle Source, or live ExecutionState plus plan ids |
 | RouteActivityPlanExecutionStatus | out | Not supported | |
 | RoutePlanExecutionStatus | out | Supported | EXECUTING / COMPLETED / FAILED |

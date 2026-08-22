@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from uuid import UUID, uuid4
 
 from open_vi.codec.ns import SCHEMA_VERSION
@@ -27,22 +28,36 @@ _QUERY_KIND = {
 }
 
 
+@dataclass(frozen=True)
+class QueryRequest:
+    """Parsed QueryDataRequest filter (kinds + identifiers-only)."""
+
+    kinds: tuple[str, ...]
+    identifiers_only: bool = False
+
+
 def parse_query_kinds(xml: str | bytes) -> tuple[str, ...]:
     """Return query kinds from QueryMessage/MessageType (may be empty = all)."""
+    return parse_query_request(xml).kinds
+
+
+def parse_query_request(xml: str | bytes) -> QueryRequest:
+    """Parse MessageType kinds and ``QueryIdentifiersOnly``."""
     root = parse_xml(xml)
     data = find_one(root, "MessageData")
     if data is None:
-        return ()
+        return QueryRequest(kinds=())
+    identifiers_only = find_one(data, "QueryIdentifiersOnly") is not None
     query = find_one(data, "QueryMessage")
     if query is None:
-        return ()
+        return QueryRequest(kinds=(), identifiers_only=identifiers_only)
     kinds: list[str] = []
     for node in find_all(query, "MessageType"):
         raw = (node.text or "").strip().upper().replace("-", "_")
         kind = _QUERY_KIND.get(raw)
         if kind and kind not in kinds:
             kinds.append(kind)
-    return tuple(kinds)
+    return QueryRequest(kinds=tuple(kinds), identifiers_only=identifiers_only)
 
 
 def build_query_data_request_status(
@@ -50,15 +65,35 @@ def build_query_data_request_status(
     *,
     request_id: UUID,
     processing_state: str = "COMPLETED",
+    result_ids: tuple[tuple[UUID, str], ...] = (),
+    reason: str | None = None,
+    reason_description: str | None = None,
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
 ) -> bytes:
-    """Build QueryDataRequestStatus (Loose: no Result / native pages)."""
-    data = el(
-        "MessageData",
+    """Build QueryDataRequestStatus.
+
+    *result_ids* is ``(uuid, label)`` pairs under ``Result/ID``.
+    Used on ``COMPLETED``. *reason* is
+    ``RequestProcessingStateReason`` (``FAILED``).
+    """
+    children = [
         id_type("RequestID", request_id),
         el("RequestProcessingState", text=processing_state),
-    )
+    ]
+    if reason:
+        reason_kids = [el("Reason", text=reason)]
+        if reason_description:
+            reason_kids.append(el("Description", text=reason_description))
+        children.append(el("RequestProcessingStateReason", *reason_kids))
+    if result_ids:
+        children.append(
+            el(
+                "Result",
+                *[id_type("ID", value, label) for value, label in result_ids],
+            )
+        )
+    data = el("MessageData", *children)
     root = message_envelope(
         "QueryDataRequestStatus",
         identity,
@@ -74,18 +109,21 @@ def build_sample_query_data_request(
     *,
     request_id: UUID,
     message_types: tuple[str, ...] = ("MA_FLIGHT_CAPABILITY",),
+    identifiers_only: bool = False,
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
 ) -> bytes:
     """Minimal QueryDataRequest for unit tests."""
     query_kids = [el("MessageType", text=mt) for mt in message_types]
-    data = el(
-        "MessageData",
+    data_kids = [
         id_type("RequestID", request_id),
         el("RequestState", text="NEW"),
-        el("QueryMessage", *query_kids),
-        system_id(identity),
-    )
+    ]
+    if identifiers_only:
+        data_kids.append(el("QueryIdentifiersOnly"))
+    data_kids.append(el("QueryMessage", *query_kids))
+    data_kids.append(system_id(identity))
+    data = el("MessageData", *data_kids)
     root = message_envelope(
         "QueryDataRequest",
         identity,

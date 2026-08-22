@@ -76,7 +76,7 @@ concern: parse, then `RouteStore` and/or `PlatformPort`, then publish.
 | `route` | `MA_MissionPlanActivationCommand`, `MA_RoutePlan`, `RoutePlanValidationCommand` | Activation status, notification, File*, validation (`MA_FlightActivity` on ACTIVATE; `MissionPlanActivationStatus` on DEACTIVATE) |
 | `failsafe` | `MA_Response` | `MA_SystemNotification` |
 | `system_mgmt` | `MA_SystemManagementRequest` | `MA_SystemManagementRequestStatus` |
-| `query` | `QueryDataRequest` | `QueryDataRequestStatus` plus capability, File*/`MA_RoutePlan`, or `AirfieldReport` |
+| `query` | `QueryDataRequest` | `QueryDataRequestStatus` (`Result/ID` on `COMPLETED`, or `FAILED` on checksum mismatch) plus capability, File*/`MA_RoutePlan`, or `AirfieldReport`. `QueryIdentifiersOnly` is IDs only. |
 | `control` | `MA_ControlRequest` | `MA_ControlRequestStatus` and `MA_ControlAssignment` |
 | `task` | `MA_TaskCommand` | `MA_TaskCommandStatus` and `TaskStatus` |
 

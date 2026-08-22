@@ -47,6 +47,10 @@
   live route (DEACTIVATED + FAILED execution +
   `MissionPlanActivationStatus`). Completes Volume §1.2.5.6 VI
   Deactivate Route.
+- Query status includes `Result/ID` on `COMPLETED`.
+  `QueryIdentifiersOnly` returns those IDs without native bodies.
+  A stored-route checksum mismatch is `FAILED` with a reason.
+  Completes Volume §1.2.4.1–1.2.4.3.
 - PX4 `HSA_CSA`: Isolator parses heading / speed / altitude onto
   `FlightCommandRequest`; `Px4MavlinkAdapter` flies an offboard
   hold (`GROUNDSPEED`, `TRUE_NORTH`, AGL/HAE). Curve following

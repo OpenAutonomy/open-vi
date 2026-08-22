@@ -44,7 +44,7 @@ degrees. Convert at this boundary (`geo.py`).
 | `status.py` | `ServiceStatus`, `SubsystemStatus`, `MA_Fault` |
 | `route.py` | Route plan / activation, File*, `MissionPlanActivationStatus` |
 | `notification.py` | `MA_SystemNotification`, `MA_Response` |
-| `query.py` | `QueryDataRequest`, `AirfieldReport` |
+| `query.py` | `QueryDataRequest`, `QueryDataRequestStatus` (`Result/ID`), `AirfieldReport` |
 | `system_mgmt.py` | `MA_SystemManagementRequest` |
 | `control.py` | `MA_ControlRequest`, `MA_ControlAssignment` |
 | `task.py` | `MA_TaskCommand`, `TaskStatus`, `MA_Task` |

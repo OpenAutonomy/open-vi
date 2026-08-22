@@ -18,6 +18,7 @@ from open_vi.codec.mts import (
 from open_vi.codec.query import (
     build_sample_query_data_request,
     parse_query_kinds,
+    parse_query_request,
 )
 from open_vi.codec.route import build_sample_route_plan
 from open_vi.codec.xmlutil import local_name, parse_xml
@@ -46,6 +47,16 @@ def test_parse_query_kinds() -> None:
         message_types=("MA_ROUTE_PLAN", "AIRFIELD_REPORT"),
     )
     assert parse_query_kinds(xml) == ("route", "airfield")
+    parsed = parse_query_request(
+        build_sample_query_data_request(
+            iso.identity,
+            request_id=uuid4(),
+            message_types=("MA_ROUTE_PLAN",),
+            identifiers_only=True,
+        )
+    )
+    assert parsed.kinds == ("route",)
+    assert parsed.identifiers_only
 
 
 def test_capability_query_republishes_flight_capability() -> None:
@@ -61,6 +72,9 @@ def test_capability_query_republishes_flight_capability() -> None:
     assert local_name(parse_xml(cap)) == "MA_FlightCapability"
     assert iso.ctx.state.capability_id.hex in cap.replace("-", "")
     assert MT_AIRFIELD_REPORT not in bus.published
+    completed = bus.published[MT_QUERY_DATA_REQUEST_STATUS][-1]
+    assert "Result" in completed
+    assert iso.ctx.state.capability_id.hex in completed.replace("-", "")
 
 
 def test_airfield_query_publishes_report() -> None:
@@ -101,3 +115,78 @@ def test_route_query_returns_file_star_and_plan() -> None:
     assert len(bus.published[MT_FILE_LOCATION]) == before_files + 1
     assert len(bus.published[MT_FILE_METADATA]) == before_files + 1
     assert route_id.hex in bus.published[MT_ROUTE_PLAN][-1].replace("-", "")
+
+
+def test_identifiers_only_returns_result_ids() -> None:
+    bus = InMemoryAsb()
+    iso = _iso(bus)
+    attach_isolator(iso)
+    route_id = uuid4()
+    bus.publish(
+        MT_ROUTE_PLAN,
+        build_sample_route_plan(iso.identity, route_plan_id=route_id),
+    )
+    before_files = len(bus.published[MT_FILE_LOCATION])
+    before_plans = len(bus.published[MT_ROUTE_PLAN])
+    bus.publish(
+        MT_QUERY_DATA_REQUEST,
+        build_sample_query_data_request(
+            iso.identity,
+            request_id=uuid4(),
+            message_types=("MA_ROUTE_PLAN",),
+            identifiers_only=True,
+        ),
+    )
+    assert len(bus.published[MT_FILE_LOCATION]) == before_files
+    assert len(bus.published[MT_ROUTE_PLAN]) == before_plans
+    completed = bus.published[MT_QUERY_DATA_REQUEST_STATUS][-1]
+    assert "COMPLETED" in completed
+    assert "Result" in completed
+    assert route_id.hex in completed.replace("-", "")
+
+
+def test_identifiers_only_empty_route_has_no_result() -> None:
+    bus = InMemoryAsb()
+    iso = _iso(bus)
+    attach_isolator(iso)
+    bus.publish(
+        MT_QUERY_DATA_REQUEST,
+        build_sample_query_data_request(
+            iso.identity,
+            request_id=uuid4(),
+            message_types=("MA_ROUTE_PLAN",),
+            identifiers_only=True,
+        ),
+    )
+    completed = bus.published[MT_QUERY_DATA_REQUEST_STATUS][-1]
+    assert "COMPLETED" in completed
+    assert "Result" not in completed
+    assert MT_ROUTE_PLAN not in bus.published
+
+
+def test_route_checksum_mismatch_fails_query() -> None:
+    bus = InMemoryAsb()
+    iso = _iso(bus)
+    attach_isolator(iso)
+    route_id = uuid4()
+    bus.publish(
+        MT_ROUTE_PLAN,
+        build_sample_route_plan(iso.identity, route_plan_id=route_id),
+    )
+    iso.ctx.routes._routes[route_id].xml = "<tampered/>"
+    before_files = len(bus.published[MT_FILE_LOCATION])
+    bus.publish(
+        MT_QUERY_DATA_REQUEST,
+        build_sample_query_data_request(
+            iso.identity,
+            request_id=uuid4(),
+            message_types=("MA_ROUTE_PLAN",),
+        ),
+    )
+    statuses = list(bus.published[MT_QUERY_DATA_REQUEST_STATUS])
+    assert "QUEUED" in statuses[0]
+    assert "PROCESSING" in statuses[1]
+    assert "FAILED" in statuses[2]
+    assert "INVALID_INPUT_PARAMETER" in statuses[2]
+    assert "checksum" in statuses[2].lower()
+    assert len(bus.published[MT_FILE_LOCATION]) == before_files
