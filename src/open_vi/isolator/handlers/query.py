@@ -37,7 +37,12 @@ _CHECKSUM_DESCRIPTION = "Stored MA_RoutePlan checksum mismatch"
 
 
 class QueryHandler:
-    """Reply to QueryDataRequest with status + native MTs or IDs."""
+    """Reply to QueryDataRequest with status + native MTs or IDs.
+
+    Airfield queries include runway geometry and the preloaded
+    takeoff/landing ``MA_RoutePlan``. Route queries include those
+    plans plus any peer-uploaded store entries.
+    """
 
     inbound_mts = (MT_QUERY_DATA_REQUEST,)
 
@@ -93,8 +98,10 @@ class QueryHandler:
     ) -> tuple[tuple[tuple[UUID, str], ...], str | None, str | None]:
         """Matching IDs, or a checksum fail reason."""
         collected: list[tuple[UUID, str]] = []
+        seen: set[UUID] = set()
         if "capability" in kinds:
             collected.append((ctx.state.capability_id, "capability"))
+            seen.add(ctx.state.capability_id)
         if "route" in kinds:
             for route_id in ctx.routes.ingested_ids():
                 stored = ctx.routes.get(route_id)
@@ -103,9 +110,23 @@ class QueryHandler:
                 digest = hashlib.sha256(stored.xml.encode("utf-8")).hexdigest()
                 if digest != stored.sha256_hex:
                     return (), _CHECKSUM_REASON, _CHECKSUM_DESCRIPTION
-                collected.append((route_id, "route-plan"))
+                if route_id not in seen:
+                    collected.append((route_id, "route-plan"))
+                    seen.add(route_id)
         if "airfield" in kinds:
-            collected.append((ctx.identity.uuid, "home-field"))
+            if ctx.airfield.airfield_id not in seen:
+                collected.append((ctx.airfield.airfield_id, "home-field"))
+                seen.add(ctx.airfield.airfield_id)
+            for route_id in ctx.airfield.route_ids:
+                stored = ctx.routes.get(route_id)
+                if stored is None:
+                    continue
+                digest = hashlib.sha256(stored.xml.encode("utf-8")).hexdigest()
+                if digest != stored.sha256_hex:
+                    return (), _CHECKSUM_REASON, _CHECKSUM_DESCRIPTION
+                if route_id not in seen:
+                    collected.append((route_id, "route-plan"))
+                    seen.add(route_id)
         return tuple(collected), None, None
 
     def _publish_native(
@@ -114,53 +135,69 @@ class QueryHandler:
         schema = ctx.schema_version
         mode = ctx.message_mode
         if "capability" in kinds:
-            snap = ctx.platform.snapshot()
             ctx.bus.publish(
                 MT_FLIGHT_CAPABILITY,
                 build_flight_capability(
                     ctx.identity,
-                    snap.offer,
+                    ctx.advertised_offer(),
                     capability_id=ctx.state.capability_id,
                     schema_version=schema,
                     mode=mode,
                 ),
             )
+        published: set[UUID] = set()
         if "route" in kinds:
-            for route_id in ctx.routes.ingested_ids():
-                stored = ctx.routes.get(route_id)
-                if stored is None:
-                    continue
-                file_metadata_id = uuid4()
-                file_location_id = uuid4()
-                ctx.bus.publish(
-                    MT_FILE_LOCATION,
-                    build_file_location_for_route(
-                        ctx.identity,
-                        stored,
-                        file_location_id=file_location_id,
-                        file_metadata_id=file_metadata_id,
-                        schema_version=schema,
-                        mode=mode,
-                    ),
-                )
-                ctx.bus.publish(
-                    MT_FILE_METADATA,
-                    build_file_metadata_for_route(
-                        ctx.identity,
-                        stored,
-                        file_metadata_id=file_metadata_id,
-                        schema_version=schema,
-                        mode=mode,
-                    ),
-                )
-                ctx.bus.publish(MT_ROUTE_PLAN, stored.xml)
+            self._publish_routes(ctx, ctx.routes.ingested_ids(), published)
         if "airfield" in kinds:
             ctx.bus.publish(
                 MT_AIRFIELD_REPORT,
                 build_airfield_report(
                     ctx.identity,
-                    airfield_id=ctx.identity.uuid,
+                    airfield=ctx.airfield,
                     schema_version=schema,
                     mode=mode,
                 ),
             )
+            if "route" not in kinds:
+                self._publish_routes(ctx, ctx.airfield.route_ids, published)
+
+    def _publish_routes(
+        self,
+        ctx: IsolatorContext,
+        route_ids: tuple[UUID, ...],
+        published: set[UUID],
+    ) -> None:
+        """Publish File* and stored XML for each unused ingested id."""
+        schema = ctx.schema_version
+        mode = ctx.message_mode
+        for route_id in route_ids:
+            if route_id in published:
+                continue
+            stored = ctx.routes.get(route_id)
+            if stored is None:
+                continue
+            file_metadata_id = uuid4()
+            file_location_id = uuid4()
+            ctx.bus.publish(
+                MT_FILE_LOCATION,
+                build_file_location_for_route(
+                    ctx.identity,
+                    stored,
+                    file_location_id=file_location_id,
+                    file_metadata_id=file_metadata_id,
+                    schema_version=schema,
+                    mode=mode,
+                ),
+            )
+            ctx.bus.publish(
+                MT_FILE_METADATA,
+                build_file_metadata_for_route(
+                    ctx.identity,
+                    stored,
+                    file_metadata_id=file_metadata_id,
+                    schema_version=schema,
+                    mode=mode,
+                ),
+            )
+            ctx.bus.publish(MT_ROUTE_PLAN, stored.xml)
+            published.add(route_id)

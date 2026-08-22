@@ -572,13 +572,18 @@ def build_sample_route_plan(
     *,
     route_plan_id: UUID,
     waypoints: tuple[Waypoint, ...] | None = None,
+    path_type: str = "PRIMARY",
+    airfield_id: UUID | None = None,
+    runway_id: UUID | None = None,
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
 ) -> bytes:
     """Minimal MA_RoutePlan for unit tests (RoutePlanID + Path).
 
     *waypoints* defaults to the same sample point FlightCommand uses.
-    Pass an empty tuple for a plan with no geometry.
+    Pass an empty tuple for a plan with no geometry. *path_type*,
+    *airfield_id*, and *runway_id* mark a linked takeoff or landing
+    path.
     """
     path_points = (_SAMPLE_WAYPOINT,) if waypoints is None else waypoints
     data_kids = [
@@ -586,7 +591,14 @@ def build_sample_route_plan(
         el("ForPlanningUseOnly", text="false"),
     ]
     if path_points:
-        data_kids.append(build_path_element(path_points))
+        data_kids.append(
+            build_path_element(
+                path_points,
+                path_type=path_type,
+                airfield_id=airfield_id,
+                runway_id=runway_id,
+            )
+        )
     data = el("MessageData", *data_kids)
     root = message_envelope(
         "MA_RoutePlan",

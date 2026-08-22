@@ -18,6 +18,7 @@ from open_vi.codec.xmlutil import (
     parse_xml,
     system_id,
     tostring,
+    uuid_under,
 )
 from open_vi.identity import SystemIdentity
 
@@ -30,6 +31,31 @@ class TaskCommandRequest:
     task_id: UUID
     capability_id: UUID | None = None
     command_state: str = "NEW"
+
+
+@dataclass(frozen=True)
+class InboundTask:
+    """Parsed inbound MA_Task (TaskID + object state)."""
+
+    task_id: UUID
+    object_state: str | None = None
+
+
+def parse_ma_task(xml: str | bytes) -> InboundTask | None:
+    """Extract TaskID from MA_Task; ``None`` if TaskID is missing."""
+    root = parse_xml(xml)
+    if local_name(root) != "MA_Task":
+        raise ValueError(f"expected MA_Task, got {local_name(root)}")
+    data = find_one(root, "MessageData")
+    if data is None:
+        return None
+    task_id = uuid_under(data, "TaskID")
+    if task_id is None:
+        return None
+    return InboundTask(
+        task_id=task_id,
+        object_state=find_text(root, "ObjectState"),
+    )
 
 
 def parse_task_commands(xml: str | bytes) -> list[TaskCommandRequest]:

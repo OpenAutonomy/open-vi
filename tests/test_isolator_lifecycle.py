@@ -8,8 +8,10 @@ from open_vi.asb import InMemoryAsb, topic_dest
 from open_vi.codec.mts import (
     MT_ACTIVATION_COMMAND,
     MT_CONTROL_REQUEST,
+    MT_FLIGHT_CAPABILITY,
     MT_FLIGHT_COMMAND,
     MT_MA_RESPONSE,
+    MT_MA_TASK,
     MT_QUERY_DATA_REQUEST,
     MT_QUERY_DATA_REQUEST_STATUS,
     MT_ROUTE_PLAN,
@@ -40,7 +42,9 @@ _EXPECTED_INBOUND = frozenset(
         MT_SYSTEM_MGMT_REQUEST,
         MT_QUERY_DATA_REQUEST,
         MT_CONTROL_REQUEST,
+        MT_FLIGHT_CAPABILITY,
         MT_TASK_COMMAND,
+        MT_MA_TASK,
     }
 )
 

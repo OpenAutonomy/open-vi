@@ -1,4 +1,4 @@
-"""Inbound MA_ControlRequest → Status + MA_ControlAssignment."""
+"""Inbound MA_ControlRequest and VI-initiated unpair."""
 
 from __future__ import annotations
 
@@ -26,6 +26,79 @@ _APPROVAL_FOR_LADDER = {
     "COMPLETED": "APPROVED",
     "REJECTED": "REJECTED",
 }
+
+
+_UNPAIR_REASON = "CAPABILITY_UNAVAILABLE"
+_UNPAIR_DESCRIPTION = "VI revoked control; capability is not AVAILABLE"
+
+
+def unpair_if_unavailable(ctx: IsolatorContext, availability: str) -> bool:
+    """Revoke the live assignment when the offer is not AVAILABLE.
+
+    Publishes ``CANCELED`` ``MA_ControlRequestStatus`` for the stored
+    acquire/steal RequestID and ``MA_ControlAssignment`` as
+    ``REMOVED``. No-op when idle or still ``AVAILABLE``.
+    """
+    if availability == "AVAILABLE":
+        return False
+    return unpair_assignment(
+        ctx, reason=_UNPAIR_REASON, description=_UNPAIR_DESCRIPTION
+    )
+
+
+def unpair_assignment(
+    ctx: IsolatorContext,
+    *,
+    reason: str,
+    description: str,
+) -> bool:
+    """Publish CANCELED status plus REMOVED assignment. True if unpaired."""
+    controller = ctx.state.controller_system_id
+    request_id = ctx.state.control_request_id
+    if controller is None or request_id is None:
+        return False
+    control_type = ctx.state.control_type or "CAPABILITY_PRIMARY"
+    control_choice = ctx.state.control_choice or "GrantedControlType"
+    ctx.bus.publish(
+        MT_CONTROL_REQUEST_STATUS,
+        build_control_request_status(
+            ctx.identity,
+            request_id=request_id,
+            processing_state="CANCELED",
+            approval_state="CANCELED",
+            reason=reason,
+            reason_description=description,
+            schema_version=ctx.schema_version,
+            mode=ctx.message_mode,
+        ),
+    )
+    ctx.bus.publish(
+        MT_CONTROL_ASSIGNMENT,
+        build_control_assignment(
+            ctx.identity,
+            control_type=control_type,
+            control_choice=control_choice,
+            controller_system_id=controller,
+            controller_service_id=ctx.state.controller_service_id,
+            controllee_system_id=ctx.identity.uuid,
+            capability_id=ctx.state.capability_id,
+            object_state="REMOVED",
+            schema_version=ctx.schema_version,
+            mode=ctx.message_mode,
+        ),
+    )
+    ctx.state.controller_system_id = None
+    ctx.state.controller_service_id = None
+    ctx.state.control_type = None
+    ctx.state.control_choice = None
+    ctx.state.control_request_id = None
+    LOGGER.info(
+        "Unpair → %s CANCELED + %s REMOVED request=%s",
+        MT_CONTROL_REQUEST_STATUS,
+        MT_CONTROL_ASSIGNMENT,
+        request_id.hex,
+    )
+    return True
 
 
 class ControlHandler:
@@ -82,6 +155,8 @@ class ControlHandler:
         ctx.state.controller_system_id = req.controller_system_id
         ctx.state.controller_service_id = req.controller_service_id
         ctx.state.control_type = req.control_type
+        ctx.state.control_choice = req.control_choice
+        ctx.state.control_request_id = req.request_id
         capability_id = req.capability_id or ctx.state.capability_id
         controllee = req.controllee_system_id or ctx.identity.uuid
         self._publish_status_ladder(ctx, req, approved=True)
@@ -146,6 +221,8 @@ class ControlHandler:
         ctx.state.controller_system_id = None
         ctx.state.controller_service_id = None
         ctx.state.control_type = None
+        ctx.state.control_choice = None
+        ctx.state.control_request_id = None
         LOGGER.info("%s RELEASE → assignment REMOVED", MT_CONTROL_REQUEST)
 
     def _reject(

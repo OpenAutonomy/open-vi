@@ -80,6 +80,7 @@ def test_airfield_query_publishes_report() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
     iso.attach()
+    airfield = iso.ctx.airfield
     bus.publish(
         MT_QUERY_DATA_REQUEST,
         build_sample_query_data_request(
@@ -91,6 +92,20 @@ def test_airfield_query_publishes_report() -> None:
     report = bus.published[MT_AIRFIELD_REPORT][-1]
     assert local_name(parse_xml(report)) == "AirfieldReport"
     assert "ObservationTime" in report
+    assert "Runway" in report
+    assert "TakeoffCoordinates" in report
+    assert "LandingCoordinates" in report
+    assert airfield.runway_id.hex in report.replace("-", "")
+    plans = list(bus.published[MT_ROUTE_PLAN])
+    assert len(plans) == 2
+    joined = "".join(plans)
+    assert "TAKEOFF" in joined
+    assert "LANDING" in joined
+    assert airfield.airfield_id.hex in joined.replace("-", "")
+    assert airfield.runway_id.hex in joined.replace("-", "")
+    completed = bus.published[MT_QUERY_DATA_REQUEST_STATUS][-1]
+    assert airfield.takeoff_route_id.hex in completed.replace("-", "")
+    assert airfield.landing_route_id.hex in completed.replace("-", "")
 
 
 def test_route_query_returns_file_star_and_plan() -> None:
@@ -111,9 +126,13 @@ def test_route_query_returns_file_star_and_plan() -> None:
             message_types=("MA_ROUTE_PLAN",),
         ),
     )
-    assert len(bus.published[MT_FILE_LOCATION]) == before_files + 1
-    assert len(bus.published[MT_FILE_METADATA]) == before_files + 1
-    assert route_id.hex in bus.published[MT_ROUTE_PLAN][-1].replace("-", "")
+    ingested = len(iso.ctx.routes.ingested_ids())
+    assert ingested == 3
+    assert len(bus.published[MT_FILE_LOCATION]) == before_files + ingested
+    assert len(bus.published[MT_FILE_METADATA]) == before_files + ingested
+    plans = "".join(bus.published[MT_ROUTE_PLAN])
+    assert route_id.hex in plans.replace("-", "")
+    assert iso.ctx.airfield.takeoff_route_id.hex in plans.replace("-", "")
 
 
 def test_identifiers_only_returns_result_ids() -> None:
@@ -144,10 +163,11 @@ def test_identifiers_only_returns_result_ids() -> None:
     assert route_id.hex in completed.replace("-", "")
 
 
-def test_identifiers_only_empty_route_has_no_result() -> None:
+def test_route_query_includes_preloaded_tol() -> None:
     bus = InMemoryAsb()
     iso = _iso(bus)
     iso.attach()
+    airfield = iso.ctx.airfield
     bus.publish(
         MT_QUERY_DATA_REQUEST,
         build_sample_query_data_request(
@@ -159,7 +179,9 @@ def test_identifiers_only_empty_route_has_no_result() -> None:
     )
     completed = bus.published[MT_QUERY_DATA_REQUEST_STATUS][-1]
     assert "COMPLETED" in completed
-    assert "Result" not in completed
+    assert "Result" in completed
+    assert airfield.takeoff_route_id.hex in completed.replace("-", "")
+    assert airfield.landing_route_id.hex in completed.replace("-", "")
     assert MT_ROUTE_PLAN not in bus.published
 
 

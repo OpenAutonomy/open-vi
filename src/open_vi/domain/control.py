@@ -30,6 +30,29 @@ class ControlOffer:
     hsa_profile: FlightModeProfile | None = None
 
 
+def redact_control_offer(
+    offer: ControlOffer, allowed: tuple[str, ...] | None
+) -> ControlOffer:
+    """Intersect *offer* with a C2 designation allowlist.
+
+    ``None`` means no overlay (advertise the platform offer). An empty
+    tuple means C2 permitted no modes.
+    """
+    if allowed is None:
+        return offer
+    permitted = frozenset(allowed)
+    types = tuple(mode for mode in offer.capability_types if mode in permitted)
+    return ControlOffer(
+        capability_types=types,
+        capability_label=offer.capability_label,
+        accepted_interfaces=offer.accepted_interfaces,
+        waypoint_profile=(
+            offer.waypoint_profile if "WAYPOINT_FOLLOWING" in types else None
+        ),
+        hsa_profile=offer.hsa_profile if "HSA_CSA" in types else None,
+    )
+
+
 @dataclass(frozen=True)
 class ControlReadiness:
     """Whether MA may currently command the offered flight capability."""

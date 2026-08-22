@@ -5,6 +5,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from open_vi.asb import InMemoryAsb
+from open_vi.codec.command import build_sample_waypoint_command
 from open_vi.codec.control import (
     build_sample_control_request,
     parse_control_request,
@@ -14,9 +15,17 @@ from open_vi.codec.mts import (
     MT_CONTROL_REQUEST,
     MT_CONTROL_REQUEST_STATUS,
     MT_CONTROL_STATUS,
+    MT_FLIGHT_COMMAND,
 )
-from open_vi.codec.xmlutil import local_name, parse_xml
+from open_vi.codec.xmlutil import (
+    find_one,
+    find_text,
+    local_name,
+    parse_xml,
+    uuid_under,
+)
 from open_vi.config import IsolatorConfig
+from open_vi.domain import ControlReadiness
 from open_vi.isolator import Isolator
 from open_vi.platform import StubPlatform
 
@@ -190,6 +199,10 @@ def test_control_status_idle_has_no_secondary() -> None:
     status = bus.published[MT_CONTROL_STATUS][-1]
     assert "PrimaryController" in status
     assert "SecondaryController" not in status
+    mission = find_one(parse_xml(status), "MissionControl")
+    assert mission is not None
+    assert uuid_under(mission, "ControllerSystemID") == iso.identity.uuid
+    assert find_text(mission, "InMission") == "false"
 
 
 def test_control_status_secondary_after_acquire() -> None:
@@ -212,6 +225,10 @@ def test_control_status_secondary_after_acquire() -> None:
     assert "SecondaryController" in status
     assert controller.hex in status.replace("-", "")
     assert service.hex in status.replace("-", "")
+    mission = find_one(parse_xml(status), "MissionControl")
+    assert mission is not None
+    assert uuid_under(mission, "ControllerSystemID") == iso.identity.uuid
+    assert find_text(mission, "InMission") == "false"
 
 
 def test_control_status_no_secondary_without_service_id() -> None:
@@ -257,3 +274,112 @@ def test_control_status_clears_secondary_on_release() -> None:
     )
     iso.publish_status_package_once()
     assert "SecondaryController" not in bus.published[MT_CONTROL_STATUS][-1]
+
+
+def test_control_status_in_mission_after_waypoint() -> None:
+    bus = InMemoryAsb()
+    iso = _iso(bus)
+    iso.attach()
+    bus.publish(
+        MT_FLIGHT_COMMAND,
+        build_sample_waypoint_command(
+            iso.identity,
+            command_id=uuid4(),
+            capability_id=iso.ctx.state.capability_id,
+        ),
+    )
+    iso.publish_status_package_once()
+    mission = find_one(
+        parse_xml(bus.published[MT_CONTROL_STATUS][-1]), "MissionControl"
+    )
+    assert mission is not None
+    assert find_text(mission, "InMission") == "true"
+
+
+def test_unavailable_unpairs_canceled_status_and_assignment() -> None:
+    bus = InMemoryAsb()
+    platform = StubPlatform()
+    iso = Isolator(
+        bus,
+        platform=platform,
+        config=IsolatorConfig(
+            tick_republish_status=False,
+            publish_vehicle_state=False,
+            publish_status_package=False,
+        ),
+    )
+    iso.attach()
+    request_id = uuid4()
+    controller = uuid4()
+    bus.publish(
+        MT_CONTROL_REQUEST,
+        build_sample_control_request(
+            iso.identity,
+            request_id=request_id,
+            controller_system_id=controller,
+            controller_service_id=uuid4(),
+        ),
+    )
+    before_status = len(bus.published[MT_CONTROL_REQUEST_STATUS])
+    platform.set_readiness(
+        ControlReadiness(
+            available=False,
+            availability="TEMPORARILY_UNAVAILABLE",
+            reason="CONSTRAINT_COLLISION_AVOIDANCE",
+        )
+    )
+    iso._tick()  # pylint: disable=protected-access
+
+    assert iso.ctx.state.controller_system_id is None
+    assert iso.ctx.state.control_request_id is None
+    assert len(bus.published[MT_CONTROL_REQUEST_STATUS]) == before_status + 1
+    canceled = bus.published[MT_CONTROL_REQUEST_STATUS][-1]
+    assert "CANCELED" in canceled
+    assert request_id.hex in canceled.replace("-", "")
+    assert "CAPABILITY_UNAVAILABLE" in canceled
+    assignment = bus.published[MT_CONTROL_ASSIGNMENT][-1]
+    assert "REMOVED" in assignment
+    assert controller.hex in assignment.replace("-", "")
+
+
+def test_available_tick_does_not_unpair() -> None:
+    bus = InMemoryAsb()
+    iso = _iso(bus)
+    iso.attach()
+    bus.publish(
+        MT_CONTROL_REQUEST,
+        build_sample_control_request(
+            iso.identity,
+            request_id=uuid4(),
+            controller_system_id=uuid4(),
+        ),
+    )
+    before = len(bus.published[MT_CONTROL_ASSIGNMENT])
+    iso._tick()  # pylint: disable=protected-access
+    assert iso.ctx.state.controller_system_id is not None
+    assert len(bus.published[MT_CONTROL_ASSIGNMENT]) == before
+    assert "CANCELED" not in bus.published[MT_CONTROL_REQUEST_STATUS][-1]
+
+
+def test_unavailable_without_assignment_does_not_unpair() -> None:
+    bus = InMemoryAsb()
+    platform = StubPlatform()
+    iso = Isolator(
+        bus,
+        platform=platform,
+        config=IsolatorConfig(
+            tick_republish_status=False,
+            publish_vehicle_state=False,
+            publish_status_package=False,
+        ),
+    )
+    iso.attach()
+    platform.set_readiness(
+        ControlReadiness(
+            available=False,
+            availability="TEMPORARILY_UNAVAILABLE",
+        )
+    )
+    iso._tick()  # pylint: disable=protected-access
+    assert MT_CONTROL_REQUEST_STATUS not in bus.published
+    assert MT_CONTROL_ASSIGNMENT not in bus.published

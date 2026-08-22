@@ -69,6 +69,14 @@ def uuid_under(node: ET.Element, tag: str) -> UUID | None:
     return parse_uuid_text(text)
 
 
+def parse_header_system_id(xml: str | bytes) -> UUID | None:
+    """MessageHeader/SystemID, or ``None`` when the header is absent."""
+    header = find_one(parse_xml(xml), "MessageHeader")
+    if header is None:
+        return None
+    return uuid_under(header, "SystemID")
+
+
 def id_type(
     tag: str, value: UUID | str, label: str | None = None
 ) -> ET.Element:

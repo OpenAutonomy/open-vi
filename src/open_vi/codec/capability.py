@@ -1,13 +1,54 @@
-"""Builders for MA_FlightCapability and MA_FlightCapabilityStatus."""
+"""Build and parse MA_FlightCapability and status."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from uuid import UUID
 
 from open_vi.codec.ns import SCHEMA_VERSION
-from open_vi.codec.xmlutil import el, id_type, message_envelope, tostring
+from open_vi.codec.xmlutil import (
+    el,
+    find_all,
+    find_one,
+    find_text,
+    id_type,
+    message_envelope,
+    parse_xml,
+    tostring,
+    uuid_under,
+)
 from open_vi.domain import ControlOffer, ControlReadiness, FlightModeProfile
 from open_vi.identity import SystemIdentity
+
+
+@dataclass(frozen=True)
+class FlightCapabilityDesignation:
+    """Parsed inbound MA_FlightCapability modes (C2 designation)."""
+
+    capability_types: tuple[str, ...]
+    capability_id: UUID | None = None
+    object_state: str | None = None
+
+
+def parse_flight_capability(
+    xml: str | bytes,
+) -> FlightCapabilityDesignation:
+    """Extract CapabilityType tokens and optional CapabilityID."""
+    root = parse_xml(xml)
+    data = find_one(root, "MessageData")
+    types: list[str] = []
+    capability_id = None
+    if data is not None:
+        capability_id = uuid_under(data, "CapabilityID")
+        for node in find_all(data, "CapabilityType"):
+            raw = (node.text or "").strip().upper().replace("-", "_")
+            if raw and raw not in types:
+                types.append(raw)
+    return FlightCapabilityDesignation(
+        capability_types=tuple(types),
+        capability_id=capability_id,
+        object_state=find_text(root, "ObjectState"),
+    )
 
 
 def build_flight_capability(
@@ -15,6 +56,7 @@ def build_flight_capability(
     offer: ControlOffer,
     *,
     capability_id: UUID,
+    object_state: str = "NEW",
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
 ) -> bytes:
@@ -40,7 +82,7 @@ def build_flight_capability(
         data,
         schema_version=schema_version,
         mode=mode,
-        object_state="NEW",
+        object_state=object_state,
     )
     return tostring(root)
 

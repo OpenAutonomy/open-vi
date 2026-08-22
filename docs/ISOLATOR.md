@@ -59,7 +59,10 @@ sha256, and it advances upload → prepare → activate → deactivate.
 cancel on the port, then `commit`.
 
 `RouteStore.ingested_ids()` lists plans the query handler may emit
-(XML present; same rule as `get()`). The route handler parses
+(XML present; same rule as `get()`). Isolator construction preloads
+home takeoff and landing `MA_RoutePlan` (PathType `TAKEOFF` /
+`LANDING`, AirfieldID + RunwayID) so route and airfield queries have
+a TO/L set before any peer upload. The route handler parses
 waypoints and calls `PlatformPort` on ACTIVATE / DEACTIVATE;
 `RouteStore` itself does not. Live EXECUTING / COMPLETED / FAILED
 is `RouteExecution`, not the ladder. Validation uses stored
@@ -76,18 +79,21 @@ concern: parse, then `RouteStore` and/or `PlatformPort`, then publish.
 | `flight_command` | `MA_FlightCommand` | `MA_FlightCommandStatus` (and `MA_FlightActivity` if accepted; `MA_Task` if rejected) |
 | `heartbeat` | `ServiceStatus`, `ServiceStatusDataRequest`, `SubsystemStatusDataRequest` | Matching status / request-status |
 | `route` | `MA_MissionPlanActivationCommand`, `MA_RoutePlan`, `RoutePlanValidationCommand` | Activation status, notification, File*, validation (`MA_FlightActivity` on ACTIVATE; `MissionPlanActivationStatus` on DEACTIVATE) |
-| `failsafe` | `MA_Response` | `MA_SystemNotification` |
+| `failsafe` | `MA_Response` | `MA_SystemNotification` (`MA_FlightActivity` and plan-execution status when `ActivatePlan` names a stored route) |
 | `system_mgmt` | `MA_SystemManagementRequest` | `MA_SystemManagementRequestStatus` |
-| `query` | `QueryDataRequest` | `QueryDataRequestStatus` (`Result/ID` on `COMPLETED`, or `FAILED` on checksum mismatch) plus capability, File*/`MA_RoutePlan`, or `AirfieldReport`. `QueryIdentifiersOnly` is IDs only. |
-| `control` | `MA_ControlRequest` | `MA_ControlRequestStatus` and `MA_ControlAssignment` |
-| `task` | `MA_TaskCommand` | `MA_TaskCommandStatus` and `TaskStatus` |
+| `query` | `QueryDataRequest` | `QueryDataRequestStatus` (`Result/ID` on `COMPLETED`, or `FAILED` on checksum mismatch) plus capability, File*/`MA_RoutePlan` (preloaded TO/L plus uploads), or `AirfieldReport` with runway geometry and linked TO/L plans. `QueryIdentifiersOnly` is IDs only. |
+| `control` | `MA_ControlRequest` | `MA_ControlRequestStatus` and `MA_ControlAssignment`. Tick unpairs (`CANCELED` + `REMOVED`) when availability is not `AVAILABLE`. |
+| `capability` | `MA_FlightCapability` | C2 designation overlay; readvertises the redacted capability pair. Own publishes are ignored. |
+| `task` | `MA_TaskCommand`, `MA_Task` | `MA_TaskCommandStatus` and `TaskStatus`; inbound `MA_Task` notifies (`MA_TASK`). Own suggest publishes are ignored. |
 
 Capability NEW starts an activity when idle. CANCEL stops it. Activity
 UPDATE is the replan: it replaces the live path and republishes
 `MA_FlightActivity` as `UPDATED`. A second Capability NEW while an
-activity is live is rejected. Route ACTIVATE submits
-`WAYPOINT_FOLLOWING` (NEW when idle, UPDATE when live) and does not
-publish `MA_FlightCommand` / `MA_FlightCommandStatus`. It publishes
+activity is live is rejected. Route ACTIVATE and failsafe
+`ActivatePlan` of a stored `MA_RoutePlan` submit
+`WAYPOINT_FOLLOWING` (NEW when idle, UPDATE when live) and do not
+publish `MA_FlightCommand` / `MA_FlightCommandStatus`. Failsafe
+does not walk the activation command ladder. Both publish
 `ResponsePlanExecutionStatus`, `RoutePlanExecutionStatus`, and
 `MA_MissionPlanExecutionStatus` as `EXECUTING`. Route-sourced
 completion is `COMPLETED`; DEACTIVATE of an executing plan is
@@ -95,13 +101,22 @@ completion is `COMPLETED`; DEACTIVATE of an executing plan is
 is the same abort without an inbound command. Inbound DEACTIVATE
 and that VI abort publish `MissionPlanActivationStatus` as
 `DEACTIVATED`. The status package republishes the execution family
-on the tick.
+on the tick, including idle `ActivityPlanExecutionStatus`,
+`RouteActivityPlanExecutionStatus`, and `TaskPlanExecutionStatus`
+(SystemID + Source).
 
 Route, query, and control publish `QUEUED`, `PROCESSING`, then
 `COMPLETED`. Advertise, TSPI, faults, subsystem status, and the
 status package are outbound-only (`publishers.py`), not handlers.
-`ControlStatus` keeps Isolator as `PrimaryController` and names the
-acquired controller as `SecondaryController` when both IDs are set.
+Inbound `MA_FlightCapability` from another SystemID redacts
+`CapabilityType` on the advertised offer.
+`ControlStatus` keeps Isolator as `PrimaryController` and
+`MissionControl` `ControllerSystemID`, names the acquired
+controller as `SecondaryController` when both IDs are set, and
+sets `InMission` when a flight, route, or task is live.
+When `snapshot()` availability is not `AVAILABLE`, Isolator unpairs:
+`MA_ControlRequestStatus` `CANCELED` for the stored RequestID and
+`MA_ControlAssignment` `REMOVED`.
 Message-type names live in `open_vi.codec.mts`.
 
 Isolator does not import STOMP, ActiveMQ, MAVLink, or PX4. Vehicle

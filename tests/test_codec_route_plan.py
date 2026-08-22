@@ -125,3 +125,20 @@ def test_parse_validation_weather_area() -> None:
     assert cmd.weather.icing == "SEVERE"
     assert weather_blocks_route(cmd.weather)
     assert not weather_blocks_route(None)
+
+
+def test_sample_takeoff_plan_marks_path() -> None:
+    identity = SystemIdentity.named("1")
+    airfield_id = uuid4()
+    runway_id = uuid4()
+    xml = build_sample_route_plan(
+        identity,
+        route_plan_id=uuid4(),
+        path_type="TAKEOFF",
+        airfield_id=airfield_id,
+        runway_id=runway_id,
+    )
+    body = xml.decode() if isinstance(xml, bytes) else xml
+    assert "TAKEOFF" in body
+    assert airfield_id.hex in body.replace("-", "")
+    assert runway_id.hex in body.replace("-", "")

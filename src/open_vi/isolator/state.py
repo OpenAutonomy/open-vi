@@ -19,15 +19,25 @@ class IsolatorState:
     ``capability_id`` and ``idle_activity_id`` are set at construction.
     ``last_availability`` is written by advertise / contingency.
     Control fields are
-    :class:`~open_vi.isolator.handlers.control.ControlHandler`.
-    ``active_task_id`` is
+    :class:`~open_vi.isolator.handlers.control.ControlHandler`
+    on inbound, and ``unpair_if_unavailable`` on VI revoke.
+    ``c2_capability_types`` is the CapabilityHandler overlay
+    (``None`` = no C2 redact). Task fields are
     :class:`~open_vi.isolator.handlers.task.TaskHandler`.
+    Failsafe fields are
+    :class:`~open_vi.isolator.handlers.failsafe.FailsafeHandler`.
     """
 
     capability_id: uuid.UUID = field(default_factory=uuid.uuid4)
     last_availability: str | None = None
     idle_activity_id: uuid.UUID = field(default_factory=uuid.uuid4)
+    c2_capability_types: tuple[str, ...] | None = None
     controller_system_id: uuid.UUID | None = None
     controller_service_id: uuid.UUID | None = None
     control_type: str | None = None
+    control_choice: str | None = None
+    control_request_id: uuid.UUID | None = None
     active_task_id: uuid.UUID | None = None
+    ingested_task_ids: set[uuid.UUID] = field(default_factory=set)
+    failsafe_response_id: uuid.UUID | None = None
+    failsafe_route_id: uuid.UUID | None = None

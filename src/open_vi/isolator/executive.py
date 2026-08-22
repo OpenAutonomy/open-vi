@@ -13,11 +13,14 @@ import threading
 import time
 
 from open_vi.asb.port import AsbPort
+from open_vi.codec.route import build_sample_route_plan
 from open_vi.config import IsolatorConfig
+from open_vi.domain import HomeAirfield, home_airfield_from_tspi
 from open_vi.identity import SystemIdentity
 from open_vi.isolator import publishers
 from open_vi.isolator.context import IsolatorContext
 from open_vi.isolator.handlers import collect_inbound_mts, default_handlers
+from open_vi.isolator.handlers.control import unpair_if_unavailable
 from open_vi.isolator.routes import RouteStore
 from open_vi.isolator.state import IsolatorState
 from open_vi.platform.port import PlatformPort
@@ -36,7 +39,8 @@ class Isolator:
     types. ``start`` attaches, advertises control, publishes the
     optional status package and vehicle-state outs, and runs the tick
     loop. Tests that need inbound only call ``attach``; tests that
-    need capability on the bus call ``advertise_once``.
+    need capability on the bus call ``advertise_once``. Construction
+    preloads home takeoff and landing ``MA_RoutePlan`` into the store.
     """
 
     def __init__(
@@ -53,13 +57,25 @@ class Isolator:
             namespace_name=self.config.namespace_name,
             namespace_uuid_id=self.config.namespace_uuid,
         )
+        airfield = home_airfield_from_tspi(
+            self.identity, platform.get_vehicle_state()
+        )
+        routes = RouteStore()
+        _preload_home_routes(
+            self.identity,
+            routes,
+            airfield,
+            schema_version=self.config.schema_version,
+            mode=self.config.message_mode,
+        )
         self.ctx = IsolatorContext(
             bus=bus,
             platform=platform,
             identity=self.identity,
             config=self.config,
             state=IsolatorState(),
-            routes=RouteStore(),
+            routes=routes,
+            airfield=airfield,
         )
         self._handlers = default_handlers()
         self._stop = threading.Event()
@@ -250,7 +266,9 @@ class Isolator:
 
         Republishes capability when availability changes, or on every
         tick when ``tick_republish_status`` is set, so a late harness
-        subscriber still sees the control-mode authorization.
+        subscriber still sees the control-mode authorization. When
+        the offer is not ``AVAILABLE``, unpairs an acquired
+        controller (§1.2.2.8).
         """
         self.publish_command_updates_once()
         snap = self.ctx.platform.snapshot()
@@ -261,7 +279,34 @@ class Isolator:
             # Republish offer+status so a late harness subscriber still sees
             # control-mode authorization (not only the initial advertise).
             self._advertise_control()
+        unpair_if_unavailable(self.ctx, snap.readiness.availability)
         if self.config.publish_status_package:
             self.publish_status_package_once()
         if self.config.publish_vehicle_state:
             self.publish_vehicle_state_once()
+
+
+def _preload_home_routes(
+    identity: SystemIdentity,
+    routes: RouteStore,
+    airfield: HomeAirfield,
+    *,
+    schema_version: str,
+    mode: str,
+) -> None:
+    """Ingest takeoff and landing plans linked to *airfield*."""
+    for route_id, path_type, points in (
+        (airfield.takeoff_route_id, "TAKEOFF", airfield.takeoff_path),
+        (airfield.landing_route_id, "LANDING", airfield.landing_path),
+    ):
+        xml = build_sample_route_plan(
+            identity,
+            route_plan_id=route_id,
+            waypoints=points,
+            path_type=path_type,
+            airfield_id=airfield.airfield_id,
+            runway_id=airfield.runway_id,
+            schema_version=schema_version,
+            mode=mode,
+        )
+        routes.ingest(route_id, xml.decode("utf-8"))

@@ -27,12 +27,23 @@ def parse_path_waypoints(node) -> tuple[Waypoint, ...]:
     return _waypoints_document_order(node)
 
 
-def build_path_element(waypoints: tuple[Waypoint, ...]):
-    """Build a Path element (PathID, PathType, Segment children)."""
+def build_path_element(
+    waypoints: tuple[Waypoint, ...],
+    *,
+    path_type: str = "PRIMARY",
+    airfield_id: UUID | None = None,
+    runway_id: UUID | None = None,
+):
+    """Build a Path element (PathID, PathType, Segment children).
+
+    *path_type* is a PathTypeEnum token (``PRIMARY``, ``TAKEOFF``,
+    ``LANDING``). *airfield_id* / *runway_id* link TO/L paths to the
+    home ``AirfieldReport``.
+    """
     path_id = UUID(int=1)
     children = [
         id_type("PathID", path_id, "path-1"),
-        el("PathType", text="PRIMARY"),
+        el("PathType", text=path_type),
     ]
     for index, waypoint in enumerate(waypoints, start=1):
         point_kids = [
@@ -54,6 +65,10 @@ def build_path_element(waypoints: tuple[Waypoint, ...]):
                 el("Position", *point_kids),
             )
         )
+    if airfield_id is not None:
+        children.append(id_type("AirfieldID", airfield_id, "home-field"))
+    if runway_id is not None:
+        children.append(id_type("RunwayID", runway_id, "home-runway"))
     return el("Path", *children)
 
 

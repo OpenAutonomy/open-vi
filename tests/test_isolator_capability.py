@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from open_vi.asb import InMemoryAsb
-from open_vi.codec.mts import MT_FLIGHT_CAPABILITY, MT_FLIGHT_CAPABILITY_STATUS
+from open_vi.codec.mts import (
+    MT_CONTROL_STATUS,
+    MT_FLIGHT_CAPABILITY,
+    MT_FLIGHT_CAPABILITY_STATUS,
+    MT_POSITION_REPORT_DETAILED,
+)
 from open_vi.codec.xmlutil import local_name, parse_xml
 from open_vi.config import IsolatorConfig
 from open_vi.domain import ControlOffer, ControlReadiness, FlightModeProfile
@@ -108,3 +113,40 @@ def test_readiness_change_readvertises() -> None:
 
     assert len(bus.published[MT_FLIGHT_CAPABILITY]) == before + 1
     assert iso.ctx.state.last_availability == "TEMPORARILY_UNAVAILABLE"
+
+
+def test_tick_republishes_capability_pair_on_cop_cadence() -> None:
+    """§1.2.3.1: default tick republishes the offer, not only advertise."""
+    bus = InMemoryAsb()
+    bus.connect()
+    iso = Isolator(bus, platform=StubPlatform())
+    iso.advertise_once()
+    before_cap = len(bus.published[MT_FLIGHT_CAPABILITY])
+    before_status = len(bus.published[MT_FLIGHT_CAPABILITY_STATUS])
+
+    iso._tick()  # pylint: disable=protected-access
+
+    assert len(bus.published[MT_FLIGHT_CAPABILITY]) == before_cap + 1
+    assert len(bus.published[MT_FLIGHT_CAPABILITY_STATUS]) == before_status + 1
+    assert bus.published[MT_CONTROL_STATUS]
+    assert bus.published[MT_POSITION_REPORT_DETAILED]
+
+
+def test_tick_skips_capability_when_republish_off() -> None:
+    bus = InMemoryAsb()
+    bus.connect()
+    iso = Isolator(
+        bus,
+        platform=StubPlatform(),
+        config=IsolatorConfig(
+            tick_republish_status=False,
+            publish_vehicle_state=False,
+            publish_status_package=False,
+        ),
+    )
+    iso.advertise_once()
+    before = len(bus.published[MT_FLIGHT_CAPABILITY])
+
+    iso._tick()  # pylint: disable=protected-access
+
+    assert len(bus.published[MT_FLIGHT_CAPABILITY]) == before

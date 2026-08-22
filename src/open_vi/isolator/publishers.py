@@ -20,12 +20,16 @@ from open_vi.codec.command import (
     build_flight_command_status,
 )
 from open_vi.codec.control_status import (
+    build_activity_plan_execution_status,
     build_control_status,
     build_mission_plan_execution_status,
     build_response_plan_execution_status,
+    build_route_activity_plan_execution_status,
     build_route_plan_execution_status,
+    build_task_plan_execution_status,
 )
 from open_vi.codec.mts import (
+    MT_ACTIVITY_PLAN_EXECUTION_STATUS,
     MT_COMPONENT_STATUS,
     MT_CONTROL_STATUS,
     MT_FLIGHT_ACTIVITY,
@@ -38,8 +42,10 @@ from open_vi.codec.mts import (
     MT_NAVIGATION_REPORT,
     MT_POSITION_REPORT_DETAILED,
     MT_RESPONSE_PLAN_EXECUTION_STATUS,
+    MT_ROUTE_ACTIVITY_PLAN_EXECUTION_STATUS,
     MT_ROUTE_PLAN_EXECUTION_STATUS,
     MT_SUBSYSTEM_STATUS,
+    MT_TASK_PLAN_EXECUTION_STATUS,
     MT_WEATHER_OBSERVATION,
 )
 from open_vi.codec.route import build_mission_plan_activation_status
@@ -160,7 +166,7 @@ def publish_mission_plan_activation_status(
 
 
 def publish_plan_execution(ctx: IsolatorContext) -> None:
-    """Publish ResponsePlan, then Route/Mission when a snapshot exists."""
+    """Publish ResponsePlan, idle Activity*/Task, then live Route/Mission."""
     snapshot = plan_execution_for_publish(ctx)
     schema = ctx.schema_version
     mode = ctx.message_mode
@@ -171,6 +177,24 @@ def publish_plan_execution(ctx: IsolatorContext) -> None:
             snapshot=snapshot,
             schema_version=schema,
             mode=mode,
+        ),
+    )
+    ctx.bus.publish(
+        MT_ACTIVITY_PLAN_EXECUTION_STATUS,
+        build_activity_plan_execution_status(
+            ctx.identity, schema_version=schema, mode=mode
+        ),
+    )
+    ctx.bus.publish(
+        MT_ROUTE_ACTIVITY_PLAN_EXECUTION_STATUS,
+        build_route_activity_plan_execution_status(
+            ctx.identity, schema_version=schema, mode=mode
+        ),
+    )
+    ctx.bus.publish(
+        MT_TASK_PLAN_EXECUTION_STATUS,
+        build_task_plan_execution_status(
+            ctx.identity, schema_version=schema, mode=mode
         ),
     )
     if snapshot is None:
@@ -215,13 +239,13 @@ def flight_activity_for_publish(ctx: IsolatorContext) -> FlightActivitySnapshot:
 
 
 def publish_flight_capability(ctx: IsolatorContext) -> None:
-    """Publish ``MA_FlightCapability`` from the current platform offer."""
-    snap = ctx.platform.snapshot()
+    """Publish ``MA_FlightCapability`` from the advertised (redacted) offer."""
+    offer = ctx.advertised_offer()
     ctx.bus.publish(
         MT_FLIGHT_CAPABILITY,
         build_flight_capability(
             ctx.identity,
-            snap.offer,
+            offer,
             capability_id=ctx.state.capability_id,
             schema_version=ctx.schema_version,
             mode=ctx.message_mode,
@@ -296,6 +320,15 @@ def publish_subsystem_status(ctx: IsolatorContext) -> None:
     )
 
 
+def _in_mission(ctx: IsolatorContext) -> bool:
+    """True when a flight, route, or task is live."""
+    return (
+        ctx.flight.activity_id is not None
+        or ctx.execution.state == "EXECUTING"
+        or ctx.state.active_task_id is not None
+    )
+
+
 def publish_status_package(ctx: IsolatorContext) -> None:
     """Publish the three periodic status outs, in harness order.
 
@@ -318,6 +351,7 @@ def publish_status_package(ctx: IsolatorContext) -> None:
             service=service,
             secondary_system_id=ctx.state.controller_system_id,
             secondary_service_id=ctx.state.controller_service_id,
+            in_mission=_in_mission(ctx),
             schema_version=schema,
             mode=mode,
         ),

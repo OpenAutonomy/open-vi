@@ -1,14 +1,17 @@
 """Internal language: values only. No XML, no bus, no Isolator tick.
 
 Degrees here; radians begin at the codec boundary. Re-exports flight, TSPI,
-status, route, and control types used by codec, Isolator, and PlatformPort.
+status, route, airfield, and control types used by codec, Isolator,
+and PlatformPort.
 """
 
+from open_vi.domain.airfield import HomeAirfield, home_airfield_from_tspi
 from open_vi.domain.control import (
     ControlOffer,
     ControlReadiness,
     FlightModeProfile,
     PlatformSnapshot,
+    redact_control_offer,
 )
 from open_vi.domain.flight import (
     CommandResult,
@@ -42,6 +45,7 @@ __all__ = [
     "FlightModeProfile",
     "FlightActivitySnapshot",
     "FlightCommandRequest",
+    "HomeAirfield",
     "HsaCsaSetpoint",
     "PlanExecutionSnapshot",
     "PlatformSnapshot",
@@ -53,7 +57,9 @@ __all__ = [
     "TspiSnapshot",
     "Waypoint",
     "finite_waypoint_geometry",
+    "home_airfield_from_tspi",
     "is_live_activity",
+    "redact_control_offer",
     "validate_hsa_setpoint",
     "validate_waypoint_path",
 ]

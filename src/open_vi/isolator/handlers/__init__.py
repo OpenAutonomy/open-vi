@@ -6,7 +6,11 @@ import logging
 from collections.abc import Sequence
 
 from open_vi.isolator.handlers.base import STATUS_LADDER, MessageHandler
-from open_vi.isolator.handlers.control import ControlHandler
+from open_vi.isolator.handlers.capability import CapabilityHandler
+from open_vi.isolator.handlers.control import (
+    ControlHandler,
+    unpair_if_unavailable,
+)
 from open_vi.isolator.handlers.failsafe import FailsafeHandler
 from open_vi.isolator.handlers.flight_command import FlightCommandHandler
 from open_vi.isolator.handlers.heartbeat import HeartbeatHandler
@@ -18,6 +22,7 @@ from open_vi.isolator.handlers.task import TaskHandler
 LOGGER = logging.getLogger(__name__)
 
 __all__ = [
+    "CapabilityHandler",
     "ControlHandler",
     "FailsafeHandler",
     "FlightCommandHandler",
@@ -30,6 +35,7 @@ __all__ = [
     "TaskHandler",
     "collect_inbound_mts",
     "default_handlers",
+    "unpair_if_unavailable",
 ]
 
 
@@ -43,6 +49,7 @@ def default_handlers() -> list[MessageHandler]:
         SystemManagementHandler(),
         QueryHandler(),
         ControlHandler(),
+        CapabilityHandler(),
         TaskHandler(),
     ]
 

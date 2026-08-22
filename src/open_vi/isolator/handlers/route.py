@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from open_vi.codec.command import build_flight_activity
 from open_vi.codec.mts import (
@@ -45,6 +45,93 @@ from open_vi.isolator.context import IsolatorContext
 from open_vi.isolator.handlers.base import STATUS_LADDER
 
 LOGGER = logging.getLogger(__name__)
+
+
+def activate_stored_route(
+    ctx: IsolatorContext,
+    route_plan_id: UUID,
+) -> RouteActivationResult:
+    """Submit WAYPOINT_FOLLOWING from stored XML; commit on accept.
+
+    Failsafe and inbound ACTIVATE share this. Does not publish
+    ``MA_MissionPlanActivationCommandStatus``.
+    """
+    stored = ctx.routes.get(route_plan_id)
+    if stored is None:
+        return RouteActivationResult(
+            processing_state="REJECTED",
+            plan_state="INACTIVE",
+            emit_pair=False,
+            reason="INVALID_INPUT_PARAMETER",
+            reason_description="No stored MA_RoutePlan for ACTIVATE",
+        )
+    try:
+        waypoints = parse_route_plan_waypoints(stored.xml)
+    except ValueError:
+        waypoints = ()
+    if not finite_waypoint_geometry(waypoints):
+        return RouteActivationResult(
+            processing_state="REJECTED",
+            plan_state=stored.plan_state,
+            emit_pair=False,
+            reason="INVALID_INPUT_PARAMETER",
+            reason_description="MA_RoutePlan has no flyable waypoints",
+        )
+    live = ctx.platform.active_flight_activity()
+    command_id = uuid4()
+    if is_live_activity(live):
+        activity_id = ctx.flight.activity_id
+        if activity_id is None and live is not None:
+            activity_id = live.activity_id
+        cmd = FlightCommandRequest(
+            command_id=command_id,
+            capability_id=ctx.state.capability_id,
+            command_state="UPDATE",
+            mode="WAYPOINT_FOLLOWING",
+            waypoints=waypoints,
+            choice="Activity",
+            activity_id=activity_id,
+        )
+    else:
+        cmd = FlightCommandRequest(
+            command_id=command_id,
+            capability_id=ctx.state.capability_id,
+            command_state="NEW",
+            mode="WAYPOINT_FOLLOWING",
+            waypoints=waypoints,
+            choice="Capability",
+        )
+    flight = ctx.platform.submit_flight_command(cmd)
+    if flight.processing_state != "ACCEPTED":
+        return RouteActivationResult(
+            processing_state="REJECTED",
+            plan_state=stored.plan_state,
+            emit_pair=False,
+            reason=flight.reason,
+            reason_description=flight.reason_description,
+        )
+    ctx.routes.commit(route_plan_id, "ACTIVATED")
+    ctx.execution.activate(route_plan_id, command_id)
+    if flight.activity_id is not None:
+        ctx.flight.begin(flight.activity_id)
+    activity = ctx.platform.active_flight_activity()
+    if activity is not None:
+        ctx.bus.publish(
+            MT_FLIGHT_ACTIVITY,
+            build_flight_activity(
+                ctx.identity,
+                activity,
+                schema_version=ctx.schema_version,
+                mode=ctx.message_mode,
+                object_state="NEW" if flight.new_activity else "UPDATED",
+            ),
+        )
+    publishers.publish_plan_execution(ctx)
+    return RouteActivationResult(
+        processing_state="ACCEPTED",
+        plan_state="ACTIVATED",
+        emit_pair=True,
+    )
 
 
 class RouteHandler:
@@ -105,77 +192,15 @@ class RouteHandler:
         pending: RouteActivationResult,
     ) -> RouteActivationResult:
         """Submit WAYPOINT_FOLLOWING; commit ACTIVATED only on accept."""
-        stored = ctx.routes.get(req.route_plan_id)
-        if stored is None:
+        result = activate_stored_route(ctx, req.route_plan_id)
+        if result.processing_state != "ACCEPTED":
             return RouteActivationResult(
                 processing_state="REJECTED",
                 plan_state=pending.plan_state,
                 emit_pair=False,
-                reason="INVALID_INPUT_PARAMETER",
-                reason_description="No stored MA_RoutePlan for ACTIVATE",
+                reason=result.reason,
+                reason_description=result.reason_description,
             )
-        try:
-            waypoints = parse_route_plan_waypoints(stored.xml)
-        except ValueError:
-            waypoints = ()
-        if not finite_waypoint_geometry(waypoints):
-            return RouteActivationResult(
-                processing_state="REJECTED",
-                plan_state=pending.plan_state,
-                emit_pair=False,
-                reason="INVALID_INPUT_PARAMETER",
-                reason_description="MA_RoutePlan has no flyable waypoints",
-            )
-        live = ctx.platform.active_flight_activity()
-        command_id = uuid4()
-        if is_live_activity(live):
-            activity_id = ctx.flight.activity_id
-            if activity_id is None and live is not None:
-                activity_id = live.activity_id
-            cmd = FlightCommandRequest(
-                command_id=command_id,
-                capability_id=ctx.state.capability_id,
-                command_state="UPDATE",
-                mode="WAYPOINT_FOLLOWING",
-                waypoints=waypoints,
-                choice="Activity",
-                activity_id=activity_id,
-            )
-        else:
-            cmd = FlightCommandRequest(
-                command_id=command_id,
-                capability_id=ctx.state.capability_id,
-                command_state="NEW",
-                mode="WAYPOINT_FOLLOWING",
-                waypoints=waypoints,
-                choice="Capability",
-            )
-        flight = ctx.platform.submit_flight_command(cmd)
-        if flight.processing_state != "ACCEPTED":
-            return RouteActivationResult(
-                processing_state="REJECTED",
-                plan_state=pending.plan_state,
-                emit_pair=False,
-                reason=flight.reason,
-                reason_description=flight.reason_description,
-            )
-        ctx.routes.commit(req.route_plan_id, "ACTIVATED")
-        ctx.execution.activate(req.route_plan_id, command_id)
-        if flight.activity_id is not None:
-            ctx.flight.begin(flight.activity_id)
-        activity = ctx.platform.active_flight_activity()
-        if activity is not None:
-            ctx.bus.publish(
-                MT_FLIGHT_ACTIVITY,
-                build_flight_activity(
-                    ctx.identity,
-                    activity,
-                    schema_version=ctx.schema_version,
-                    mode=ctx.message_mode,
-                    object_state="NEW" if flight.new_activity else "UPDATED",
-                ),
-            )
-        publishers.publish_plan_execution(ctx)
         return RouteActivationResult(
             processing_state="ACCEPTED",
             plan_state="ACTIVATED",

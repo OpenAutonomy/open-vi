@@ -125,6 +125,18 @@ def _activity_reject_reason(
         return "Activity commands require CommandState UPDATE"
     if cmd.activity_id is None or cmd.activity_id != ctx.flight.activity_id:
         return "Unknown or idle ActivityID"
+    return _designation_reject_reason(cmd, ctx)
+
+
+def _designation_reject_reason(
+    cmd: FlightCommandRequest, ctx: IsolatorContext
+) -> str | None:
+    """Reject modes C2 has redacted from the advertised offer."""
+    if not cmd.mode:
+        return None
+    allowed = ctx.advertised_offer().capability_types
+    if cmd.mode not in allowed:
+        return f"C2 designation does not permit {cmd.mode}"
     return None
 
 
@@ -134,6 +146,9 @@ def _capability_reject_reason(
     """Capability NEW starts an activity; CANCEL stops one. No live replan."""
     if cmd.command_state == "CANCEL":
         return None
+    denied = _designation_reject_reason(cmd, ctx)
+    if denied is not None:
+        return denied
     if cmd.command_state != "NEW":
         return "Capability commands require CommandState NEW or CANCEL"
     if is_live_activity(ctx.platform.active_flight_activity()):

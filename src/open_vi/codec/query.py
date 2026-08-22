@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
+from open_vi.codec.geo import deg_to_rad, format_uci_angle
 from open_vi.codec.ns import SCHEMA_VERSION
 from open_vi.codec.xmlutil import (
     el,
@@ -17,6 +18,7 @@ from open_vi.codec.xmlutil import (
     tostring,
     utc_now,
 )
+from open_vi.domain import HomeAirfield, Waypoint
 from open_vi.identity import SystemIdentity
 
 _QUERY_KIND = {
@@ -137,19 +139,32 @@ def build_sample_query_data_request(
 def build_airfield_report(
     identity: SystemIdentity,
     *,
+    airfield: HomeAirfield | None = None,
     report_id: UUID | None = None,
     airfield_id: UUID | None = None,
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
 ) -> bytes:
-    """Minimal AirfieldReport (self-reported home field)."""
-    data = el(
-        "MessageData",
-        id_type("AirfieldReportID", report_id or uuid4(), "airfield-report"),
-        id_type("AirfieldID", airfield_id or uuid4(), "home-field"),
+    """Self-reported home ``AirfieldReport``.
+
+    When *airfield* is set, ``Information/Runway`` includes direction,
+    length, and takeoff/landing Start+Limit coordinates.
+    """
+    report = (
+        airfield.report_id if airfield is not None else report_id
+    ) or uuid4()
+    field_id = (
+        airfield.airfield_id if airfield is not None else airfield_id
+    ) or uuid4()
+    kids = [
+        id_type("AirfieldReportID", report, "airfield-report"),
+        id_type("AirfieldID", field_id, "home-field"),
         el("IdentityReferenceID", system_id(identity)),
         el("ObservationTime", text=utc_now()),
-    )
+    ]
+    if airfield is not None:
+        kids.append(_airfield_information(airfield))
+    data = el("MessageData", *kids)
     root = message_envelope(
         "AirfieldReport",
         identity,
@@ -159,3 +174,56 @@ def build_airfield_report(
         object_state="NEW",
     )
     return tostring(root)
+
+
+def _airfield_information(airfield: HomeAirfield):
+    """Information/Runway geometry for a home field."""
+    return el(
+        "Information",
+        el("Operational"),
+        el(
+            "Runway",
+            id_type("RunwayID", airfield.runway_id, "home-runway"),
+            el(
+                "Direction",
+                text=format_uci_angle(deg_to_rad(airfield.direction_deg)),
+            ),
+            el("AvailableLength", text=str(airfield.available_length_m)),
+            el(
+                "TakeoffCoordinates",
+                *_runway_coordinates(
+                    airfield.takeoff_start, airfield.takeoff_end
+                ),
+            ),
+            el(
+                "LandingCoordinates",
+                *_runway_coordinates(
+                    airfield.landing_start, airfield.landing_end
+                ),
+            ),
+        ),
+    )
+
+
+def _runway_coordinates(start: Waypoint, limit: Waypoint):
+    """RunwayCoordinatesType Start + Limit as Point3D."""
+    return (
+        el("Start", *_point3d(start)),
+        el("Limit", *_point3d(limit)),
+    )
+
+
+def _point3d(waypoint: Waypoint):
+    """Latitude, Longitude, Altitude children for Point3D."""
+    altitude = waypoint.altitude_m if waypoint.altitude_m is not None else 0.0
+    return (
+        el(
+            "Latitude",
+            text=format_uci_angle(deg_to_rad(waypoint.latitude_deg)),
+        ),
+        el(
+            "Longitude",
+            text=format_uci_angle(deg_to_rad(waypoint.longitude_deg)),
+        ),
+        el("Altitude", text=str(altitude)),
+    )

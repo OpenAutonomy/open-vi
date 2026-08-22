@@ -29,6 +29,7 @@ def build_control_status(
     service: ServiceStatusSnapshot,
     secondary_system_id: UUID | None = None,
     secondary_service_id: UUID | None = None,
+    in_mission: bool = False,
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
 ) -> bytes:
@@ -37,8 +38,15 @@ def build_control_status(
     Isolator is always ``PrimaryController`` (it adjudicates
     ``MA_ControlRequest``). The acquired controller is
     ``SecondaryController`` only when both system and service IDs
-    are set — the schema requires both.
+    are set — the schema requires both. ``MissionControl`` names
+    Isolator as ``ControllerSystemID`` (self-controlling VI) and
+    ``InMission`` from live flight, route, or task.
     """
+    mission_control = el(
+        "MissionControl",
+        system_id(identity, "ControllerSystemID"),
+        el("InMission", text="true" if in_mission else "false"),
+    )
     cap_control_children = [
         id_type("CapabilityID", capability_id, offer.capability_label),
         el(
@@ -62,6 +70,7 @@ def build_control_status(
         system_id(identity),
         el(
             "ControlType",
+            mission_control,
             el("CapabilityControl", *cap_control_children),
         ),
     )
@@ -73,6 +82,91 @@ def build_control_status(
         mode=mode,
     )
     return tostring(root)
+
+
+def _idle_plan_execution_status(
+    root_tag: str,
+    identity: SystemIdentity,
+    *,
+    source: str = "ACTUAL",
+    schema_version: str = SCHEMA_VERSION,
+    mode: str = "SIMULATION",
+) -> bytes:
+    """SystemID + Source only. No invented PlanID."""
+    data = el(
+        "MessageData",
+        system_id(identity),
+        el("Source", text=source),
+    )
+    root = message_envelope(
+        root_tag,
+        identity,
+        data,
+        schema_version=schema_version,
+        mode=mode,
+    )
+    return tostring(root)
+
+
+def build_activity_plan_execution_status(
+    identity: SystemIdentity,
+    *,
+    source: str = "ACTUAL",
+    schema_version: str = SCHEMA_VERSION,
+    mode: str = "SIMULATION",
+) -> bytes:
+    """Idle ActivityPlanExecutionStatus: SystemID + Source.
+
+    Isolator has no ActivityPlanID, so PlanExecutionStatus is omitted.
+    """
+    return _idle_plan_execution_status(
+        "ActivityPlanExecutionStatus",
+        identity,
+        source=source,
+        schema_version=schema_version,
+        mode=mode,
+    )
+
+
+def build_route_activity_plan_execution_status(
+    identity: SystemIdentity,
+    *,
+    source: str = "ACTUAL",
+    schema_version: str = SCHEMA_VERSION,
+    mode: str = "SIMULATION",
+) -> bytes:
+    """Idle RouteActivityPlanExecutionStatus: SystemID + Source.
+
+    Isolator has no RouteActivityPlanID, so PlanExecutionStatus
+    and ActivityStatus are omitted.
+    """
+    return _idle_plan_execution_status(
+        "RouteActivityPlanExecutionStatus",
+        identity,
+        source=source,
+        schema_version=schema_version,
+        mode=mode,
+    )
+
+
+def build_task_plan_execution_status(
+    identity: SystemIdentity,
+    *,
+    source: str = "ACTUAL",
+    schema_version: str = SCHEMA_VERSION,
+    mode: str = "SIMULATION",
+) -> bytes:
+    """Idle TaskPlanExecutionStatus: SystemID + Source.
+
+    Isolator has no TaskPlanID, so PlanExecutionStatus is omitted.
+    """
+    return _idle_plan_execution_status(
+        "TaskPlanExecutionStatus",
+        identity,
+        source=source,
+        schema_version=schema_version,
+        mode=mode,
+    )
 
 
 def build_response_plan_execution_status(

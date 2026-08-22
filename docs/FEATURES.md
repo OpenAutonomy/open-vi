@@ -26,7 +26,7 @@ here.
 | --- | --- | --- | --- |
 | 1.2.1.1 | Collision Avoidance | Partial | Republishes capability status when readiness is `CONSTRAINT_COLLISION_AVOIDANCE`. Not vehicle-driven. |
 | 1.2.1.2 | Intra-Vehicle Comms Failure | Supported | Periodic `SubsystemStatus`; answers `SubsystemStatusDataRequest`. Loss-of-comms plan is MA's. |
-| 1.2.1.3 | MA Failsafe | Partial | Acks `MA_Response` with `MA_SystemNotification`. Does not store or activate a failsafe route plan. |
+| 1.2.1.3 | MA Failsafe | Supported | Inbound `MA_Response` is stored and acked with `MA_SystemNotification`. `ActivatePlan` that names a stored `MA_RoutePlan` submits `WAYPOINT_FOLLOWING` and publishes execution status. Trigger monitoring is not implemented. If the plan is not stored, Isolator notifies only. |
 | 1.2.1.4 | Mechanical Damage Reporting | Partial | Publishes `MA_Fault` from `get_faults()`. No periodic BIT. |
 | 1.2.1.5 | Sensor Failure | Partial | Publishes `SubsystemStatus` then `MA_Fault` when the platform reports them. |
 
@@ -38,17 +38,17 @@ here.
 | 1.2.2.2 | Control by HSA/CSA Command | Partial | Isolator parses and submits. Tracking is the backend. |
 | 1.2.2.3 | Control by Waypoint Following | Supported | Capability NEW / Activity UPDATE / Capability CANCEL → status and `MA_FlightActivity`. Optional reject `MA_Task`. Rejects may include `CannotComplyDetails/ValidationResult` from the platform. Taxi, ATC hold, and payload actions are not implemented. |
 | 1.2.2.4 | Control Mode Authorization | Supported | Publishes `MA_FlightCapability` then `MA_FlightCapabilityStatus` from `snapshot()`. Performance profile is the backend. |
-| 1.2.2.5 | MA-VI Command Task | Partial | `MA_TaskCommand` → status and `TaskStatus`. Does not ingest inbound `MA_Task` or notify. |
+| 1.2.2.5 | MA-VI Command Task | Supported | Inbound `MA_Task` is stored and acked with `MA_SystemNotification`. Own reject-suggest publishes are ignored. `MA_TaskCommand` NEW / CANCEL → status and `TaskStatus`. |
 | 1.2.2.6 | Modify Capabilities | Partial | Availability can change through `snapshot()`. No FA-driven capability reduction. |
-| 1.2.2.7 | Receive Control Request | Partial | ACQUIRE / STEAL / RELEASE with status ladder and `MA_ControlAssignment`. No VI-initiated revoke. |
-| 1.2.2.8 | Unpair Control Assignment | Not supported | VI does not publish CANCELED status plus assignment on its own. |
-| 1.2.2.9 | Update C2 Control Designations | Not supported | Inbound `MA_FlightCapability` is not consumed to redact modes. |
+| 1.2.2.7 | Receive Control Request | Supported | ACQUIRE / STEAL / RELEASE with status ladder and `MA_ControlAssignment`. VI-initiated revoke is §1.2.2.8. |
+| 1.2.2.8 | Unpair Control Assignment | Supported | When availability is not `AVAILABLE`, Isolator publishes `CANCELED` `MA_ControlRequestStatus` for the stored acquire/steal RequestID and `MA_ControlAssignment` as `REMOVED`, then clears the assignment. |
+| 1.2.2.9 | Update C2 Control Designations | Supported | Inbound `MA_FlightCapability` from another SystemID intersects the platform offer. Isolator readvertises the redacted pair. Own publishes are ignored. `ObjectState` `REMOVED` clears the overlay. Commands for a redacted mode are `REJECTED`. |
 
 ### 1.2.3 COP
 
 | § | Interaction | Status | Notes |
 | --- | --- | --- | --- |
-| 1.2.3.1 | VI Updates to COP | Partial | Tick publishes activity, position, weather, navigation, and component status. Capability pair is on advertise, not the COP cadence. |
+| 1.2.3.1 | VI Updates to COP | Supported | Tick republishes the capability pair when `tick_republish_status` is on (default), plus activity, position, weather, navigation, component status, and the status package. |
 
 ### 1.2.4 Data validation
 
@@ -80,11 +80,11 @@ when the platform accepts.
 | § | Interaction | Status | Notes |
 | --- | --- | --- | --- |
 | 1.2.6.1 | Exchange Heartbeat — Subsystem Status Reports | Supported | Periodic `ServiceStatus` / `SubsystemStatus`; answers both data-request MTs. |
-| 1.2.6.2 | Publish Control Status | Supported | Periodic `ControlStatus` with VI as `PrimaryController`. The acquired controller is `SecondaryController` when both SystemID and ServiceID are stored. No `MissionControl`, `CapabilityManager`, or `TransferInfo`. |
-| 1.2.6.3 | Query Airfield Update | Partial | `AirfieldReport`. No runway geometry or linked TO/L `MA_RoutePlan`. |
-| 1.2.6.4 | Query Route Plan | Partial | Returns stored plans plus File*. No preloaded takeoff/landing set. |
+| 1.2.6.2 | Publish Control Status | Supported | Periodic `ControlStatus` with VI as `PrimaryController` and `MissionControl` (`ControllerSystemID` is Isolator; `InMission` when a flight, route, or task is live). The acquired controller is `SecondaryController` when both SystemID and ServiceID are stored. No `CapabilityManager` or `TransferInfo`. |
+| 1.2.6.3 | Query Airfield Update | Supported | `AirfieldReport` includes `Information/Runway` (direction, length, takeoff/landing Start+Limit). Query also emits the linked takeoff and landing `MA_RoutePlan`. |
+| 1.2.6.4 | Query Route Plan | Supported | Returns the preloaded TO/L set plus peer-uploaded plans and File*. |
 | 1.2.6.5 | Receive Barometric Pressure | Supported | `MA_SystemManagementRequest` QNH → `apply_system_management` → COMPLETED or REJECTED. |
-| 1.2.6.6 | Receive Execution Status | Partial | Live `ResponsePlanExecutionStatus` / `RoutePlanExecutionStatus` / `MA_MissionPlanExecutionStatus` on ACTIVATE, tick, COMPLETED, inbound DEACTIVATE-as-FAILED, and VI abort. `TaskStatus` on task command. No `ActivityPlan*` / `TaskPlanExecutionStatus`. |
+| 1.2.6.6 | Receive Execution Status | Supported | Live `ResponsePlanExecutionStatus` / `RoutePlanExecutionStatus` / `MA_MissionPlanExecutionStatus` on ACTIVATE, tick, COMPLETED, inbound DEACTIVATE-as-FAILED, and VI abort. Idle `ActivityPlanExecutionStatus`, `RouteActivityPlanExecutionStatus`, and `TaskPlanExecutionStatus` are SystemID + Source (no ActivityPlan / RouteActivityPlan / TaskPlan IDs). `TaskStatus` on task command. |
 | 1.2.6.7 | Receive Vehicle Performance Values | Partial | Publishes the offer the platform advertised. No Isolator airspeed or load-factor curves. |
 | 1.2.6.8 | Receive Vehicle State Data | Partial | Activity, `MA_PositionReportDetailed`, `WeatherObservation`, `NavigationReport`, `ComponentStatus`. Kinematics are populated; fuel mass/duration are not. |
 | 1.2.6.9 | Request Terrain Data | Not supported | MUC **MA Terrain Data**. No `ElevationRequest*`. |
@@ -110,21 +110,21 @@ Direction is relative to VI. Core unless noted.
 
 | Message | Direction | Status | Notes |
 | --- | --- | --- | --- |
-| ActivityPlanExecutionStatus | out | Not supported | |
-| AirfieldReport | out | Partial | Query handler home field |
+| ActivityPlanExecutionStatus | out | Supported | Idle Source; no ActivityPlanID |
+| AirfieldReport | out | Supported | Home field with runway geometry |
 | ComponentStatus | out | Supported | |
-| ControlStatus | out | Partial | Primary plus `SecondaryController` when assigned. No `MissionControl`. |
+| ControlStatus | out | Supported | Primary, `MissionControl`, and `SecondaryController` when assigned |
 | ElevationRequest | in | Not supported | MUC MA Terrain Data |
 | ElevationRequestStatus | out | Not supported | MUC MA Terrain Data |
 | FileLocation | out | Supported | Stored routes |
 | FileMetadata | out | Supported | SHA-256 of stored XML |
 | MA_ActionStatus | out | Not supported | |
-| MA_ControlAssignment | out | Supported | On control request |
+| MA_ControlAssignment | out | Supported | On control request and VI unpair |
 | MA_ControlRequest | in | Partial | ACQUIRE / STEAL / RELEASE |
 | MA_ControlRequestStatus | out | Supported | |
 | MA_Fault | out | Partial | From `get_faults()`; heartbeat may emit |
 | MA_FlightActivity | out | Supported | |
-| MA_FlightCapability | inout | Partial | Published from `snapshot()`; inbound not consumed |
+| MA_FlightCapability | inout | Supported | Published from the advertised (C2-redacted) offer; inbound designations are consumed |
 | MA_FlightCapabilityStatus | out | Supported | |
 | MA_FlightCommand | in | Partial | Three Core modes parsed; submit is the backend |
 | MA_FlightCommandStatus | out | Supported | Rejects may include `CannotComplyDetails` |
@@ -132,20 +132,20 @@ Direction is relative to VI. Core unless noted.
 | MA_MissionPlanActivationCommandStatus | out | Supported | |
 | MA_MissionPlanExecutionStatus | out | Supported | When MissionPlanID is known |
 | MA_PositionReportDetailed | out | Supported | |
-| MA_Response | in | Partial | Ack only |
+| MA_Response | in | Supported | Ingest + notify; `ActivatePlan` of a stored route |
 | MA_RoutePlan | inout | Supported | Store and query replay |
 | MA_SystemManagementRequest | in | Supported | QNH |
 | MA_SystemManagementRequestStatus | out | Supported | |
-| MA_SystemNotification | out | Supported | Route ingest, failsafe ack |
+| MA_SystemNotification | out | Supported | Route ingest, failsafe ack, inbound `MA_Task` |
 | MA_TaskCommand | in | Supported | |
 | MA_TaskCommandStatus | out | Supported | |
-| MA_Task | inout | Partial | Reject suggest only |
+| MA_Task | inout | Supported | Ingest + notify; reject suggest outbound |
 | MissionPlanActivationStatus | out | Supported | On inbound DEACTIVATE and VI abort (`DEACTIVATED`). |
 | NavigationReport | out | Partial | Percent; no fuel mass/duration |
 | QueryDataRequest | in | Partial | Capability, route, airfield |
 | QueryDataRequestStatus | out | Supported | Ladder; `Result/ID` on `COMPLETED`; `FAILED` reason on checksum mismatch |
 | ResponsePlanExecutionStatus | out | Supported | Idle Source, or live ExecutionState plus plan ids |
-| RouteActivityPlanExecutionStatus | out | Not supported | |
+| RouteActivityPlanExecutionStatus | out | Supported | Idle Source; no RouteActivityPlanID |
 | RoutePlanExecutionStatus | out | Supported | EXECUTING / COMPLETED / FAILED |
 | RoutePlanValidationCommand | in | Supported | Geometry plus `WeatherAreaData` override |
 | RoutePlanValidationCommandStatus | out | Supported | |
@@ -156,7 +156,7 @@ Direction is relative to VI. Core unless noted.
 | SubsystemStatus | inout | Supported | Published; inbound ServiceStatus is the peer heartbeat |
 | SubsystemStatusDataRequest | in | Supported | |
 | SubsystemStatusDataRequestStatus | out | Supported | |
-| TaskPlanExecutionStatus | out | Not supported | |
+| TaskPlanExecutionStatus | out | Supported | Idle Source; no TaskPlanID |
 | TaskStatus | out | Supported | |
 | WeatherObservation | out | Supported | |
 

@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Added
+
+- Query Airfield Update (§1.2.6.3): `AirfieldReport` includes runway
+  geometry. Isolator preloads linked takeoff and landing
+  `MA_RoutePlan` at construction.
+- Query Route Plan (§1.2.6.4): route query returns that preloaded
+  TO/L set plus peer-uploaded plans.
+- Unpair Control Assignment (§1.2.2.8): when the offer is not
+  `AVAILABLE`, Isolator publishes `CANCELED` status and a `REMOVED`
+  assignment.
+- Update C2 Control Designations (§1.2.2.9): inbound
+  `MA_FlightCapability` redacts advertised modes; Isolator
+  readvertises the pair.
+- MA-VI Command Task (§1.2.2.5): inbound `MA_Task` is ingested and
+  acked with `MA_SystemNotification`.
+- MA Failsafe (§1.2.1.3): inbound `MA_Response` stores the
+  association; `ActivatePlan` flies a stored `MA_RoutePlan`.
+- `ControlStatus` includes `MissionControl`: Isolator as
+  `ControllerSystemID`, `InMission` when a flight, route, or
+  task is live.
+- Idle `ActivityPlanExecutionStatus`,
+  `RouteActivityPlanExecutionStatus`, and `TaskPlanExecutionStatus`
+  (SystemID + Source) on the execution-status package.
+
+### Changed
+
+- FEATURES §1.2.3.1 is Supported: the default tick republishes
+  the capability pair on the COP cadence, not only on advertise.
+
 ## [0.2.0] - 2026-08-21
 
 Isolator-owned Core Volume rows that do not need a new peer or a

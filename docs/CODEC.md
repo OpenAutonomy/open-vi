@@ -37,15 +37,15 @@ degrees. Convert at this boundary (`geo.py`).
 | Module | Message types |
 | --- | --- |
 | `mts.py` | UCI root names (`MT_*`) for Isolator and tests |
-| `capability.py` | `MA_FlightCapability`, `MA_FlightCapabilityStatus` |
+| `capability.py` | `MA_FlightCapability` (build + parse designations), `MA_FlightCapabilityStatus` |
 | `command.py` | `MA_FlightCommand`, status, activity |
 | `path.py` | Shared Path / Point2D waypoint parse and build |
 | `vehicle_state.py` | TSPI outs (`MA_PositionReportDetailed`, `NavigationReport`, …) |
 | `status.py` | `ServiceStatus`, `SubsystemStatus`, `MA_Fault` |
 | `route.py` | Route plan / activation, File*, `MissionPlanActivationStatus` |
-| `notification.py` | `MA_SystemNotification`, `MA_Response` |
-| `query.py` | `QueryDataRequest`, `QueryDataRequestStatus` (`Result/ID`), `AirfieldReport` |
+| `notification.py` | `MA_SystemNotification`, `MA_Response` (build + parse `ActivatePlan`) |
+| `query.py` | `QueryDataRequest`, `QueryDataRequestStatus` (`Result/ID`), `AirfieldReport` (runway geometry) |
 | `system_mgmt.py` | `MA_SystemManagementRequest` |
 | `control.py` | `MA_ControlRequest`, `MA_ControlAssignment` |
-| `task.py` | `MA_TaskCommand`, `TaskStatus`, `MA_Task` |
-| `control_status.py` | `ControlStatus`, `ResponsePlanExecutionStatus`, `RoutePlanExecutionStatus`, `MA_MissionPlanExecutionStatus` |
+| `task.py` | `MA_TaskCommand`, `TaskStatus`, `MA_Task` (build + parse) |
+| `control_status.py` | `ControlStatus`, `ResponsePlanExecutionStatus`, `RoutePlanExecutionStatus`, `MA_MissionPlanExecutionStatus`, idle `ActivityPlanExecutionStatus` / `RouteActivityPlanExecutionStatus` / `TaskPlanExecutionStatus` |
