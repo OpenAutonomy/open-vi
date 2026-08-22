@@ -53,7 +53,8 @@ BROKER_HOST=host.docker.internal docker compose -f compose/vi.yml up --build
 
 CI publishes `ghcr.io/openautonomy/open-vi` from `main`. Either path
 is Stub on STOMP `:61613`. PX4 SITL is `--platform px4` once a
-vehicle is listening on `udpin:127.0.0.1:14540`. See
+vehicle is listening on `udpin:127.0.0.1:14540`. Optional vehicle
+facts PX4 does not publish go in `--px4-config`. See
 [docs/platforms/px4/README.md](docs/platforms/px4/README.md).
 
 ```bash

@@ -48,6 +48,11 @@ def main(argv: list[str] | None = None) -> int:
         default=os.environ.get("PX4_MAVLINK_URL"),
         help="PX4 MAVLink URL (default udpin:127.0.0.1:14540)",
     )
+    parser.add_argument(
+        "--px4-config",
+        default=os.environ.get("PX4_CONFIG"),
+        help="PX4 vehicle TOML for facts PX4 does not publish",
+    )
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -60,6 +65,7 @@ def main(argv: list[str] | None = None) -> int:
         args.platform,
         mavlink_url=args.mavlink_url,
         autoconnect=args.platform == "px4",
+        config_path=args.px4_config if args.platform == "px4" else None,
     )
     isolator = Isolator(bus, platform=platform, config=config)
     LOGGER.info("Platform=%s", args.platform)

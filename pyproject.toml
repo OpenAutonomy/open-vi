@@ -46,7 +46,7 @@ open-vi = "open_vi.__main__:main"
 packages = ["src/open_vi"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/README.md", "/LICENSE", "/docs", "/compose"]
+include = ["/src", "/README.md", "/LICENSE", "/docs", "/compose", "/examples"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

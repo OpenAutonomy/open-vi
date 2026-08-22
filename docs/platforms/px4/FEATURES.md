@@ -28,11 +28,11 @@ AGL so a hold at the advertised home HAE is inside the bound.
 
 | Method | Status | Notes |
 | --- | --- | --- |
-| `snapshot()` | Supported | `AVAILABLE` while heartbeat and position are fresher than 10 s. Offer includes waypoint and HSA min/max (HAE once home is known, otherwise AGL). |
+| `snapshot()` | Supported | `AVAILABLE` while heartbeat and position are fresher than 10 s. Offer includes waypoint / HSA / curve min/max (HAE once home is known, otherwise AGL). Optional vehicle TOML adds airspeed, acceleration, and rate limits as written. |
 | `submit_flight_command()` | Supported | `WAYPOINT_FOLLOWING`, `CURVE_FOLLOWING`, and `HSA_CSA`. Link down is `CAPABILITY_UNAVAILABLE`. |
 | `poll_command_updates()` | Supported | `COMPLETED` from `MISSION_ITEM_REACHED`. |
 | `active_flight_activity()` | Supported | Live mission activity or none. |
-| `get_vehicle_state()` | Supported | Lat/lon/alt, NED, attitude, airspeed, heading, battery percent, endurance duration from `BATTERY_STATUS`. Fuel mass is omitted (no mass sensor). |
+| `get_vehicle_state()` | Supported | Lat/lon/alt, NED, attitude, airspeed, heading, battery percent, endurance duration from `BATTERY_STATUS`. Fuel mass is omitted unless the vehicle TOML sets `fuel_mass_kg`. |
 | `get_service_status()` | Supported | Process uptime. |
 | `get_subsystem_status()` | Supported | `OPERATE` when BIT is clean; `DEGRADED` on link-down or an unhealthy watched sensor. |
 | `get_faults()` | Supported | Periodic BIT from `SYS_STATUS` sensor present/enabled/health. Link-down is `PX4_LINK_DOWN`. Healthy is a cleared sentinel. |
@@ -50,5 +50,8 @@ direct `MA_FlightCommand`. It does not store or convert
 
 `MA_SystemManagementRequest` QNH is Isolator's. This adapter writes
 PX4 `SENS_BARO_QNH`. Envelope limits are this adapter's
-(`PX4_MIN_REL_ALT_M` / `PX4_MAX_REL_ALT_M`), not Isolator's route
-validation (geometry only).
+(`PX4_MIN_REL_ALT_M` / `PX4_MAX_REL_ALT_M`, or `[envelope]` in the
+vehicle TOML), not Isolator's route validation (geometry only).
+The optional vehicle TOML (`--px4-config` / `PX4_CONFIG`) is
+operator-asserted facts PX4 does not publish. This adapter does
+not check those values against the vehicle.

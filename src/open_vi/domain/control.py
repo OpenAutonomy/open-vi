@@ -6,13 +6,52 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
+class AirspeedLimit:
+    """One airspeed sample at an altitude (optional weight)."""
+
+    speed_mps: float
+    altitude_m: float
+    # SpeedReferenceEnum
+    speed_ref: str = "TRUE_AIRSPEED"
+    # AltitudeReferenceEnum
+    altitude_ref: str = "AGL"
+    weight_kg: float | None = None
+
+
+@dataclass(frozen=True)
+class AccelerationLimit:
+    """Body acceleration paired with Mach or body rates.
+
+    UCI requires ``AccelerationLimitPair`` as a choice: ``mach`` or
+    all three rates. Open-VI does not invent the pair.
+    """
+
+    x_mps2: float
+    y_mps2: float
+    z_mps2: float
+    mach: float | None = None
+    roll_rate_rps: float | None = None
+    pitch_rate_rps: float | None = None
+    yaw_rate_rps: float | None = None
+
+
+@dataclass(frozen=True)
 class FlightModeProfile:
-    """Altitude envelope for one advertised flight control mode."""
+    """Performance envelope for one advertised flight control mode."""
 
     min_altitude_m: float | None = None
     max_altitude_m: float | None = None
     # AltitudeReferenceEnum: WGS_HAE | AGL | MSL | ALTITUDE_BAROMETRIC
     altitude_ref: str = "AGL"
+    min_airspeed: tuple[AirspeedLimit, ...] = ()
+    max_airspeed: tuple[AirspeedLimit, ...] = ()
+    best_endurance_airspeed: tuple[AirspeedLimit, ...] = ()
+    best_range_airspeed: tuple[AirspeedLimit, ...] = ()
+    min_acceleration: tuple[AccelerationLimit, ...] = ()
+    max_acceleration: tuple[AccelerationLimit, ...] = ()
+    max_turn_rate_rps: float | None = None
+    max_climb_rate_mps: float | None = None
+    max_descent_rate_mps: float | None = None
 
 
 @dataclass(frozen=True)

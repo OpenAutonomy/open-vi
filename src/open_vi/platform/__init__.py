@@ -18,6 +18,7 @@ def make_platform(
     mavlink_url: str | None = None,
     autoconnect: bool = True,
     path_clearance_m: float | None = None,
+    config_path: str | None = None,
 ) -> PlatformPort:
     """Construct a vehicle backend by name (``stub`` or ``px4``)."""
     key = name.strip().lower()
@@ -32,5 +33,6 @@ def make_platform(
             connection_url=mavlink_url,
             autoconnect=autoconnect,
             path_clearance_m=path_clearance_m,
+            config_path=config_path,
         )
     raise ValueError(f"Unknown platform {name!r}; expected stub|px4")

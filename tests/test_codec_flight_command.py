@@ -14,7 +14,13 @@ from open_vi.codec.command import (
     parse_flight_commands,
 )
 from open_vi.codec.xmlutil import local_name, parse_xml, tostring
-from open_vi.domain import CommandResult, ControlOffer, FlightModeProfile
+from open_vi.domain import (
+    AccelerationLimit,
+    AirspeedLimit,
+    CommandResult,
+    ControlOffer,
+    FlightModeProfile,
+)
 from open_vi.identity import SystemIdentity
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -122,6 +128,44 @@ def test_capability_includes_waypoint_profile() -> None:
     assert b"MinAltitude" in xml
     assert b"MaxAltitude" in xml
     assert b"AGL" in xml
+
+
+def test_capability_includes_airspeed_and_acceleration() -> None:
+    xml = build_flight_capability(
+        SystemIdentity.named("1"),
+        ControlOffer(
+            waypoint_profile=FlightModeProfile(
+                min_altitude_m=10.0,
+                max_altitude_m=500.0,
+                altitude_ref="AGL",
+                min_airspeed=(
+                    AirspeedLimit(
+                        speed_mps=0.0,
+                        altitude_m=0.0,
+                        speed_ref="GROUNDSPEED",
+                    ),
+                ),
+                max_acceleration=(
+                    AccelerationLimit(
+                        x_mps2=3.0,
+                        y_mps2=3.0,
+                        z_mps2=19.613,
+                        mach=0.0,
+                    ),
+                ),
+                max_climb_rate_mps=5.0,
+            )
+        ),
+        capability_id=uuid4(),
+    )
+    assert b"MinAirspeed" in xml
+    assert b"GROUNDSPEED" in xml
+    assert b"MaxAccelerationLimits" in xml
+    assert b"MachValue" in xml
+    assert b"MaxClimbRate" in xml
+    text = xml.decode()
+    assert text.index("MinAirspeed") < text.index("MinAltitude")
+    assert text.index("MaxAltitude") < text.index("MaxAccelerationLimits")
 
 
 def test_capability_includes_hsa_profile() -> None:

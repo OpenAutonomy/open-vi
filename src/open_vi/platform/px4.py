@@ -6,8 +6,9 @@ Isolator and the codec never import this module or MAVLink types —
 ``make_platform("px4")`` loads it. Arm, takeoff, and mission start
 stay inside the adapter; Mission Autonomy sends
 ``MA_FlightCommand``, not UCI arm. Default link is
-``udpin:127.0.0.1:14540``. Install pymavlink with
-``pip install -e ".[px4]"``.
+``udpin:127.0.0.1:14540``. Optional vehicle TOML
+(``--px4-config`` / ``PX4_CONFIG``) supplies facts PX4 does not
+publish. Install pymavlink with ``pip install -e ".[px4]"``.
 """
 
 from __future__ import annotations
@@ -43,6 +44,10 @@ from open_vi.domain import (
     validate_waypoint_path,
 )
 from open_vi.platform.port import PlatformPort
+from open_vi.platform.px4_config import (
+    Px4VehicleConfig,
+    load_px4_vehicle_config,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -125,6 +130,26 @@ def _tas_to_gs_mps(
 def _wrap_heading_deg(heading_deg: float) -> float:
     """Wrap degrees into ``[0, 360)``."""
     return heading_deg % 360.0
+
+
+def _load_vehicle(
+    config: Px4VehicleConfig | None, config_path: str | None
+) -> Px4VehicleConfig:
+    """Constructor object, then path / ``PX4_CONFIG``, else empty."""
+    if config is not None:
+        return config
+    path = config_path or os.environ.get("PX4_CONFIG") or ""
+    if path.strip():
+        return load_px4_vehicle_config(path)
+    return Px4VehicleConfig()
+
+
+def _first_present(*values: object) -> float:
+    """First non-None value as float (env strings included)."""
+    for value in values:
+        if value is not None:
+            return float(value)
+    raise ValueError("expected a fallback value")
 
 
 def _unhealthy_sensor_faults(
@@ -345,6 +370,8 @@ class Px4MavlinkAdapter(PlatformPort):
         path_clearance_m: float | None = None,
         min_rel_alt_m: float | None = None,
         max_rel_alt_m: float | None = None,
+        config: Px4VehicleConfig | None = None,
+        config_path: str | None = None,
     ) -> None:
         self.connection_url = connection_url or os.environ.get(
             "PX4_MAVLINK_URL", DEFAULT_MAVLINK_URL
@@ -364,19 +391,19 @@ class Px4MavlinkAdapter(PlatformPort):
             )
         )
         self._takeoff_alt_m = takeoff_alt_m
-        self._min_rel_alt_m = (
-            float(min_rel_alt_m)
-            if min_rel_alt_m is not None
-            else float(
-                os.environ.get("PX4_MIN_REL_ALT_M", str(DEFAULT_MIN_REL_ALT_M))
-            )
+        self._vehicle = _load_vehicle(config, config_path)
+        self._fuel_mass_kg = self._vehicle.fuel_mass_kg
+        self._min_rel_alt_m = _first_present(
+            min_rel_alt_m,
+            self._vehicle.min_rel_alt_m,
+            os.environ.get("PX4_MIN_REL_ALT_M"),
+            DEFAULT_MIN_REL_ALT_M,
         )
-        self._max_rel_alt_m = (
-            float(max_rel_alt_m)
-            if max_rel_alt_m is not None
-            else float(
-                os.environ.get("PX4_MAX_REL_ALT_M", str(DEFAULT_MAX_REL_ALT_M))
-            )
+        self._max_rel_alt_m = _first_present(
+            max_rel_alt_m,
+            self._vehicle.max_rel_alt_m,
+            os.environ.get("PX4_MAX_REL_ALT_M"),
+            DEFAULT_MAX_REL_ALT_M,
         )
         self._conn: Any | None = connection
         self._offer = ControlOffer(
@@ -492,15 +519,23 @@ class Px4MavlinkAdapter(PlatformPort):
         return PlatformSnapshot(offer=offer, readiness=readiness)
 
     def _rel_profile(self, min_rel_m: float) -> FlightModeProfile:
-        """AGL envelope, or HAE once home is known."""
+        """AGL envelope, or HAE once home is known.
+
+        Airspeed and acceleration samples come from the vehicle
+        config as written. This method does not convert those
+        altitudes when home HAE is known.
+        """
+        extras = self._vehicle.profile
         home = self._home_hae_m()
         if home is None:
-            return FlightModeProfile(
+            return replace(
+                extras,
                 min_altitude_m=min_rel_m,
                 max_altitude_m=self._max_rel_alt_m,
                 altitude_ref="AGL",
             )
-        return FlightModeProfile(
+        return replace(
+            extras,
             min_altitude_m=home + min_rel_m,
             max_altitude_m=home + self._max_rel_alt_m,
             altitude_ref="WGS_HAE",
@@ -1016,6 +1051,7 @@ class Px4MavlinkAdapter(PlatformPort):
                 true_airspeed_mps=c.airspeed_mps,
                 calibrated_airspeed_mps=c.airspeed_mps,
                 fuel_percent=fuel,
+                fuel_mass_kg=self._fuel_mass_kg,
                 fuel_duration_s=duration_s,
                 magnetic_heading_rad=heading_rad,
                 component_id=self._component_id,

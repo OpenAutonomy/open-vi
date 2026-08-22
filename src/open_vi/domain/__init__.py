@@ -7,6 +7,8 @@ and PlatformPort.
 
 from open_vi.domain.airfield import HomeAirfield, home_airfield_from_tspi
 from open_vi.domain.control import (
+    AccelerationLimit,
+    AirspeedLimit,
     ControlOffer,
     ControlReadiness,
     FlightModeProfile,
@@ -42,6 +44,8 @@ from open_vi.domain.status import (
 from open_vi.domain.tspi import TspiSnapshot
 
 __all__ = [
+    "AccelerationLimit",
+    "AirspeedLimit",
     "CommandResult",
     "ControlOffer",
     "CurveControlPoint",

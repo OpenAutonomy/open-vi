@@ -6,11 +6,16 @@
 
 - PX4 `NavigationReport` endurance duration from
   `BATTERY_STATUS.time_remaining`, or remaining capacity inferred
-  from consumed mAh and current. Fuel mass is omitted; SITL has
-  no mass sensor.
+  from consumed mAh and current. Fuel mass is omitted unless the
+  vehicle TOML sets `fuel_mass_kg`.
 - PX4 periodic BIT: `get_faults()` maps `SYS_STATUS` sensor
   health (and link-down) to `MA_Fault`. Isolator emits that on
   the status-package tick.
+- Optional PX4 vehicle TOML (`--px4-config` / `PX4_CONFIG`) for
+  facts a running instance does not publish: fuel mass, airspeed
+  samples, acceleration limits, and climb / turn / descent rates.
+  Isolator publishes the port values. The operator owns whether
+  they match the vehicle.
 
 ### Changed
 

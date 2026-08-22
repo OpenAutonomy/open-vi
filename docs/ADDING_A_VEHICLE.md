@@ -13,7 +13,7 @@ Implement snapshot, flight command, TSPI, status, faults, and QNH.
 `poll_command_updates()` and `close()` have defaults. Use `StubPlatform` as
 a reference for accept and reject, not for routes.
 
-The design depends on four rules:
+The design depends on these rules:
 
 1. **Do not parse UCI in the adapter.** Isolator and codec own XML. Map
    MAVLink (or anything else) to domain types only.
@@ -25,6 +25,10 @@ The design depends on four rules:
    the port; the adapter does not parse or store the plan.
 4. **Do not put `inject_contingency` on the ABC.** That is Stub-only, for
    unit tests. Report readiness through `snapshot()`.
+5. **Do not invent vehicle data.** Facts the link does not publish
+   (fuel mass, airspeed curves) belong on the adapter, often a
+   config file the operator owns. Isolator publishes
+   `snapshot()` / `get_vehicle_state()`.
 
 ## Steps
 

@@ -1,0 +1,45 @@
+# PX4 vehicle facts a running PX4 instance does not publish.
+# open-vi copies these onto MA_FlightCapability and NavigationReport.
+# You own whether the numbers match the vehicle PX4 is flying.
+# Values below are illustrative, not SITL defaults.
+
+fuel_mass_kg = 2.5
+
+# Relative-altitude envelope (same meaning as PX4_MIN/MAX_REL_ALT_M).
+# Advertised as AGL until home HAE is known, then as HAE.
+[envelope]
+min_rel_alt_m = 10.0
+max_rel_alt_m = 500.0
+
+# Shared extras on every advertised flight-control mode.
+# Airspeed altitudes are published as written; they are not
+# converted when home HAE is known.
+[performance]
+max_turn_rate_rps = 1.047
+max_climb_rate_mps = 5.0
+max_descent_rate_mps = 3.0
+
+[[performance.min_airspeed]]
+speed_mps = 0.0
+reference = "GROUNDSPEED"
+altitude_m = 0.0
+altitude_ref = "AGL"
+
+[[performance.max_airspeed]]
+speed_mps = 15.0
+reference = "GROUNDSPEED"
+altitude_m = 0.0
+altitude_ref = "AGL"
+
+[[performance.max_airspeed]]
+speed_mps = 12.0
+reference = "GROUNDSPEED"
+altitude_m = 500.0
+altitude_ref = "AGL"
+
+# UCI acceleration limits require a pair: mach or body rates.
+[[performance.max_acceleration]]
+x_mps2 = 3.0
+y_mps2 = 3.0
+z_mps2 = 19.613
+mach = 0.0

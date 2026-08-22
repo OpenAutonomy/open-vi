@@ -57,3 +57,5 @@ Generated from source docstrings.
 ::: open_vi.platform.stub
 
 ::: open_vi.platform.px4
+
+::: open_vi.platform.px4_config
