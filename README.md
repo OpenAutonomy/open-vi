@@ -54,8 +54,9 @@ BROKER_HOST=host.docker.internal docker compose -f compose/vi.yml up --build
 CI publishes `ghcr.io/openautonomy/open-vi` from `main`. Either path
 is Stub on STOMP `:61613`. PX4 SITL is `--platform px4` once a
 vehicle is listening on `udpin:127.0.0.1:14540`. Optional vehicle
-facts PX4 does not publish go in `--px4-config`. See
-[docs/platforms/px4/README.md](docs/platforms/px4/README.md).
+facts PX4 does not publish go in `--px4-config`. SITL and the
+vehicle TOML are in the
+[documentation](https://openautonomy.github.io/open-vi/).
 
 ```bash
 pytest
@@ -69,25 +70,7 @@ schema version are in `src/open_vi/codec/ns.py`.
 
 ## Documentation
 
-Published at
 [openautonomy.github.io/open-vi](https://openautonomy.github.io/open-vi/).
-
-- [docs/FEATURES.md](docs/FEATURES.md) — ASK 5.0a Isolator coverage
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — layers, ports, and an example path
-- [docs/ISOLATOR.md](docs/ISOLATOR.md) — sequences, handlers, and `RouteStore`
-- [docs/PLATFORM.md](docs/PLATFORM.md) — `PlatformPort` methods
-- [docs/platforms](docs/platforms/README.md) — Stub and PX4 backends
-- [docs/ADDING_A_VEHICLE.md](docs/ADDING_A_VEHICLE.md) — adding a backend
-- [docs/CODEC.md](docs/CODEC.md) — parse and build
-- [docs/ASB.md](docs/ASB.md) — STOMP and the in-memory bus
-
-## FAQs
-
-1. [How much of the VI standard do we cover?](docs/FEATURES.md)
-1. [How is the Vehicle Interface put together?](docs/ARCHITECTURE.md)
-1. [How do I add a vehicle?](docs/ADDING_A_VEHICLE.md)
-1. [What does Isolator own versus the platform?](docs/ISOLATOR.md)
-1. [How do I run PX4 SITL?](docs/platforms/px4/README.md)
 
 ## Contributing
 
