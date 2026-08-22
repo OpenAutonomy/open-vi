@@ -12,7 +12,7 @@ class ServiceStatusSnapshot:
 
     service_id: UUID
     service_label: str = "open-vi"
-    service_version: str = "0.3.0"
+    service_version: str = "0.4.0"
     time_up: str = "PT0S"
     service_state: str = "NORMAL"
 
@@ -25,7 +25,7 @@ class SubsystemStatusSnapshot:
     subsystem_label: str = "flight"
     subsystem_state: str = "OPERATE"
     model: str = "open-vi-stub"
-    software_version: str = "0.3.0"
+    software_version: str = "0.4.0"
 
 
 @dataclass(frozen=True)

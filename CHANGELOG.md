@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-22
+
+PX4 fills facts Isolator already published: leftover HSA refs,
+endurance duration, periodic BIT, and an optional vehicle TOML
+for fuel mass and performance extras. Isolator Core stays 34/36
+§1.2 Supported; leftover rows are other MUC.
+
 ### Added
 
 - PX4 `NavigationReport` endurance duration from
@@ -198,6 +205,7 @@ Isolator injection that was not product behavior is gone.
 - Container image on GHCR (`ghcr.io/openautonomy/open-vi`), built from
   `Containerfile` on a public push to `main`.
 
+[0.4.0]: https://github.com/OpenAutonomy/open-vi/releases/tag/v0.4.0
 [0.3.0]: https://github.com/OpenAutonomy/open-vi/releases/tag/v0.3.0
 [0.2.0]: https://github.com/OpenAutonomy/open-vi/releases/tag/v0.2.0
 
