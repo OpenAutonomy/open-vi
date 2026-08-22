@@ -9,6 +9,8 @@ import pytest
 
 from open_vi.domain import (
     ControlReadiness,
+    CurveControlPoint,
+    CurveFollowingSetpoint,
     FlightCommandRequest,
     HsaCsaSetpoint,
     Waypoint,
@@ -169,7 +171,9 @@ def test_px4_telemetry_and_snapshot() -> None:
     assert snap.offer.capability_types == (
         "WAYPOINT_FOLLOWING",
         "HSA_CSA",
+        "CURVE_FOLLOWING",
     )
+    assert snap.offer.curve_profile is not None
     assert snap.offer.hsa_profile is not None
     profile = snap.offer.waypoint_profile
     assert profile is not None
@@ -206,7 +210,24 @@ def test_px4_rejects_when_link_down() -> None:
     )
 
 
-def test_px4_rejects_curve_following() -> None:
+def _sample_curve(
+    *, center_alt_m: float | None = None
+) -> CurveFollowingSetpoint:
+    return CurveFollowingSetpoint(
+        center_lat_deg=38.8895,
+        center_lon_deg=-77.0353,
+        center_alt_m=center_alt_m,
+        control_points=(
+            CurveControlPoint(0.0, 0.0),
+            CurveControlPoint(100.0, 0.0),
+            CurveControlPoint(200.0, 0.0),
+            CurveControlPoint(300.0, 0.0),
+        ),
+        knots=(0.0, 0.0, 1.0, 1.0),
+    )
+
+
+def test_px4_rejects_empty_curve() -> None:
     conn = _FakeConn()
     plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
     plat._ingest(  # pylint: disable=protected-access
@@ -222,7 +243,58 @@ def test_px4_rejects_curve_following() -> None:
         )
     )
     assert result.processing_state == "REJECTED"
-    assert result.validation_results == ("CAPABILITY_NOT_SUPPORTED",)
+    assert result.validation_results == ("INVALID_WAYPOINT",)
+    plat.close()
+
+
+def test_px4_curve_execute_accepts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plat = _airborne_px4(monkeypatch)
+    result = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="CURVE_FOLLOWING",
+            curve=_sample_curve(center_alt_m=500.0),
+        )
+    )
+    assert result.processing_state == "ACCEPTED"
+    assert result.activity_id is not None
+    plat.close()
+
+
+def test_px4_curve_rejects_out_of_envelope() -> None:
+    conn = _FakeConn()
+    plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg("HEARTBEAT", base_mode=128)
+    )
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=0,
+            lon=0,
+            alt=470000,
+            relative_alt=0,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=0,
+        )
+    )
+    result = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="CURVE_FOLLOWING",
+            curve=_sample_curve(center_alt_m=471.0),
+        )
+    )
+    assert result.processing_state == "REJECTED"
+    assert result.validation_results == ("PERFORMANCE_LIMIT_EXCEEDED",)
     plat.close()
 
 

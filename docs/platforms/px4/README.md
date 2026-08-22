@@ -19,7 +19,8 @@ flowchart LR
 The port contract is in [PLATFORM.md](../../PLATFORM.md). What this
 adapter covers versus Isolator is in [FEATURES.md](FEATURES.md).
 
-The adapter does telemetry, `WAYPOINT_FOLLOWING`, and `HSA_CSA`.
+The adapter does telemetry, `WAYPOINT_FOLLOWING`, `CURVE_FOLLOWING`,
+and `HSA_CSA`.
 Arm, takeoff, and mission start stay inside the adapter. Mission
 Autonomy sends `MA_FlightCommand`, not UCI arm or takeoff.
 Capability NEW starts a mission or offboard hold when idle. Activity
@@ -102,7 +103,19 @@ primes offboard setpoints, switches OFFBOARD, and streams
 heading × groundspeed plus AGL. Activity UPDATE replaces the live
 vector without minting a new activity. CANCEL stops the stream and
 holds. TAS, magnetic heading, Mach, and MSL/barometric altitude
-are `REJECTED`. `CURVE_FOLLOWING` stays `CAPABILITY_NOT_SUPPORTED`.
+are `REJECTED`.
+
+## Curve execute
+
+An accepted `CURVE_FOLLOWING` samples the first `CurveSegments`
+NURBS in AEP metres from `CenterReference`. When the knot vector
+does not yield degree ≥ 1, the control points are a polyline.
+Every sample uses the center HAE if present, otherwise current
+HAE when airborne, otherwise home + takeoff altitude. That path
+is uploaded as a mission the same way as `WAYPOINT_FOLLOWING`,
+so `MISSION_ITEM_REACHED` completes it. The envelope is the
+waypoint 10–500 m AGL band. `CurveTraversingParameters` and
+`AppendCurve` are ignored.
 
 A-GRA `Point2D` altitude is HAE. PX4 mission items are relative to
 home. Home HAE is `GLOBAL_POSITION_INT.alt − relative_alt`. The

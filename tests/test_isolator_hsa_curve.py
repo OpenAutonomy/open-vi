@@ -51,7 +51,14 @@ def test_parse_curve_following_command() -> None:
     cmds = parse_flight_commands(xml)
     assert len(cmds) == 1
     assert cmds[0].mode == "CURVE_FOLLOWING"
-    assert "CurveSegments" in (xml.decode() if isinstance(xml, bytes) else xml)
+    assert cmds[0].waypoints == ()
+    curve = cmds[0].curve
+    assert curve is not None
+    assert curve.center_lat_deg == pytest.approx(38.8895)
+    assert curve.center_lon_deg == pytest.approx(-77.0353)
+    assert len(curve.control_points) == 4
+    assert curve.control_points[3].east_m == pytest.approx(300.0)
+    assert curve.knots == (0.0, 0.0, 1.0, 1.0)
 
 
 def test_hsa_csa_accepted() -> None:

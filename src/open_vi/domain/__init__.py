@@ -15,12 +15,16 @@ from open_vi.domain.control import (
 )
 from open_vi.domain.flight import (
     CommandResult,
+    CurveControlPoint,
+    CurveFollowingSetpoint,
     FlightActivitySnapshot,
     FlightCommandRequest,
     HsaCsaSetpoint,
     Waypoint,
     finite_waypoint_geometry,
     is_live_activity,
+    sample_curve_waypoints,
+    validate_curve_following,
     validate_hsa_setpoint,
     validate_waypoint_path,
 )
@@ -40,6 +44,8 @@ from open_vi.domain.tspi import TspiSnapshot
 __all__ = [
     "CommandResult",
     "ControlOffer",
+    "CurveControlPoint",
+    "CurveFollowingSetpoint",
     "ControlReadiness",
     "FaultSnapshot",
     "FlightModeProfile",
@@ -60,6 +66,8 @@ __all__ = [
     "home_airfield_from_tspi",
     "is_live_activity",
     "redact_control_offer",
+    "sample_curve_waypoints",
+    "validate_curve_following",
     "validate_hsa_setpoint",
     "validate_waypoint_path",
 ]

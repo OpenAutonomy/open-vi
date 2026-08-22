@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from open_vi.domain import (
+    CurveControlPoint,
+    CurveFollowingSetpoint,
     HsaCsaSetpoint,
     Waypoint,
     finite_waypoint_geometry,
+    sample_curve_waypoints,
+    validate_curve_following,
     validate_hsa_setpoint,
     validate_waypoint_path,
 )
@@ -215,6 +221,78 @@ def test_waypoint_hae_accepts_advertised_tenth() -> None:
             min_rel_alt_m=10.0,
             max_rel_alt_m=500.0,
             home_hae_m=home,
+        )
+        is None
+    )
+
+
+def _line_curve() -> CurveFollowingSetpoint:
+    return CurveFollowingSetpoint(
+        center_lat_deg=38.0,
+        center_lon_deg=-77.0,
+        control_points=(
+            CurveControlPoint(0.0, 0.0),
+            CurveControlPoint(100.0, 0.0),
+            CurveControlPoint(200.0, 0.0),
+            CurveControlPoint(300.0, 0.0),
+        ),
+        knots=(0.0, 0.0, 1.0, 1.0),
+    )
+
+
+def test_curve_polyline_when_knots_are_not_a_degree() -> None:
+    waypoints = sample_curve_waypoints(_line_curve(), altitude_m=50.0)
+    assert len(waypoints) == 4
+    assert waypoints[0].latitude_deg == pytest.approx(38.0)
+    assert waypoints[-1].longitude_deg > waypoints[0].longitude_deg
+
+
+def test_curve_cubic_nurbs_samples_the_span() -> None:
+    curve = CurveFollowingSetpoint(
+        center_lat_deg=38.0,
+        center_lon_deg=-77.0,
+        control_points=(
+            CurveControlPoint(0.0, 0.0),
+            CurveControlPoint(100.0, 50.0),
+            CurveControlPoint(200.0, 50.0),
+            CurveControlPoint(300.0, 0.0),
+        ),
+        knots=(0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0),
+    )
+    waypoints = sample_curve_waypoints(curve, altitude_m=50.0, samples=8)
+    assert len(waypoints) == 8
+    assert waypoints[0].latitude_deg == pytest.approx(38.0)
+
+
+def test_curve_rejects_fewer_than_four_points() -> None:
+    curve = CurveFollowingSetpoint(
+        center_lat_deg=38.0,
+        center_lon_deg=-77.0,
+        control_points=(
+            CurveControlPoint(0.0, 0.0),
+            CurveControlPoint(1.0, 0.0),
+            CurveControlPoint(2.0, 0.0),
+        ),
+    )
+    result = validate_curve_following(
+        curve,
+        altitude_m=50.0,
+        min_rel_alt_m=10.0,
+        max_rel_alt_m=500.0,
+        home_hae_m=None,
+    )
+    assert result is not None
+    assert result.validation_results == ("INVALID_WAYPOINT",)
+
+
+def test_curve_accepts_in_band_sample_altitude() -> None:
+    assert (
+        validate_curve_following(
+            _line_curve(),
+            altitude_m=50.0,
+            min_rel_alt_m=10.0,
+            max_rel_alt_m=500.0,
+            home_hae_m=None,
         )
         is None
     )

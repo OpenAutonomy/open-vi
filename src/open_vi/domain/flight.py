@@ -41,6 +41,26 @@ class HsaCsaSetpoint:
 
 
 @dataclass(frozen=True)
+class CurveControlPoint:
+    """AEP offset (east / north metres) and NURBS weight."""
+
+    east_m: float
+    north_m: float
+    weight: float = 1.0
+
+
+@dataclass(frozen=True)
+class CurveFollowingSetpoint:
+    """NURBS spine in AEP metres from a geodetic center."""
+
+    center_lat_deg: float
+    center_lon_deg: float
+    center_alt_m: float | None = None
+    control_points: tuple[CurveControlPoint, ...] = ()
+    knots: tuple[float, ...] = ()
+
+
+@dataclass(frozen=True)
 class FlightCommandRequest:
     """Internal command submitted by the Isolator (not UCI)."""
 
@@ -52,6 +72,7 @@ class FlightCommandRequest:
     choice: str = "Capability"  # Capability | Activity
     activity_id: UUID | None = None
     hsa: HsaCsaSetpoint | None = None
+    curve: CurveFollowingSetpoint | None = None
 
 
 @dataclass(frozen=True)
@@ -280,6 +301,223 @@ def validate_hsa_setpoint(
             validation_results=("PERFORMANCE_LIMIT_EXCEEDED",),
         )
     return None
+
+
+_EARTH_RADIUS_M = 6378137.0
+_MIN_CURVE_CONTROL_POINTS = 4
+
+
+def aep_offset_to_geodetic(
+    lat_deg: float,
+    lon_deg: float,
+    east_m: float,
+    north_m: float,
+) -> tuple[float, float]:
+    """Azimuthal-equidistant east/north metres → geodetic degrees."""
+    dlat = math.degrees(north_m / _EARTH_RADIUS_M)
+    cos_lat = math.cos(math.radians(lat_deg))
+    if abs(cos_lat) < 1e-12:
+        dlon = 0.0
+    else:
+        dlon = math.degrees(east_m / (_EARTH_RADIUS_M * cos_lat))
+    return lat_deg + dlat, lon_deg + dlon
+
+
+def sample_curve_waypoints(
+    curve: CurveFollowingSetpoint,
+    *,
+    altitude_m: float,
+    samples: int = 16,
+) -> tuple[Waypoint, ...]:
+    """Sample the NURBS (or control-point polyline) as geodetic waypoints.
+
+    When the knot vector does not yield a degree ≥ 1, the control
+    points are flown as a polyline. *altitude_m* is HAE on every
+    sample — the XML spine is 2-D AEP.
+    """
+    offsets = _sample_aep_offsets(curve, samples)
+    waypoints: list[Waypoint] = []
+    for east_m, north_m in offsets:
+        lat, lon = aep_offset_to_geodetic(
+            curve.center_lat_deg, curve.center_lon_deg, east_m, north_m
+        )
+        waypoints.append(Waypoint(lat, lon, altitude_m))
+    return tuple(waypoints)
+
+
+def validate_curve_following(
+    curve: CurveFollowingSetpoint | None,
+    *,
+    altitude_m: float,
+    min_rel_alt_m: float,
+    max_rel_alt_m: float,
+    home_hae_m: float | None,
+) -> CommandResult | None:
+    """Reject an unflyable curve, or return ``None`` if it is ok.
+
+    Schema minimum is four control points. Sampled HAE uses the
+    waypoint envelope.
+    """
+    if curve is None:
+        return CommandResult(
+            processing_state="REJECTED",
+            reason="INVALID_INPUT_PARAMETER",
+            reason_description="CURVE_FOLLOWING requires CurveSegments",
+            validation_results=("INVALID_WAYPOINT",),
+        )
+    if not _finite_lat_lon(
+        Waypoint(curve.center_lat_deg, curve.center_lon_deg)
+    ):
+        return CommandResult(
+            processing_state="REJECTED",
+            reason="INVALID_INPUT_PARAMETER",
+            reason_description="Curve CenterReference is non-finite",
+            validation_results=("INVALID_WAYPOINT",),
+        )
+    if len(curve.control_points) < _MIN_CURVE_CONTROL_POINTS:
+        return CommandResult(
+            processing_state="REJECTED",
+            reason="INVALID_INPUT_PARAMETER",
+            reason_description=(
+                "CURVE_FOLLOWING requires at least four control points"
+            ),
+            validation_results=("INVALID_WAYPOINT",),
+        )
+    for index, point in enumerate(curve.control_points):
+        if not (
+            math.isfinite(point.east_m)
+            and math.isfinite(point.north_m)
+            and math.isfinite(point.weight)
+            and point.weight > 0.0
+        ):
+            return CommandResult(
+                processing_state="REJECTED",
+                reason="INVALID_INPUT_PARAMETER",
+                reason_description=(
+                    f"Control point {index} is non-finite or weight ≤ 0"
+                ),
+                validation_results=("INVALID_WAYPOINT",),
+            )
+    if any(not math.isfinite(knot) for knot in curve.knots):
+        return CommandResult(
+            processing_state="REJECTED",
+            reason="INVALID_INPUT_PARAMETER",
+            reason_description="Curve KnotVector is non-finite",
+            validation_results=("INVALID_WAYPOINT",),
+        )
+    if not math.isfinite(altitude_m):
+        return CommandResult(
+            processing_state="REJECTED",
+            reason="INVALID_INPUT_PARAMETER",
+            reason_description="Curve sample altitude must be finite",
+            validation_results=("INVALID_WAYPOINT",),
+        )
+    return validate_waypoint_path(
+        sample_curve_waypoints(curve, altitude_m=altitude_m),
+        min_rel_alt_m=min_rel_alt_m,
+        max_rel_alt_m=max_rel_alt_m,
+        home_hae_m=home_hae_m,
+    )
+
+
+def _nurbs_degree(n_points: int, n_knots: int) -> int | None:
+    """p = m − n − 1, or ``None`` when the knot vector is not usable."""
+    degree = n_knots - n_points - 1
+    if degree < 1:
+        return None
+    return degree
+
+
+def _sample_aep_offsets(
+    curve: CurveFollowingSetpoint, samples: int
+) -> list[tuple[float, float]]:
+    """AEP (east, north) samples, or the control-point polyline."""
+    points = curve.control_points
+    knots = curve.knots
+    degree = _nurbs_degree(len(points), len(knots))
+    if degree is None or not _knots_non_decreasing(knots):
+        return [(point.east_m, point.north_m) for point in points]
+    return _evaluate_nurbs(points, knots, degree, samples)
+
+
+def _knots_non_decreasing(knots: tuple[float, ...]) -> bool:
+    return all(
+        knots[index] <= knots[index + 1] for index in range(len(knots) - 1)
+    )
+
+
+def _evaluate_nurbs(
+    points: tuple[CurveControlPoint, ...],
+    knots: tuple[float, ...],
+    degree: int,
+    samples: int,
+) -> list[tuple[float, float]]:
+    """Evaluate a 2-D NURBS at *samples* parameters in the valid span."""
+    n_points = len(points)
+    u_start = knots[degree]
+    u_end = knots[n_points]
+    if u_end <= u_start:
+        return [(point.east_m, point.north_m) for point in points]
+    count = max(samples, n_points)
+    offsets: list[tuple[float, float]] = []
+    for index in range(count):
+        if count == 1:
+            param = u_start
+        else:
+            param = u_start + (u_end - u_start) * index / (count - 1)
+        if index == count - 1:
+            param = u_end - 1e-12
+        offsets.append(_nurbs_point(points, knots, degree, param))
+    return offsets
+
+
+def _nurbs_point(
+    points: tuple[CurveControlPoint, ...],
+    knots: tuple[float, ...],
+    degree: int,
+    param: float,
+) -> tuple[float, float]:
+    """Weighted Cox-de Boor evaluation at *param*."""
+    east = 0.0
+    north = 0.0
+    weight_sum = 0.0
+    for index, point in enumerate(points):
+        basis = _cox_de_boor(knots, index, degree, param) * point.weight
+        east += point.east_m * basis
+        north += point.north_m * basis
+        weight_sum += basis
+    if weight_sum <= 0.0:
+        return points[0].east_m, points[0].north_m
+    return east / weight_sum, north / weight_sum
+
+
+def _cox_de_boor(
+    knots: tuple[float, ...], index: int, degree: int, param: float
+) -> float:
+    """N_{index,degree}(*param*)."""
+    if degree == 0:
+        upper = knots[index + 1] if index + 1 < len(knots) else knots[index]
+        if knots[index] <= param < upper:
+            return 1.0
+        return 0.0
+    left = 0.0
+    denom_left = knots[index + degree] - knots[index]
+    if denom_left != 0.0:
+        left = (
+            (param - knots[index])
+            / denom_left
+            * _cox_de_boor(knots, index, degree - 1, param)
+        )
+    right = 0.0
+    if index + degree + 1 < len(knots):
+        denom_right = knots[index + degree + 1] - knots[index + 1]
+        if denom_right != 0.0:
+            right = (
+                (knots[index + degree + 1] - param)
+                / denom_right
+                * _cox_de_boor(knots, index + 1, degree - 1, param)
+            )
+    return left + right
 
 
 def _finite_lat_lon(waypoint: Waypoint) -> bool:

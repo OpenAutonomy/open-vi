@@ -88,7 +88,7 @@ def build_flight_capability(
 
 
 def _performance_profile_block(offer: ControlOffer):
-    """HSA and waypoint min/max, or None when both are unset."""
+    """HSA, waypoint, and curve min/max, or None when all are unset."""
     kids = []
     hsa = _mode_limits(offer.hsa_profile)
     if hsa is not None:
@@ -96,6 +96,9 @@ def _performance_profile_block(offer: ControlOffer):
     waypoint = _mode_limits(offer.waypoint_profile)
     if waypoint is not None:
         kids.append(el("WaypointFollowingPerformanceProfile", *waypoint))
+    curve = _mode_limits(offer.curve_profile)
+    if curve is not None:
+        kids.append(el("CurveFollowingPerformanceProfile", *curve))
     if not kids:
         return None
     return el("FlightCapabilityPerformanceProfile", *kids)

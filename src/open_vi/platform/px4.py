@@ -1,6 +1,7 @@
 """PX4 / SITL :class:`PlatformPort` via MAVLink (pymavlink).
 
-Telemetry, ``WAYPOINT_FOLLOWING``, and ``HSA_CSA`` (offboard hold).
+Telemetry, ``WAYPOINT_FOLLOWING``, ``CURVE_FOLLOWING`` (sampled
+NURBS as a mission), and ``HSA_CSA`` (offboard hold).
 Isolator and the codec never import this module or MAVLink types —
 ``make_platform("px4")`` loads it. Arm, takeoff, and mission start
 stay inside the adapter; Mission Autonomy sends
@@ -24,6 +25,7 @@ from open_vi.domain import (
     CommandResult,
     ControlOffer,
     ControlReadiness,
+    CurveFollowingSetpoint,
     FaultSnapshot,
     FlightActivitySnapshot,
     FlightCommandRequest,
@@ -35,6 +37,8 @@ from open_vi.domain import (
     TspiSnapshot,
     Waypoint,
     is_live_activity,
+    sample_curve_waypoints,
+    validate_curve_following,
     validate_hsa_setpoint,
     validate_waypoint_path,
 )
@@ -217,7 +221,11 @@ class Px4MavlinkAdapter(PlatformPort):
         )
         self._conn: Any | None = connection
         self._offer = ControlOffer(
-            capability_types=("WAYPOINT_FOLLOWING", "HSA_CSA"),
+            capability_types=(
+                "WAYPOINT_FOLLOWING",
+                "HSA_CSA",
+                "CURVE_FOLLOWING",
+            ),
             capability_label="px4-flight-capability",
         )
         self._activity: FlightActivitySnapshot | None = None
@@ -302,7 +310,7 @@ class Px4MavlinkAdapter(PlatformPort):
                 LOGGER.debug("PX4 connection close failed", exc_info=True)
 
     def snapshot(self) -> PlatformSnapshot:
-        """Waypoint + HSA offer plus link-based readiness."""
+        """Waypoint, HSA, and curve offer plus link-based readiness."""
         if self._link_ok():
             readiness = ControlReadiness(
                 available=True,
@@ -320,6 +328,7 @@ class Px4MavlinkAdapter(PlatformPort):
             accepted_interfaces=self._offer.accepted_interfaces,
             waypoint_profile=self._rel_profile(self._min_rel_alt_m),
             hsa_profile=self._rel_profile(0.0),
+            curve_profile=self._rel_profile(self._min_rel_alt_m),
         )
         return PlatformSnapshot(offer=offer, readiness=readiness)
 
@@ -339,13 +348,13 @@ class Px4MavlinkAdapter(PlatformPort):
         )
 
     def submit_flight_command(self, cmd: FlightCommandRequest) -> CommandResult:
-        """Accept waypoint or HSA NEW when idle, UPDATE, or CANCEL.
+        """Accept waypoint, curve, or HSA NEW when idle, UPDATE, or CANCEL.
 
         Rejects when the link is down, Capability NEW arrives while an
         activity is live, Activity is not UPDATE against the live id,
-        or the mode is unsupported. Waypoint accept uploads a mission.
-        HSA streams an offboard hold until CANCEL. Waypoint completion
-        is later, via :meth:`poll_command_updates`.
+        or the mode is unsupported. Waypoint and curve accept upload a
+        mission. HSA streams an offboard hold until CANCEL. Path
+        completion is later, via :meth:`poll_command_updates`.
         """
         snap = self.snapshot()
         if not snap.readiness.available:
@@ -451,19 +460,21 @@ class Px4MavlinkAdapter(PlatformPort):
     def _execute_or_reject(
         self, cmd: FlightCommandRequest
     ) -> CommandResult | None:
-        """Fly waypoints or HSA, or return a reject.
+        """Fly waypoints, a sampled curve, or HSA, or return a reject.
 
         ``None`` means the vehicle ran.
         """
         if cmd.mode == "HSA_CSA":
             return self._execute_hsa_or_reject(cmd)
+        if cmd.mode == "CURVE_FOLLOWING":
+            return self._execute_curve_or_reject(cmd)
         if cmd.mode != "WAYPOINT_FOLLOWING":
             return CommandResult(
                 processing_state="REJECTED",
                 reason="CAPABILITY_UNAVAILABLE",
                 reason_description=(
-                    "PX4 adapter accepts WAYPOINT_FOLLOWING and "
-                    f"HSA_CSA; got {cmd.mode}"
+                    "PX4 adapter accepts WAYPOINT_FOLLOWING, "
+                    f"CURVE_FOLLOWING, and HSA_CSA; got {cmd.mode}"
                 ),
                 validation_results=("CAPABILITY_NOT_SUPPORTED",),
             )
@@ -486,6 +497,52 @@ class Px4MavlinkAdapter(PlatformPort):
                 reason_description=f"Waypoint execution failed: {exc}",
             )
         return None
+
+    def _execute_curve_or_reject(
+        self, cmd: FlightCommandRequest
+    ) -> CommandResult | None:
+        """Sample the NURBS to waypoints and fly that mission."""
+        curve = cmd.curve
+        altitude_m = self._curve_altitude_m(curve)
+        rejected = validate_curve_following(
+            curve,
+            altitude_m=altitude_m,
+            min_rel_alt_m=self._min_rel_alt_m,
+            max_rel_alt_m=self._max_rel_alt_m,
+            home_hae_m=self._home_hae_m(),
+        )
+        if rejected is not None:
+            return rejected
+        if curve is None:
+            return CommandResult(
+                processing_state="REJECTED",
+                reason="INVALID_INPUT_PARAMETER",
+                reason_description="CURVE_FOLLOWING requires CurveSegments",
+                validation_results=("INVALID_WAYPOINT",),
+            )
+        waypoints = sample_curve_waypoints(curve, altitude_m=altitude_m)
+        self._stop_offboard()
+        try:
+            self._execute_waypoint_following(waypoints)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            LOGGER.exception("PX4 curve execution failed")
+            return CommandResult(
+                processing_state="REJECTED",
+                reason="STATE_OR_SETTINGS",
+                reason_description=f"Curve execution failed: {exc}",
+            )
+        return None
+
+    def _curve_altitude_m(self, curve: CurveFollowingSetpoint | None) -> float:
+        """HAE for every sample: center, current, or home + takeoff."""
+        if curve is not None and curve.center_alt_m is not None:
+            return float(curve.center_alt_m)
+        if self._relative_alt_m() >= 2.0:
+            return float(self.get_vehicle_state().altitude_m)
+        home = self._home_hae_m()
+        if home is not None:
+            return home + self._takeoff_alt_m
+        return self._takeoff_alt_m
 
     def _execute_hsa_or_reject(
         self, cmd: FlightCommandRequest

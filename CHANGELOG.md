@@ -25,11 +25,40 @@
 - Idle `ActivityPlanExecutionStatus`,
   `RouteActivityPlanExecutionStatus`, and `TaskPlanExecutionStatus`
   (SystemID + Source) on the execution-status package.
+- PX4 `CURVE_FOLLOWING`: sample the first NURBS spine (or
+  control-point polyline) to a mission using the waypoint
+  envelope.
 
 ### Changed
 
 - FEATURES §1.2.3.1 is Supported: the default tick republishes
   the capability pair on the COP cadence, not only on advertise.
+- FEATURES §1.2.2.1 is Supported: Isolator parses and submits
+  curve following; PX4 flies the sampled path.
+- FEATURES §1.2.2.2 is Supported: Isolator parses and submits
+  HSA/CSA; PX4 tracks the accepted refs.
+- FEATURES §1.2.2.6 is Supported: Isolator republishes when
+  `snapshot()` or the C2 overlay changes.
+- FEATURES §1.2.6.7 is Supported: Isolator publishes the
+  platform performance profile; airspeed and load-factor
+  curves stay on the backend.
+- FEATURES §1.2.1.1 / §1.2.1.4 / §1.2.1.5 are Supported:
+  Isolator republishes readiness and publishes
+  `SubsystemStatus` / `MA_Fault` from the port. Detect-and-avoid
+  and periodic BIT stay on the backend.
+- FEATURES §1.2.5.2 is Supported: Isolator stores
+  `MA_RoutePlan` and emits File*. Native VMS conversion is
+  the backend.
+- FEATURES §1.2.6.8 is Supported: Isolator publishes the
+  vehicle-state package from `get_vehicle_state()`. Fuel
+  mass/duration stay on the backend.
+- FEATURES MMS `MA_ControlRequest`, `MA_Fault`,
+  `MA_FlightCommand`, `MA_MissionPlanActivationCommand`,
+  `NavigationReport`, and `QueryDataRequest` are Supported
+  under the same Isolator-coverage rule.
+- FEATURES MA-L1-016 is Supported (required Core sequences).
+  MA-L1-015 stays Partial (`ElevationRequest*` other MUC;
+  `MA_ActionStatus` not published).
 
 ## [0.2.0] - 2026-08-21
 

@@ -21,6 +21,8 @@ from open_vi.codec.xmlutil import (
 )
 from open_vi.domain import (
     CommandResult,
+    CurveControlPoint,
+    CurveFollowingSetpoint,
     FlightActivitySnapshot,
     FlightCommandRequest,
     HsaCsaSetpoint,
@@ -86,8 +88,15 @@ def parse_flight_commands(xml: str | bytes) -> list[FlightCommandRequest]:
             if find_one(choice_el, tag) is not None:
                 mode = mode_name
                 break
-        waypoints = parse_path_waypoints(choice_el)
+        waypoints = (
+            () if mode == "CURVE_FOLLOWING" else parse_path_waypoints(choice_el)
+        )
         hsa = parse_hsa_csa(choice_el) if mode == "HSA_CSA" else None
+        curve = (
+            parse_curve_following(choice_el)
+            if mode == "CURVE_FOLLOWING"
+            else None
+        )
         requests.append(
             FlightCommandRequest(
                 command_id=parse_uuid_text(command_id_text),
@@ -98,6 +107,7 @@ def parse_flight_commands(xml: str | bytes) -> list[FlightCommandRequest]:
                 choice=choice_name,
                 activity_id=activity_id,
                 hsa=hsa,
+                curve=curve,
             )
         )
     return requests
@@ -163,6 +173,58 @@ def parse_hsa_csa(node) -> HsaCsaSetpoint:
         heading_deg=heading_deg,
         direction_kind=direction_kind,
         heading_ref=heading_ref,
+    )
+
+
+def parse_curve_following(node) -> CurveFollowingSetpoint | None:
+    """Parse the first ``CurveSegments`` NURBS spine under *node*.
+
+    Degrees in the returned setpoint. Offsets stay metres (AEP).
+    Missing CenterReference or a non-finite lat/lon returns ``None``.
+    """
+    curve_el = find_one(node, "CurveFollowing")
+    if curve_el is None:
+        return None
+    segment = find_one(curve_el, "CurveSegments")
+    if segment is None:
+        return None
+    center = find_one(segment, "CenterReference")
+    if center is None:
+        return None
+    lat_text = find_text(center, "Latitude")
+    lon_text = find_text(center, "Longitude")
+    if not lat_text or not lon_text:
+        return None
+    alt_text = find_text(center, "Altitude")
+    center_alt_m = float(alt_text) if alt_text else None
+    points: list[CurveControlPoint] = []
+    for wrapper in list(segment):
+        if local_name(wrapper) != "ControlPoints":
+            continue
+        x_text = find_text(wrapper, "X")
+        y_text = find_text(wrapper, "Y")
+        if not x_text or not y_text:
+            continue
+        weight_text = find_text(wrapper, "Weight")
+        weight = float(weight_text) if weight_text else 1.0
+        points.append(
+            CurveControlPoint(
+                east_m=float(x_text),
+                north_m=float(y_text),
+                weight=weight,
+            )
+        )
+    knots: list[float] = []
+    for child in list(segment):
+        if local_name(child) != "KnotVector" or not child.text:
+            continue
+        knots.append(float(child.text.strip()))
+    return CurveFollowingSetpoint(
+        center_lat_deg=rad_to_deg(float(lat_text)),
+        center_lon_deg=rad_to_deg(float(lon_text)),
+        center_alt_m=center_alt_m,
+        control_points=tuple(points),
+        knots=tuple(knots),
     )
 
 

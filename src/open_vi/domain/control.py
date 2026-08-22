@@ -28,6 +28,7 @@ class ControlOffer:
     accepted_interfaces: tuple[str, ...] = ("CAPABILITY_COMMAND",)
     waypoint_profile: FlightModeProfile | None = None
     hsa_profile: FlightModeProfile | None = None
+    curve_profile: FlightModeProfile | None = None
 
 
 def redact_control_offer(
@@ -50,6 +51,9 @@ def redact_control_offer(
             offer.waypoint_profile if "WAYPOINT_FOLLOWING" in types else None
         ),
         hsa_profile=offer.hsa_profile if "HSA_CSA" in types else None,
+        curve_profile=(
+            offer.curve_profile if "CURVE_FOLLOWING" in types else None
+        ),
     )
 
 

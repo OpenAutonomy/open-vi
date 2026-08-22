@@ -38,7 +38,7 @@ degrees. Convert at this boundary (`geo.py`).
 | --- | --- |
 | `mts.py` | UCI root names (`MT_*`) for Isolator and tests |
 | `capability.py` | `MA_FlightCapability` (build + parse designations), `MA_FlightCapabilityStatus` |
-| `command.py` | `MA_FlightCommand`, status, activity |
+| `command.py` | `MA_FlightCommand`, status, activity (HSA + curve parse) |
 | `path.py` | Shared Path / Point2D waypoint parse and build |
 | `vehicle_state.py` | TSPI outs (`MA_PositionReportDetailed`, `NavigationReport`, …) |
 | `status.py` | `ServiceStatus`, `SubsystemStatus`, `MA_Fault` |
