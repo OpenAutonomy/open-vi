@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -298,7 +299,7 @@ def test_px4_curve_rejects_out_of_envelope() -> None:
     plat.close()
 
 
-def test_px4_rejects_hsa_magnetic() -> None:
+def test_px4_rejects_hsa_magnetic_without_headings() -> None:
     conn = _FakeConn()
     plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
     plat._ingest(  # pylint: disable=protected-access
@@ -317,11 +318,11 @@ def test_px4_rejects_hsa_magnetic() -> None:
         )
     )
     assert result.processing_state == "REJECTED"
-    assert result.validation_results == ("CAPABILITY_NOT_SUPPORTED",)
+    assert result.reason == "STATE_OR_SETTINGS"
     plat.close()
 
 
-def test_px4_rejects_hsa_tas() -> None:
+def test_px4_rejects_hsa_speed_optimization() -> None:
     conn = _FakeConn()
     plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
     plat._ingest(  # pylint: disable=protected-access
@@ -333,10 +334,7 @@ def test_px4_rejects_hsa_tas() -> None:
             capability_id=uuid4(),
             command_state="NEW",
             mode="HSA_CSA",
-            hsa=HsaCsaSetpoint(
-                speed_mps=10.0,
-                speed_ref="TRUE_AIRSPEED",
-            ),
+            hsa=HsaCsaSetpoint(unsupported="SPEED_OPTIMIZATION"),
         )
     )
     assert result.processing_state == "REJECTED"
@@ -836,6 +834,119 @@ def test_px4_hsa_ground_hae_climbs_to_takeoff() -> None:
         HsaCsaSetpoint(altitude_m=489.4, altitude_ref="WGS_HAE")
     )
     assert live.rel_alt_m == pytest.approx(30.0)
+    plat.close()
+
+
+def _ingest_home(plat: Px4MavlinkAdapter) -> None:
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg("HEARTBEAT", base_mode=0)
+    )
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=0,
+            lon=0,
+            alt=489429,
+            relative_alt=0,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=1000,
+        )
+    )
+
+
+def test_px4_hsa_magnetic_uses_yaw_minus_compass() -> None:
+    plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
+    _ingest_home(plat)
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "ATTITUDE",
+            roll=0.0,
+            pitch=0.0,
+            yaw=math.radians(20.0),
+        )
+    )
+    live = plat._resolve_hsa(  # pylint: disable=protected-access
+        HsaCsaSetpoint(
+            heading_deg=90.0,
+            heading_ref="MAGNETIC_NORTH",
+        )
+    )
+    assert live.heading_deg == pytest.approx(100.0)
+    plat.close()
+
+
+def test_px4_hsa_tas_wind_zero_is_gs() -> None:
+    plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
+    _ingest_home(plat)
+    live = plat._resolve_hsa(  # pylint: disable=protected-access
+        HsaCsaSetpoint(
+            speed_mps=10.0,
+            speed_ref="TRUE_AIRSPEED",
+            heading_deg=90.0,
+            heading_ref="TRUE_NORTH",
+        )
+    )
+    assert live.speed_mps == pytest.approx(10.0)
+    plat.close()
+
+
+def test_px4_hsa_tas_north_wind_changes_gs() -> None:
+    plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
+    _ingest_home(plat)
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg("WIND_COV", wind_x=5.0, wind_y=0.0)
+    )
+    live = plat._resolve_hsa(  # pylint: disable=protected-access
+        HsaCsaSetpoint(
+            speed_mps=10.0,
+            speed_ref="TRUE_AIRSPEED",
+            heading_deg=90.0,
+            heading_ref="TRUE_NORTH",
+        )
+    )
+    assert live.speed_mps == pytest.approx(math.hypot(5.0, 10.0))
+    plat.close()
+
+
+def test_px4_hsa_cas_and_mach_use_isa() -> None:
+    plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
+    _ingest_home(plat)
+    cas = plat._resolve_hsa(  # pylint: disable=protected-access
+        HsaCsaSetpoint(
+            speed_mps=10.0,
+            speed_ref="CALIBRATED_AIRSPEED",
+            heading_deg=0.0,
+            heading_ref="TRUE_NORTH",
+        )
+    )
+    mach = plat._resolve_hsa(  # pylint: disable=protected-access
+        HsaCsaSetpoint(
+            mach=0.2,
+            heading_deg=0.0,
+            heading_ref="TRUE_NORTH",
+        )
+    )
+    assert cas.speed_mps == pytest.approx(10.0, abs=0.5)
+    assert mach.speed_mps == pytest.approx(68.06, abs=0.5)
+    plat.close()
+
+
+def test_px4_hsa_msl_and_baro_use_home_then_floor() -> None:
+    plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
+    _ingest_home(plat)
+    msl = plat._resolve_hsa(  # pylint: disable=protected-access
+        HsaCsaSetpoint(altitude_m=489.4, altitude_ref="MSL")
+    )
+    baro = plat._resolve_hsa(  # pylint: disable=protected-access
+        HsaCsaSetpoint(
+            altitude_m=489.4,
+            altitude_ref="ALTITUDE_BAROMETRIC",
+        )
+    )
+    assert msl.rel_alt_m == pytest.approx(30.0)
+    assert baro.rel_alt_m == pytest.approx(30.0)
     plat.close()
 
 

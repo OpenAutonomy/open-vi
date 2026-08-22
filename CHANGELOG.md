@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- PX4 `HSA_CSA` leftover refs convert onto the offboard hold:
+  magnetic heading, TAS / CAS / Mach, and MSL / barometric
+  altitude. `SpeedOptimization` stays rejected.
+
 ## [0.3.0] - 2026-08-22
 
 Isolator-owned Core Volume rows Isolator can fill from existing

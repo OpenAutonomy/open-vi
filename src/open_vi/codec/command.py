@@ -116,14 +116,12 @@ def parse_flight_commands(xml: str | bytes) -> list[FlightCommandRequest]:
 def parse_hsa_csa(node) -> HsaCsaSetpoint:
     """Parse ``HSA_CSA`` altitude / speed / direction under *node*.
 
-    Degrees in the returned setpoint. Mach and SpeedOptimization are
-    flagged ``unsupported`` — no conversion is invented.
+    Degrees in the returned setpoint. ``MachValue`` is stored on
+    ``mach``. ``SpeedOptimization`` is flagged ``unsupported``.
     """
     hsa_el = find_one(node, "HSA_CSA")
     if hsa_el is None:
         return HsaCsaSetpoint()
-    if find_one(hsa_el, "MachValue") is not None:
-        return HsaCsaSetpoint(unsupported="MACH")
     if find_one(hsa_el, "SpeedOptimization") is not None:
         return HsaCsaSetpoint(unsupported="SPEED_OPTIMIZATION")
     altitude_m = None
@@ -142,6 +140,10 @@ def parse_hsa_csa(node) -> HsaCsaSetpoint:
                 altitude_m = float(child.text.strip())
     speed_mps = None
     speed_ref = None
+    mach = None
+    mach_el = find_one(hsa_el, "MachValue")
+    if mach_el is not None and mach_el.text:
+        mach = float(mach_el.text.strip())
     speed_value = find_one(hsa_el, "SpeedValue")
     if speed_value is not None:
         speed_text = find_text(speed_value, "Value")
@@ -170,6 +172,7 @@ def parse_hsa_csa(node) -> HsaCsaSetpoint:
         altitude_ref=altitude_ref,
         speed_mps=speed_mps,
         speed_ref=speed_ref,
+        mach=mach,
         heading_deg=heading_deg,
         direction_kind=direction_kind,
         heading_ref=heading_ref,
@@ -371,6 +374,7 @@ def _hsa_csa_mode(
     heading_ref: str = "TRUE_NORTH",
     direction_kind: str = "HEADING",
     include_mach: bool = False,
+    include_speed_optimization: bool = False,
 ):
     """Build an ``HSA_CSA`` FlightControlMode element."""
     kids = []
@@ -382,7 +386,9 @@ def _hsa_csa_mode(
                 el("Altitude", text=str(altitude_m)),
             )
         )
-    if include_mach:
+    if include_speed_optimization:
+        kids.append(el("Speed", el("SpeedChoice", el("SpeedOptimization"))))
+    elif include_mach:
         kids.append(el("Speed", el("SpeedChoice", el("MachValue", text="0.2"))))
     elif speed_mps is not None:
         kids.append(
@@ -510,6 +516,7 @@ def build_sample_hsa_csa_command(
     heading_ref: str = "TRUE_NORTH",
     direction_kind: str = "HEADING",
     include_mach: bool = False,
+    include_speed_optimization: bool = False,
     command_state: str = "NEW",
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
@@ -527,6 +534,7 @@ def build_sample_hsa_csa_command(
             heading_ref=heading_ref,
             direction_kind=direction_kind,
             include_mach=include_mach,
+            include_speed_optimization=include_speed_optimization,
         ),
         command_state=command_state,
     )

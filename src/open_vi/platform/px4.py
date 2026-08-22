@@ -53,6 +53,87 @@ DEFAULT_PATH_CLEARANCE_M = 15.0
 DEFAULT_MIN_REL_ALT_M = 10.0
 DEFAULT_MAX_REL_ALT_M = 500.0
 _QNH_PARAM = "SENS_BARO_QNH"
+_ISA_T0_K = 288.15
+_ISA_L_K_PER_M = 0.0065
+_ISA_P0_PA = 101325.0
+_ISA_G = 9.80665
+_ISA_R = 287.05
+_ISA_GAMMA = 1.4
+_ISA_RHO0 = 1.225
+_TROPO_MAX_M = 11000.0
+_HDG_UNKNOWN_CDEG = 65535.0
+_TEMP_MIN_K = 150.0
+_TEMP_MAX_K = 400.0
+
+
+def _isa_temperature_k(alt_m: float) -> float:
+    """ISA troposphere temperature (K) from AMSL metres."""
+    height = min(max(alt_m, 0.0), _TROPO_MAX_M)
+    return _ISA_T0_K - _ISA_L_K_PER_M * height
+
+
+def _isa_pressure_pa(alt_m: float) -> float:
+    """ISA troposphere static pressure (Pa) from AMSL metres."""
+    temp_k = _isa_temperature_k(alt_m)
+    exponent = _ISA_G / (_ISA_L_K_PER_M * _ISA_R)
+    return _ISA_P0_PA * (temp_k / _ISA_T0_K) ** exponent
+
+
+def _cas_to_tas_mps(
+    cas_mps: float, *, pressure_pa: float, temp_k: float
+) -> float:
+    """Calibrated airspeed to TAS using density ratio."""
+    rho = pressure_pa / (_ISA_R * temp_k)
+    sigma = rho / _ISA_RHO0
+    if sigma <= 0.0:
+        return cas_mps
+    return cas_mps / math.sqrt(sigma)
+
+
+def _mach_to_tas_mps(mach: float, temp_k: float) -> float:
+    """Mach to TAS at static temperature *temp_k*."""
+    return mach * math.sqrt(_ISA_GAMMA * _ISA_R * temp_k)
+
+
+def _tas_to_gs_mps(
+    tas_mps: float,
+    heading_deg: float,
+    wind_north: float,
+    wind_east: float,
+) -> float:
+    """Groundspeed of TAS along *heading_deg* plus NED wind."""
+    heading_rad = math.radians(heading_deg)
+    north = tas_mps * math.cos(heading_rad) + wind_north
+    east = tas_mps * math.sin(heading_rad) + wind_east
+    return math.hypot(north, east)
+
+
+def _wrap_heading_deg(heading_deg: float) -> float:
+    """Wrap degrees into ``[0, 360)``."""
+    return heading_deg % 360.0
+
+
+def _wind_ned(
+    *,
+    wind_north: float | None,
+    wind_east: float | None,
+    airspeed: float,
+    vx_mps: float,
+    vy_mps: float,
+) -> tuple[float, float]:
+    """WIND / WIND_COV, else GS minus TAS along track, else (0, 0)."""
+    if wind_north is not None and wind_east is not None:
+        return wind_north, wind_east
+    gs = math.hypot(vx_mps, vy_mps)
+    if airspeed > 0.1 and gs > 0.1:
+        track = math.atan2(vy_mps, vx_mps)
+        return (
+            vx_mps - airspeed * math.cos(track),
+            vy_mps - airspeed * math.sin(track),
+        )
+    return 0.0, 0.0
+
+
 _QNH_ACK_TIMEOUT_S = 5.0
 
 
@@ -147,6 +228,12 @@ class _MavCache:
     airspeed_mps: float = 0.0
     groundspeed_mps: float = 0.0
     heading_deg: float = 0.0
+    compass_heading_deg: float | None = None
+    ekf_yaw_deg: float | None = None
+    wind_north_mps: float | None = None
+    wind_east_mps: float | None = None
+    static_pressure_pa: float | None = None
+    temperature_k: float | None = None
     battery_remaining: int | None = None
     system_status: int = 0
     armed: bool = False
@@ -167,10 +254,10 @@ class Px4MavlinkAdapter(PlatformPort):
     ``MISSION_ITEM_REACHED`` hits the last waypoint.
 
     ``HSA_CSA`` streams an offboard heading/speed/altitude hold.
-    ``CURVE_FOLLOWING`` is rejected with
-    ``CAPABILITY_NOT_SUPPORTED``. Waypoint paths use the 10–500 m
-    AGL envelope; HSA uses 0–500 m AGL so a hold at home HAE is
-    inside the advertised bound. Both compare on a 0.1 m grid.
+    Leftover speed / heading / altitude refs convert onto that
+    NED vector. Waypoint paths use the 10–500 m AGL envelope; HSA
+    uses 0–500 m AGL so a hold at home HAE is inside the advertised
+    bound. Both compare on a 0.1 m grid.
     ``apply_system_management`` writes ``SENS_BARO_QNH`` and the local
     TSPI snapshot.
     """
@@ -608,20 +695,53 @@ class Px4MavlinkAdapter(PlatformPort):
         )
 
     def _resolve_hsa(self, hsa: HsaCsaSetpoint) -> _ResolvedHsa:
-        """Fill omitted axes from telemetry.
+        """Fill omitted axes from telemetry and leftover-ref conversions.
 
+        Magnetic heading needs EKF yaw and compass. TAS / CAS / Mach
+        become groundspeed via wind (message, estimate, or 0).
+        MSL and barometric altitude use the same home freeze as HAE.
         On the ground, climb uses takeoff altitude.
         """
         with self._lock:
             heading = self._cache.heading_deg
             speed = self._cache.groundspeed_mps
             rel = self._cache.relative_alt_m
+            compass = self._cache.compass_heading_deg
+            ekf_yaw = self._cache.ekf_yaw_deg
+            wind_n = self._cache.wind_north_mps
+            wind_e = self._cache.wind_east_mps
+            airspeed = self._cache.airspeed_mps
+            vx_mps = self._cache.vx_mps
+            vy_mps = self._cache.vy_mps
+            alt_amsl = self._cache.alt_m
+            temp_k = self._cache.temperature_k
+            pressure_pa = self._cache.static_pressure_pa
         if hsa.heading_deg is not None:
-            heading = hsa.heading_deg
-        if hsa.speed_mps is not None:
-            speed = hsa.speed_mps
+            heading = self._true_heading_deg(
+                hsa.heading_deg,
+                hsa.heading_ref,
+                compass=compass,
+                ekf_yaw=ekf_yaw,
+            )
+        if hsa.mach is not None or hsa.speed_mps is not None:
+            speed = self._hsa_groundspeed_mps(
+                hsa,
+                heading_deg=heading,
+                wind_north=wind_n,
+                wind_east=wind_e,
+                airspeed=airspeed,
+                vx_mps=vx_mps,
+                vy_mps=vy_mps,
+                alt_amsl=alt_amsl,
+                temp_k=temp_k,
+                pressure_pa=pressure_pa,
+            )
         if hsa.altitude_m is not None:
-            if hsa.altitude_ref == "WGS_HAE":
+            if hsa.altitude_ref in {
+                "WGS_HAE",
+                "MSL",
+                "ALTITUDE_BAROMETRIC",
+            }:
                 home = self._home_hae_m()
                 if home is not None:
                     rel = float(hsa.altitude_m) - home
@@ -636,6 +756,68 @@ class Px4MavlinkAdapter(PlatformPort):
             speed_mps=speed,
             rel_alt_m=rel,
         )
+
+    def _true_heading_deg(
+        self,
+        heading_deg: float,
+        heading_ref: str | None,
+        *,
+        compass: float | None,
+        ekf_yaw: float | None,
+    ) -> float:
+        """Commanded heading in true degrees.
+
+        ``MAGNETIC_NORTH`` uses EKF yaw minus compass. Missing either
+        heading raises so the command is ``STATE_OR_SETTINGS``.
+        """
+        del self
+        if heading_ref != "MAGNETIC_NORTH":
+            return _wrap_heading_deg(heading_deg)
+        if compass is None or ekf_yaw is None:
+            raise RuntimeError(
+                "HSA magnetic heading needs EKF yaw and compass heading"
+            )
+        declination = ekf_yaw - compass
+        return _wrap_heading_deg(heading_deg + declination)
+
+    def _hsa_groundspeed_mps(
+        self,
+        hsa: HsaCsaSetpoint,
+        *,
+        heading_deg: float,
+        wind_north: float | None,
+        wind_east: float | None,
+        airspeed: float,
+        vx_mps: float,
+        vy_mps: float,
+        alt_amsl: float,
+        temp_k: float | None,
+        pressure_pa: float | None,
+    ) -> float:
+        """Commanded speed as groundspeed for the offboard hold."""
+        del self
+        if hsa.mach is not None:
+            tas = _mach_to_tas_mps(
+                hsa.mach, temp_k or _isa_temperature_k(alt_amsl)
+            )
+        elif hsa.speed_ref == "CALIBRATED_AIRSPEED":
+            tas = _cas_to_tas_mps(
+                float(hsa.speed_mps or 0.0),
+                pressure_pa=pressure_pa or _isa_pressure_pa(alt_amsl),
+                temp_k=temp_k or _isa_temperature_k(alt_amsl),
+            )
+        elif hsa.speed_ref == "TRUE_AIRSPEED":
+            tas = float(hsa.speed_mps or 0.0)
+        else:
+            return float(hsa.speed_mps or 0.0)
+        north, east = _wind_ned(
+            wind_north=wind_north,
+            wind_east=wind_east,
+            airspeed=airspeed,
+            vx_mps=vx_mps,
+            vy_mps=vy_mps,
+        )
+        return _tas_to_gs_mps(tas, heading_deg, north, east)
 
     def _start_offboard_thread(self) -> None:
         """Stream setpoints at ``_OFFBOARD_HZ`` until stop."""
@@ -887,12 +1069,17 @@ class Px4MavlinkAdapter(PlatformPort):
                 self._cache.vx_mps = msg.vx / 100.0
                 self._cache.vy_mps = msg.vy / 100.0
                 self._cache.vz_mps = msg.vz / 100.0
-                self._cache.heading_deg = float(msg.hdg) / 100.0
+                hdg_cdeg = float(msg.hdg)
+                if hdg_cdeg < _HDG_UNKNOWN_CDEG:
+                    heading = hdg_cdeg / 100.0
+                    self._cache.heading_deg = heading
+                    self._cache.compass_heading_deg = heading
             elif mtype == "ATTITUDE":
                 self._cache.last_heartbeat_mono = time.monotonic()
                 self._cache.roll_rad = float(msg.roll)
                 self._cache.pitch_rad = float(msg.pitch)
                 self._cache.yaw_rad = float(msg.yaw)
+                self._cache.ekf_yaw_deg = math.degrees(float(msg.yaw))
             elif mtype == "VFR_HUD":
                 airspeed = float(msg.airspeed)
                 groundspeed = float(msg.groundspeed)
@@ -902,7 +1089,25 @@ class Px4MavlinkAdapter(PlatformPort):
                 self._cache.groundspeed_mps = (
                     groundspeed if math.isfinite(groundspeed) else 0.0
                 )
-                self._cache.heading_deg = float(msg.heading)
+                heading = float(msg.heading)
+                self._cache.heading_deg = heading
+                self._cache.compass_heading_deg = heading
+            elif mtype == "WIND_COV":
+                self._cache.wind_north_mps = float(msg.wind_x)
+                self._cache.wind_east_mps = float(msg.wind_y)
+            elif mtype == "WIND":
+                coming_from = math.radians(float(msg.direction))
+                wind_speed = float(msg.speed)
+                self._cache.wind_north_mps = -wind_speed * math.cos(coming_from)
+                self._cache.wind_east_mps = -wind_speed * math.sin(coming_from)
+            elif mtype == "SCALED_PRESSURE":
+                press_pa = float(msg.press_abs) * 100.0
+                if math.isfinite(press_pa) and press_pa > 0.0:
+                    self._cache.static_pressure_pa = press_pa
+                temp_k = float(getattr(msg, "temperature", 0.0)) / 100.0
+                temp_k += 273.15
+                if _TEMP_MIN_K < temp_k < _TEMP_MAX_K:
+                    self._cache.temperature_k = temp_k
             elif mtype == "SYS_STATUS":
                 rem = int(getattr(msg, "battery_remaining", -1))
                 self._cache.battery_remaining = rem if rem >= 0 else None

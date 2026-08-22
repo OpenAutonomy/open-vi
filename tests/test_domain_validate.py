@@ -139,9 +139,9 @@ def test_hsa_accepts_agl_in_band() -> None:
     assert result is None
 
 
-def test_hsa_rejects_mach() -> None:
+def test_hsa_rejects_speed_optimization() -> None:
     result = validate_hsa_setpoint(
-        HsaCsaSetpoint(unsupported="MACH"),
+        HsaCsaSetpoint(unsupported="SPEED_OPTIMIZATION"),
         min_rel_alt_m=10.0,
         max_rel_alt_m=500.0,
         home_hae_m=None,
@@ -150,26 +150,45 @@ def test_hsa_rejects_mach() -> None:
     assert result.validation_results == ("CAPABILITY_NOT_SUPPORTED",)
 
 
-def test_hsa_rejects_tas() -> None:
+def test_hsa_accepts_leftover_refs() -> None:
+    assert (
+        validate_hsa_setpoint(
+            HsaCsaSetpoint(speed_mps=10.0, speed_ref="TRUE_AIRSPEED"),
+            min_rel_alt_m=10.0,
+            max_rel_alt_m=500.0,
+            home_hae_m=None,
+        )
+        is None
+    )
+    assert (
+        validate_hsa_setpoint(
+            HsaCsaSetpoint(heading_deg=90.0, heading_ref="MAGNETIC_NORTH"),
+            min_rel_alt_m=10.0,
+            max_rel_alt_m=500.0,
+            home_hae_m=None,
+        )
+        is None
+    )
+    assert (
+        validate_hsa_setpoint(
+            HsaCsaSetpoint(mach=0.2),
+            min_rel_alt_m=10.0,
+            max_rel_alt_m=500.0,
+            home_hae_m=None,
+        )
+        is None
+    )
+
+
+def test_hsa_rejects_negative_mach() -> None:
     result = validate_hsa_setpoint(
-        HsaCsaSetpoint(speed_mps=10.0, speed_ref="TRUE_AIRSPEED"),
+        HsaCsaSetpoint(mach=-0.1),
         min_rel_alt_m=10.0,
         max_rel_alt_m=500.0,
         home_hae_m=None,
     )
     assert result is not None
-    assert result.validation_results == ("CAPABILITY_NOT_SUPPORTED",)
-
-
-def test_hsa_rejects_magnetic() -> None:
-    result = validate_hsa_setpoint(
-        HsaCsaSetpoint(heading_deg=90.0, heading_ref="MAGNETIC_NORTH"),
-        min_rel_alt_m=10.0,
-        max_rel_alt_m=500.0,
-        home_hae_m=None,
-    )
-    assert result is not None
-    assert result.validation_results == ("CAPABILITY_NOT_SUPPORTED",)
+    assert result.validation_results == ("INVALID_WAYPOINT",)
 
 
 def test_hsa_rejects_out_of_envelope() -> None:

@@ -100,10 +100,20 @@ against the live id.
 
 An accepted `HSA_CSA` arms (and takes off if still on the ground),
 primes offboard setpoints, switches OFFBOARD, and streams
-heading × groundspeed plus AGL. Activity UPDATE replaces the live
-vector without minting a new activity. CANCEL stops the stream and
-holds. TAS, magnetic heading, Mach, and MSL/barometric altitude
-are `REJECTED`.
+heading × groundspeed plus AGL. Leftover refs convert onto that
+vector:
+
+| Commanded | Becomes | Source |
+| --- | --- | --- |
+| `MAGNETIC_NORTH` | true heading | EKF yaw minus compass. Missing either is `STATE_OR_SETTINGS`. |
+| `TRUE_AIRSPEED` | groundspeed | TAS along heading plus wind (`WIND` / `WIND_COV`, else GS - TAS along track, else 0). |
+| `CALIBRATED_AIRSPEED` | TAS then GS | Density ratio from `SCALED_PRESSURE` or ISA at AMSL. |
+| `MachValue` | TAS then GS | `a = sqrt(gamma R T)` from `SCALED_PRESSURE` or ISA. |
+| `MSL` / `ALTITUDE_BAROMETRIC` | AGL | Same home freeze as HAE (`AMSL − relative_alt`). |
+
+Activity UPDATE replaces the live vector without minting a new
+activity. CANCEL stops the stream and holds.
+`SpeedOptimization` is `REJECTED`.
 
 ## Curve execute
 
@@ -145,7 +155,8 @@ param ack is `REJECTED`.
 ## Telemetry
 
 A reader thread ingests HEARTBEAT, GLOBAL_POSITION_INT, ATTITUDE,
-VFR_HUD, and SYS_STATUS. `snapshot()` is `AVAILABLE` while
+VFR_HUD, WIND / WIND_COV, SCALED_PRESSURE, and SYS_STATUS.
+`snapshot()` is `AVAILABLE` while
 heartbeat and position are fresher than 10 s; otherwise
 `TEMPORARILY_UNAVAILABLE` / `PX4_LINK_DOWN`.
 `get_vehicle_state()` maps lat/lon/alt, NED speeds, attitude,

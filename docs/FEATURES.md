@@ -35,7 +35,7 @@ here.
 | § | Interaction | Status | Notes |
 | --- | --- | --- | --- |
 | 1.2.2.1 | Control by Curve Following | Supported | Isolator parses the NURBS and submits Capability NEW / Activity UPDATE / Capability CANCEL → status and `MA_FlightActivity`. PX4 samples the spine to a mission. Stub accepts only. `CurveTraversingParameters` and `AppendCurve` are not implemented. |
-| 1.2.2.2 | Control by HSA/CSA Command | Supported | Isolator parses and submits Capability NEW / Activity UPDATE / Capability CANCEL → status and `MA_FlightActivity`. PX4 tracks `GROUNDSPEED`, `TRUE_NORTH`, and `AGL` / `WGS_HAE`. TAS, CAS, Mach, magnetic heading, MSL, and barometric altitude are `REJECTED`. Stub accepts only. |
+| 1.2.2.2 | Control by HSA/CSA Command | Supported | Isolator parses and submits Capability NEW / Activity UPDATE / Capability CANCEL → status and `MA_FlightActivity`. PX4 converts leftover refs onto the offboard hold. `SpeedOptimization` is `REJECTED`. Stub accepts only. |
 | 1.2.2.3 | Control by Waypoint Following | Supported | Capability NEW / Activity UPDATE / Capability CANCEL → status and `MA_FlightActivity`. Optional reject `MA_Task`. Rejects may include `CannotComplyDetails/ValidationResult` from the platform. Taxi, ATC hold, and payload actions are not implemented. |
 | 1.2.2.4 | Control Mode Authorization | Supported | Publishes `MA_FlightCapability` then `MA_FlightCapabilityStatus` from `snapshot()`. Performance profile is the backend. |
 | 1.2.2.5 | MA-VI Command Task | Supported | Inbound `MA_Task` is stored and acked with `MA_SystemNotification`. Own reject-suggest publishes are ignored. `MA_TaskCommand` NEW / CANCEL → status and `TaskStatus`. |

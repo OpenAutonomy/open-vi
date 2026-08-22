@@ -182,7 +182,7 @@ def test_parse_hsa_omits_speed() -> None:
     assert hsa.altitude_m == pytest.approx(40.0)
 
 
-def test_parse_hsa_mach_is_unsupported() -> None:
+def test_parse_hsa_mach_value() -> None:
     xml = build_sample_hsa_csa_command(
         SystemIdentity.named("1"),
         command_id=uuid4(),
@@ -192,4 +192,18 @@ def test_parse_hsa_mach_is_unsupported() -> None:
     )
     hsa = parse_flight_commands(xml)[0].hsa
     assert hsa is not None
-    assert hsa.unsupported == "MACH"
+    assert hsa.mach == pytest.approx(0.2)
+    assert hsa.unsupported is None
+
+
+def test_parse_hsa_speed_optimization_is_unsupported() -> None:
+    xml = build_sample_hsa_csa_command(
+        SystemIdentity.named("1"),
+        command_id=uuid4(),
+        capability_id=uuid4(),
+        include_speed_optimization=True,
+        speed_mps=None,
+    )
+    hsa = parse_flight_commands(xml)[0].hsa
+    assert hsa is not None
+    assert hsa.unsupported == "SPEED_OPTIMIZATION"

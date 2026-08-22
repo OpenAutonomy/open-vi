@@ -23,9 +23,9 @@ class Waypoint:
 class HsaCsaSetpoint:
     """Heading / speed / altitude hold. Degrees and meters.
 
-    Omitted axes mean hold current. ``unsupported`` is a parse-time
-    flag (``MACH``, ``SPEED_OPTIMIZATION``) so the platform can
-    reject without inventing a conversion.
+    Omitted axes mean hold current. ``mach`` is a Speed choice.
+    ``unsupported`` is a parse-time flag (``SPEED_OPTIMIZATION``)
+    so the platform can reject without inventing a conversion.
     """
 
     altitude_m: float | None = None
@@ -34,6 +34,7 @@ class HsaCsaSetpoint:
     speed_mps: float | None = None
     # GROUNDSPEED | TRUE_AIRSPEED | CALIBRATED_AIRSPEED
     speed_ref: str | None = None
+    mach: float | None = None
     heading_deg: float | None = None
     direction_kind: str | None = None  # HEADING | COURSE
     heading_ref: str | None = None  # TRUE_NORTH | MAGNETIC_NORTH
@@ -200,9 +201,12 @@ def validate_waypoint_path(
     return None
 
 
-_HSA_ALT_REFS = frozenset({"AGL", "WGS_HAE"})
-_HSA_SPEED_REFS = frozenset({"GROUNDSPEED"})
-_HSA_HEADING_REFS = frozenset({"TRUE_NORTH"})
+_HSA_ALT_REFS = frozenset({"AGL", "WGS_HAE", "MSL", "ALTITUDE_BAROMETRIC"})
+_HSA_SPEED_REFS = frozenset(
+    {"GROUNDSPEED", "TRUE_AIRSPEED", "CALIBRATED_AIRSPEED"}
+)
+_HSA_HEADING_REFS = frozenset({"TRUE_NORTH", "MAGNETIC_NORTH"})
+_HSA_HOME_REL_REFS = frozenset({"WGS_HAE", "MSL", "ALTITUDE_BAROMETRIC"})
 
 
 def validate_hsa_setpoint(
@@ -215,8 +219,9 @@ def validate_hsa_setpoint(
     """Reject an unflyable HSA vector, or return ``None`` if it is ok.
 
     Empty (all axes omitted) is a hold-current enter. Envelope applies
-    only when altitude is commanded. HAE minus home is the AGL used
-    against the envelope, same as :func:`validate_waypoint_path`.
+    only when altitude is commanded. HAE / MSL / baro minus home is
+    the AGL used against the envelope, same as
+    :func:`validate_waypoint_path`.
     """
     if hsa is None:
         return None
@@ -263,6 +268,13 @@ def validate_hsa_setpoint(
             reason_description="HSA speed must be a finite non-negative m/s",
             validation_results=("INVALID_WAYPOINT",),
         )
+    if hsa.mach is not None and (not math.isfinite(hsa.mach) or hsa.mach < 0.0):
+        return CommandResult(
+            processing_state="REJECTED",
+            reason="INVALID_INPUT_PARAMETER",
+            reason_description="HSA Mach must be a finite non-negative value",
+            validation_results=("INVALID_WAYPOINT",),
+        )
     if hsa.heading_deg is not None and not math.isfinite(hsa.heading_deg):
         return CommandResult(
             processing_state="REJECTED",
@@ -279,12 +291,15 @@ def validate_hsa_setpoint(
             reason_description="HSA altitude must be finite",
             validation_results=("INVALID_WAYPOINT",),
         )
-    if hsa.altitude_ref == "WGS_HAE" and home_hae_m is not None:
-        rel_m = float(hsa.altitude_m) - home_hae_m
-        lo_hae = home_hae_m + min_rel_alt_m
-        hi_hae = home_hae_m + max_rel_alt_m
+    home = home_hae_m
+    use_home = hsa.altitude_ref in _HSA_HOME_REL_REFS and home is not None
+    if use_home and home is not None:
+        rel_m = float(hsa.altitude_m) - home
+        lo_hae = home + min_rel_alt_m
+        hi_hae = home + max_rel_alt_m
+        label = "HAE" if hsa.altitude_ref == "WGS_HAE" else hsa.altitude_ref
         description = (
-            f"HSA altitude {hsa.altitude_m:.1f}m HAE "
+            f"HSA altitude {hsa.altitude_m:.1f}m {label} "
             f"outside [{lo_hae:.1f}, {hi_hae:.1f}]"
         )
     else:
