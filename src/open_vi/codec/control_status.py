@@ -27,10 +27,18 @@ def build_control_status(
     capability_id: UUID,
     offer: ControlOffer,
     service: ServiceStatusSnapshot,
+    secondary_system_id: UUID | None = None,
+    secondary_service_id: UUID | None = None,
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
 ) -> bytes:
-    """Publish ControlStatus after control-mode authorization."""
+    """Publish ControlStatus after control-mode authorization.
+
+    Isolator is always ``PrimaryController`` (it adjudicates
+    ``MA_ControlRequest``). The acquired controller is
+    ``SecondaryController`` only when both system and service IDs
+    are set — the schema requires both.
+    """
     cap_control_children = [
         id_type("CapabilityID", capability_id, offer.capability_label),
         el(
@@ -39,6 +47,14 @@ def build_control_status(
             service_id_element(service),
         ),
     ]
+    if secondary_system_id is not None and secondary_service_id is not None:
+        cap_control_children.append(
+            el(
+                "SecondaryController",
+                id_type("SystemID", secondary_system_id),
+                id_type("ServiceID", secondary_service_id),
+            )
+        )
     for iface in offer.accepted_interfaces:
         cap_control_children.append(el("AcceptedInterface", text=iface))
     data = el(

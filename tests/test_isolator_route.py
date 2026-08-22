@@ -420,6 +420,75 @@ def test_validate_opaque_route_plan_invalid() -> None:
     assert "INVALID" in bus.published[MT_ROUTE_VALIDATION][-1]
 
 
+def test_validate_benign_weather_stays_valid() -> None:
+    bus = InMemoryAsb()
+    route_id = uuid4()
+    iso = Isolator(
+        bus,
+        platform=StubPlatform(),
+        config=IsolatorConfig(tick_republish_status=False),
+    )
+    iso.ctx.routes.prime(route_id, xml=_plan_xml(iso, route_id))
+    iso.attach()
+    bus.publish(
+        MT_ROUTE_VALIDATION_COMMAND,
+        build_sample_route_validation_command(
+            iso.identity,
+            command_id=uuid4(),
+            route_plan_id=route_id,
+            weather_source="OTHER",
+            icing="NONE",
+        ),
+    )
+    assert "VALID" in bus.published[MT_ROUTE_VALIDATION][-1]
+
+
+def test_validate_severe_icing_invalid() -> None:
+    bus = InMemoryAsb()
+    route_id = uuid4()
+    iso = Isolator(
+        bus,
+        platform=StubPlatform(),
+        config=IsolatorConfig(tick_republish_status=False),
+    )
+    iso.ctx.routes.prime(route_id, xml=_plan_xml(iso, route_id))
+    iso.attach()
+    bus.publish(
+        MT_ROUTE_VALIDATION_COMMAND,
+        build_sample_route_validation_command(
+            iso.identity,
+            command_id=uuid4(),
+            route_plan_id=route_id,
+            weather_source="OTHER",
+            icing="SEVERE",
+        ),
+    )
+    assert "INVALID" in bus.published[MT_ROUTE_VALIDATION][-1]
+
+
+def test_validate_extreme_turbulence_invalid() -> None:
+    bus = InMemoryAsb()
+    route_id = uuid4()
+    iso = Isolator(
+        bus,
+        platform=StubPlatform(),
+        config=IsolatorConfig(tick_republish_status=False),
+    )
+    iso.ctx.routes.prime(route_id, xml=_plan_xml(iso, route_id))
+    iso.attach()
+    bus.publish(
+        MT_ROUTE_VALIDATION_COMMAND,
+        build_sample_route_validation_command(
+            iso.identity,
+            command_id=uuid4(),
+            route_plan_id=route_id,
+            weather_source="METAR",
+            turbulence="EXTREME",
+        ),
+    )
+    assert "INVALID" in bus.published[MT_ROUTE_VALIDATION][-1]
+
+
 def test_activate_without_waypoints_rejected() -> None:
     bus = InMemoryAsb()
     route_id = uuid4()

@@ -53,6 +53,14 @@
 
 ### Added
 
+- Route validate applies `WeatherAreaData` on
+  `RoutePlanValidationCommand`. SEVERE / EXTREME icing or
+  turbulence is INVALID. Completes Volume §1.2.5.5 Validate
+  Route Plan.
+- Periodic `ControlStatus` names the acquired controller as
+  `SecondaryController` when both SystemID and ServiceID are
+  stored. Isolator stays `PrimaryController`. Completes Volume
+  §1.2.6.2 Publish Control Status.
 - Inbound route DEACTIVATE publishes `MissionPlanActivationStatus`
   (`DEACTIVATED`) for the mission and route plan. Completes
   Volume §1.2.5.4 Receive Deactivate Route.

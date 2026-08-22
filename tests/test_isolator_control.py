@@ -13,6 +13,7 @@ from open_vi.codec.mts import (
     MT_CONTROL_ASSIGNMENT,
     MT_CONTROL_REQUEST,
     MT_CONTROL_REQUEST_STATUS,
+    MT_CONTROL_STATUS,
 )
 from open_vi.codec.xmlutil import local_name, parse_xml
 from open_vi.config import IsolatorConfig
@@ -179,3 +180,80 @@ def test_missing_request_id_drops() -> None:
     )
     bus.publish(MT_CONTROL_REQUEST, bare)
     assert not bus.published.get(MT_CONTROL_REQUEST_STATUS)
+
+
+def test_control_status_idle_has_no_secondary() -> None:
+    bus = InMemoryAsb()
+    iso = _iso(bus)
+    iso.attach()
+    iso.publish_status_package_once()
+    status = bus.published[MT_CONTROL_STATUS][-1]
+    assert "PrimaryController" in status
+    assert "SecondaryController" not in status
+
+
+def test_control_status_secondary_after_acquire() -> None:
+    bus = InMemoryAsb()
+    iso = _iso(bus)
+    iso.attach()
+    controller = uuid4()
+    service = uuid4()
+    bus.publish(
+        MT_CONTROL_REQUEST,
+        build_sample_control_request(
+            iso.identity,
+            request_id=uuid4(),
+            controller_system_id=controller,
+            controller_service_id=service,
+        ),
+    )
+    iso.publish_status_package_once()
+    status = bus.published[MT_CONTROL_STATUS][-1]
+    assert "SecondaryController" in status
+    assert controller.hex in status.replace("-", "")
+    assert service.hex in status.replace("-", "")
+
+
+def test_control_status_no_secondary_without_service_id() -> None:
+    bus = InMemoryAsb()
+    iso = _iso(bus)
+    iso.attach()
+    bus.publish(
+        MT_CONTROL_REQUEST,
+        build_sample_control_request(
+            iso.identity,
+            request_id=uuid4(),
+            controller_system_id=uuid4(),
+        ),
+    )
+    iso.publish_status_package_once()
+    assert "SecondaryController" not in bus.published[MT_CONTROL_STATUS][-1]
+
+
+def test_control_status_clears_secondary_on_release() -> None:
+    bus = InMemoryAsb()
+    iso = _iso(bus)
+    iso.attach()
+    controller = uuid4()
+    service = uuid4()
+    bus.publish(
+        MT_CONTROL_REQUEST,
+        build_sample_control_request(
+            iso.identity,
+            request_id=uuid4(),
+            controller_system_id=controller,
+            controller_service_id=service,
+        ),
+    )
+    bus.publish(
+        MT_CONTROL_REQUEST,
+        build_sample_control_request(
+            iso.identity,
+            request_id=uuid4(),
+            request_type="RELEASE",
+            controller_system_id=controller,
+            controller_service_id=service,
+        ),
+    )
+    iso.publish_status_package_once()
+    assert "SecondaryController" not in bus.published[MT_CONTROL_STATUS][-1]

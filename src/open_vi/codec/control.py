@@ -194,6 +194,7 @@ def build_sample_control_request(
     request_id: UUID,
     request_type: str = "ACQUIRE",
     controller_system_id: UUID | None = None,
+    controller_service_id: UUID | None = None,
     capability_id: UUID | None = None,
     control_type: str = "CAPABILITY_PRIMARY",
     schema_version: str = SCHEMA_VERSION,
@@ -205,7 +206,7 @@ def build_sample_control_request(
         control_type=control_type,
         control_choice="GrantedControlType",
         controller_system_id=controller,
-        controller_service_id=None,
+        controller_service_id=controller_service_id,
         controllee_system_id=identity.uuid,
         capability_id=capability_id,
     )

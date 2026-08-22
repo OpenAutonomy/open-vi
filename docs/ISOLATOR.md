@@ -62,7 +62,9 @@ cancel on the port, then `commit`.
 (XML present; same rule as `get()`). The route handler parses
 waypoints and calls `PlatformPort` on ACTIVATE / DEACTIVATE;
 `RouteStore` itself does not. Live EXECUTING / COMPLETED / FAILED
-is `RouteExecution`, not the ladder.
+is `RouteExecution`, not the ladder. Validation uses stored
+geometry plus `WeatherAreaData` on the command (SEVERE / EXTREME
+icing or turbulence is INVALID).
 
 ## Handlers
 
@@ -98,6 +100,8 @@ on the tick.
 Route, query, and control publish `QUEUED`, `PROCESSING`, then
 `COMPLETED`. Advertise, TSPI, faults, subsystem status, and the
 status package are outbound-only (`publishers.py`), not handlers.
+`ControlStatus` keeps Isolator as `PrimaryController` and names the
+acquired controller as `SecondaryController` when both IDs are set.
 Message-type names live in `open_vi.codec.mts`.
 
 Isolator does not import STOMP, ActiveMQ, MAVLink, or PX4. Vehicle

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from uuid import UUID
+from xml.etree import ElementTree as ET
 
 from open_vi.codec.ns import SCHEMA_VERSION
 from open_vi.codec.path import build_path_element, parse_path_waypoints
@@ -87,6 +88,50 @@ def parse_route_activation_commands(
     return results
 
 
+_SEVERE_WEATHER = frozenset({"SEVERE", "EXTREME"})
+
+
+@dataclass(frozen=True)
+class WeatherAreaData:
+    """WeatherAreaData override from RoutePlanValidationCommand Inputs.
+
+    Schema: override of UCI weather messages for this validation.
+    ``source`` is required on the type. Icing and turbulence are the
+    flyability fields Isolator applies.
+    """
+
+    source: str
+    icing: str | None = None
+    turbulence: str | None = None
+
+
+def weather_blocks_route(weather: WeatherAreaData | None) -> bool:
+    """True when override weather makes the route INVALID.
+
+    Missing override is not a block. Missing Source on a present
+    WeatherAreaData is a block. SEVERE / EXTREME icing or
+    turbulence is a block.
+    """
+    if weather is None:
+        return False
+    if not weather.source:
+        return True
+    return (weather.icing or "").upper() in _SEVERE_WEATHER or (
+        weather.turbulence or ""
+    ).upper() in _SEVERE_WEATHER
+
+
+def _parse_weather_area(data: ET.Element) -> WeatherAreaData | None:
+    node = find_one(data, "WeatherAreaData")
+    if node is None:
+        return None
+    return WeatherAreaData(
+        source=find_text(node, "Source") or "",
+        icing=find_text(node, "Icing"),
+        turbulence=find_text(node, "Turbulence"),
+    )
+
+
 @dataclass(frozen=True)
 class RouteValidationCommand:
     """Parsed RoutePlanValidationCommand."""
@@ -96,6 +141,7 @@ class RouteValidationCommand:
     command_state: str = "NEW"
     for_planning_use_only: bool = False
     request_frequency: str = "SINGLE"
+    weather: WeatherAreaData | None = None
 
 
 def parse_route_validation_command(
@@ -121,6 +167,7 @@ def parse_route_validation_command(
         command_state=find_text(data, "CommandState") or "NEW",
         for_planning_use_only=planning in {"1", "true", "yes"},
         request_frequency=freq,
+        weather=_parse_weather_area(data),
     )
 
 
@@ -191,26 +238,44 @@ def build_sample_route_validation_command(
     command_id: UUID,
     route_plan_id: UUID,
     planning_process_id: UUID | None = None,
+    weather_source: str | None = None,
+    icing: str | None = None,
+    turbulence: str | None = None,
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
 ) -> bytes:
     """Minimal RoutePlanValidationCommand for unit tests."""
     process_id = planning_process_id or command_id
+    inputs_kids = [
+        id_type("PlanningProcessID", process_id),
+        el("ModifyToValidate", text="false"),
+    ]
+    if (
+        weather_source is not None
+        or icing is not None
+        or turbulence is not None
+    ):
+        weather_kids = []
+        if weather_source is not None:
+            weather_kids.append(el("Source", text=weather_source))
+        if icing is not None:
+            weather_kids.append(el("Icing", text=icing))
+        if turbulence is not None:
+            weather_kids.append(el("Turbulence", text=turbulence))
+        inputs_kids.append(el("WeatherAreaData", *weather_kids))
+    inputs_kids.append(
+        el(
+            "RoutePlanDetails",
+            id_type("RoutePlanID", route_plan_id),
+        )
+    )
     data = el(
         "MessageData",
         id_type("CommandID", command_id),
         el("CommandState", text="NEW"),
         el("ForPlanningUseOnly", text="false"),
         el("RequestFrequencyType", text="SINGLE"),
-        el(
-            "Inputs",
-            id_type("PlanningProcessID", process_id),
-            el("ModifyToValidate", text="false"),
-            el(
-                "RoutePlanDetails",
-                id_type("RoutePlanID", route_plan_id),
-            ),
-        ),
+        el("Inputs", *inputs_kids),
     )
     root = message_envelope(
         "RoutePlanValidationCommand",

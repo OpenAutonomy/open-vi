@@ -31,6 +31,7 @@ from open_vi.codec.route import (
     parse_route_plan_id,
     parse_route_plan_waypoints,
     parse_route_validation_command,
+    weather_blocks_route,
 )
 from open_vi.domain import (
     FlightCommandRequest,
@@ -379,7 +380,9 @@ class RouteHandler:
                 waypoints = parse_route_plan_waypoints(stored.xml)
             except ValueError:
                 waypoints = ()
-            if finite_waypoint_geometry(waypoints):
+            if finite_waypoint_geometry(waypoints) and not weather_blocks_route(
+                cmd.weather
+            ):
                 validation_state = "VALID"
         validation_id = uuid4()
         ctx.bus.publish(

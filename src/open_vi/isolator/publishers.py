@@ -316,6 +316,8 @@ def publish_status_package(ctx: IsolatorContext) -> None:
             capability_id=ctx.state.capability_id,
             offer=snap.offer,
             service=service,
+            secondary_system_id=ctx.state.controller_system_id,
+            secondary_service_id=ctx.state.controller_service_id,
             schema_version=schema,
             mode=mode,
         ),

@@ -11,7 +11,10 @@ from open_vi.codec.ns import SCHEMA_VERSION
 from open_vi.codec.route import (
     build_mission_plan_activation_status,
     build_sample_route_plan,
+    build_sample_route_validation_command,
     parse_route_plan_waypoints,
+    parse_route_validation_command,
+    weather_blocks_route,
 )
 from open_vi.codec.xmlutil import (
     el,
@@ -103,3 +106,22 @@ def test_build_mission_plan_activation_status() -> None:
     assert mission_id.hex in body.replace("-", "")
     assert route_id.hex in body.replace("-", "")
     assert "SubPlanActivationState" in body
+
+
+def test_parse_validation_weather_area() -> None:
+    identity = SystemIdentity.named("1")
+    route_id = uuid4()
+    xml = build_sample_route_validation_command(
+        identity,
+        command_id=uuid4(),
+        route_plan_id=route_id,
+        weather_source="OTHER",
+        icing="SEVERE",
+    )
+    cmd = parse_route_validation_command(xml)
+    assert cmd is not None
+    assert cmd.weather is not None
+    assert cmd.weather.source == "OTHER"
+    assert cmd.weather.icing == "SEVERE"
+    assert weather_blocks_route(cmd.weather)
+    assert not weather_blocks_route(None)

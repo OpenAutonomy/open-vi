@@ -119,6 +119,8 @@ def test_publish_status_package() -> None:
     iso.publish_status_package_once()
     assert len(bus.published[MT_CONTROL_STATUS]) == 1
     assert "CAPABILITY_COMMAND" in bus.published[MT_CONTROL_STATUS][-1]
+    assert "PrimaryController" in bus.published[MT_CONTROL_STATUS][-1]
+    assert "SecondaryController" not in bus.published[MT_CONTROL_STATUS][-1]
     assert len(bus.published[MT_RESPONSE_PLAN_EXECUTION_STATUS]) == 1
     idle = bus.published[MT_RESPONSE_PLAN_EXECUTION_STATUS][-1]
     assert "ACTUAL" in idle

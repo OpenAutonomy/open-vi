@@ -72,7 +72,7 @@ when the platform accepts.
 | 1.2.5.2 | Convert and Upload Route | Partial | Stores `MA_RoutePlan`, notifies, and emits File*. No native VMS conversion. |
 | 1.2.5.3 | Prepare for Route Activation | Supported | Isolator state `READY_FOR_ACTIVATION`. |
 | 1.2.5.4 | Receive Deactivate Route | Supported | DEACTIVATE from ready is store-only. From ACTIVATED, Capability CANCEL clears the live activity and publishes `FAILED` execution status. Both publish `MissionPlanActivationStatus` as `DEACTIVATED`. |
-| 1.2.5.5 | Validate Route Plan | Partial | VALID if stored XML parses to a finite non-empty path, else INVALID. `WeatherAreaData` is ignored. Envelope rejects stay on ACTIVATE (backend). |
+| 1.2.5.5 | Validate Route Plan | Supported | VALID if stored XML parses to a finite non-empty path and `WeatherAreaData` (when present) is not SEVERE/EXTREME icing or turbulence. Envelope rejects stay on ACTIVATE (backend). |
 | 1.2.5.6 | VI Deactivate Route | Supported | When a route-sourced command returns `FAILED` or `CANCELED`, Isolator commits `DEACTIVATED`, publishes `FAILED` execution status and `MissionPlanActivationStatus`, and clears the live sessions. No inbound command status. Direct flight commands do not abort a route. |
 
 ### 1.2.6 Status
@@ -80,7 +80,7 @@ when the platform accepts.
 | § | Interaction | Status | Notes |
 | --- | --- | --- | --- |
 | 1.2.6.1 | Exchange Heartbeat — Subsystem Status Reports | Supported | Periodic `ServiceStatus` / `SubsystemStatus`; answers both data-request MTs. |
-| 1.2.6.2 | Publish Control Status | Partial | Periodic `ControlStatus` with VI as primary. No `SecondaryController` when MA holds control. |
+| 1.2.6.2 | Publish Control Status | Supported | Periodic `ControlStatus` with VI as `PrimaryController`. The acquired controller is `SecondaryController` when both SystemID and ServiceID are stored. No `MissionControl`, `CapabilityManager`, or `TransferInfo`. |
 | 1.2.6.3 | Query Airfield Update | Partial | `AirfieldReport`. No runway geometry or linked TO/L `MA_RoutePlan`. |
 | 1.2.6.4 | Query Route Plan | Partial | Returns stored plans plus File*. No preloaded takeoff/landing set. |
 | 1.2.6.5 | Receive Barometric Pressure | Supported | `MA_SystemManagementRequest` QNH → `apply_system_management` → COMPLETED or REJECTED. |
@@ -113,7 +113,7 @@ Direction is relative to VI. Core unless noted.
 | ActivityPlanExecutionStatus | out | Not supported | |
 | AirfieldReport | out | Partial | Query handler home field |
 | ComponentStatus | out | Supported | |
-| ControlStatus | out | Partial | Primary only |
+| ControlStatus | out | Partial | Primary plus `SecondaryController` when assigned. No `MissionControl`. |
 | ElevationRequest | in | Not supported | MUC MA Terrain Data |
 | ElevationRequestStatus | out | Not supported | MUC MA Terrain Data |
 | FileLocation | out | Supported | Stored routes |
@@ -147,7 +147,7 @@ Direction is relative to VI. Core unless noted.
 | ResponsePlanExecutionStatus | out | Supported | Idle Source, or live ExecutionState plus plan ids |
 | RouteActivityPlanExecutionStatus | out | Not supported | |
 | RoutePlanExecutionStatus | out | Supported | EXECUTING / COMPLETED / FAILED |
-| RoutePlanValidationCommand | in | Partial | Presence check |
+| RoutePlanValidationCommand | in | Supported | Geometry plus `WeatherAreaData` override |
 | RoutePlanValidationCommandStatus | out | Supported | |
 | RoutePlanValidation | out | Supported | |
 | ServiceStatus | inout | Supported | |
