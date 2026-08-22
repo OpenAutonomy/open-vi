@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "open-vi"
-version = "0.2.0"
+version = "0.3.0"
 description = "A-GRA ASK 5.0a Vehicle Interface (VI) — open-vi"
 readme = "README.md"
 requires-python = ">=3.11"

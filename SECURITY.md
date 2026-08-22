@@ -35,4 +35,4 @@ it lets a peer do something that posture does not already permit.
 
 ## Supported versions
 
-`0.2.0` on `main` is the supported line. The API may still change.
+`0.3.0` on `main` is the supported line. The API may still change.

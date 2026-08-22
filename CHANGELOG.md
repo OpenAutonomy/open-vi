@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-22
+
+Isolator-owned Core Volume rows Isolator can fill from existing
+state: airfield TO/L, unpair, C2 designations, inbound task,
+failsafe, MissionControl, and idle execution-status. PX4 flies
+curve following. FEATURES is Isolator coverage: 34/36 §1.2
+Supported; leftover rows are other MUC.
+
 ### Added
 
 - Query Airfield Update (§1.2.6.3): `AirfieldReport` includes runway
@@ -169,6 +177,7 @@ Isolator injection that was not product behavior is gone.
 - Container image on GHCR (`ghcr.io/openautonomy/open-vi`), built from
   `Containerfile` on a public push to `main`.
 
+[0.3.0]: https://github.com/OpenAutonomy/open-vi/releases/tag/v0.3.0
 [0.2.0]: https://github.com/OpenAutonomy/open-vi/releases/tag/v0.2.0
 
 ## [0.1.0] - 2026-08-17
