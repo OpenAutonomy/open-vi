@@ -164,6 +164,11 @@ airspeed, heading, battery percent, and endurance duration into
 `TspiSnapshot`. Duration is `time_remaining` when PX4 estimates
 it, otherwise remaining mAh / current from consumed and
 percent. Fuel mass is omitted; SITL has no mass sensor.
+`get_faults()` is periodic BIT from `SYS_STATUS` sensor
+present / enabled / health. An unhealthy watched sensor is
+`SET`. Link-down is `PX4_LINK_DOWN`. Clean BIT is a cleared
+sentinel. `get_subsystem_status()` is `DEGRADED` when BIT
+fails.
 
 ## Tests
 

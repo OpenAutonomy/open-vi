@@ -265,6 +265,8 @@ def test_publish_status_package() -> None:
     assert "ACTUAL" in task_plan
     assert "EXECUTING" not in task_plan
     assert len(bus.published[MT_SUBSYSTEM_STATUS]) == 1
+    assert len(bus.published[MT_MA_FAULT]) == 1
+    assert local_name(parse_xml(bus.published[MT_MA_FAULT][-1])) == "MA_Fault"
 
 
 def test_barometric_system_management_completed() -> None:

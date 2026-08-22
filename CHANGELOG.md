@@ -8,6 +8,9 @@
   `BATTERY_STATUS.time_remaining`, or remaining capacity inferred
   from consumed mAh and current. Fuel mass is omitted; SITL has
   no mass sensor.
+- PX4 periodic BIT: `get_faults()` maps `SYS_STATUS` sensor
+  health (and link-down) to `MA_Fault`. Isolator emits that on
+  the status-package tick.
 
 ### Changed
 

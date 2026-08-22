@@ -330,11 +330,11 @@ def _in_mission(ctx: IsolatorContext) -> bool:
 
 
 def publish_status_package(ctx: IsolatorContext) -> None:
-    """Publish the three periodic status outs, in harness order.
+    """Publish the periodic status outs, in harness order.
 
-    ``ControlStatus``, the plan-execution family, then
-    ``SubsystemStatus``. Gated by ``publish_status_package`` on
-    Isolator start and tick.
+    ``ControlStatus``, the plan-execution family,
+    ``SubsystemStatus``, then ``MA_Fault`` from the latest BIT.
+    Gated by ``publish_status_package`` on Isolator start and tick.
     """
     snap = ctx.platform.snapshot()
     service = ctx.platform.get_service_status()
@@ -363,9 +363,10 @@ def publish_status_package(ctx: IsolatorContext) -> None:
             ctx.identity, subsystem, schema_version=schema, mode=mode
         ),
     )
+    publish_faults(ctx)
     LOGGER.info(
         "Published status package: ControlStatus, "
-        "plan execution, SubsystemStatus"
+        "plan execution, SubsystemStatus, Fault"
     )
 
 

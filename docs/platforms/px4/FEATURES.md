@@ -34,8 +34,8 @@ AGL so a hold at the advertised home HAE is inside the bound.
 | `active_flight_activity()` | Supported | Live mission activity or none. |
 | `get_vehicle_state()` | Supported | Lat/lon/alt, NED, attitude, airspeed, heading, battery percent, endurance duration from `BATTERY_STATUS`. Fuel mass is omitted (no mass sensor). |
 | `get_service_status()` | Supported | Process uptime. |
-| `get_subsystem_status()` | Supported | From SYS_STATUS when linked. |
-| `get_faults()` | Partial | Link-down and cleared sentinels. No periodic BIT. |
+| `get_subsystem_status()` | Supported | `OPERATE` when BIT is clean; `DEGRADED` on link-down or an unhealthy watched sensor. |
+| `get_faults()` | Supported | Periodic BIT from `SYS_STATUS` sensor present/enabled/health. Link-down is `PX4_LINK_DOWN`. Healthy is a cleared sentinel. |
 | `apply_system_management()` | Supported | Writes `SENS_BARO_QNH` and the local TSPI snapshot. |
 | `close()` | Supported | Closes the MAVLink link. |
 

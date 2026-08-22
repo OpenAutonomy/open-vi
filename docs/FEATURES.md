@@ -27,7 +27,7 @@ here.
 | 1.2.1.1 | Collision Avoidance | Supported | Republishes the capability pair when `snapshot()` readiness is `CONSTRAINT_COLLISION_AVOIDANCE`. Vehicle-driven detect-and-avoid is the backend. |
 | 1.2.1.2 | Intra-Vehicle Comms Failure | Supported | Periodic `SubsystemStatus`; answers `SubsystemStatusDataRequest`. Loss-of-comms plan is MA's. |
 | 1.2.1.3 | MA Failsafe | Supported | Inbound `MA_Response` is stored and acked with `MA_SystemNotification`. `ActivatePlan` that names a stored `MA_RoutePlan` submits `WAYPOINT_FOLLOWING` and publishes execution status. Trigger monitoring is not implemented. If the plan is not stored, Isolator notifies only. |
-| 1.2.1.4 | Mechanical Damage Reporting | Supported | Publishes `MA_Fault` from `get_faults()`. Periodic BIT is the backend. |
+| 1.2.1.4 | Mechanical Damage Reporting | Supported | Publishes `MA_Fault` from `get_faults()` on the status-package tick and on ServiceStatusDataRequest. PX4 BIT is `SYS_STATUS` sensor health. |
 | 1.2.1.5 | Sensor Failure | Supported | Publishes `SubsystemStatus` then `MA_Fault` when the platform reports them. |
 
 ### 1.2.2 Control and tasking
@@ -122,7 +122,7 @@ Direction is relative to VI. Core unless noted.
 | MA_ControlAssignment | out | Supported | On control request and VI unpair |
 | MA_ControlRequest | in | Supported | ACQUIRE / STEAL / RELEASE |
 | MA_ControlRequestStatus | out | Supported | |
-| MA_Fault | out | Supported | From `get_faults()`; heartbeat may emit |
+| MA_Fault | out | Supported | From `get_faults()` on the status-package tick and ServiceStatusDataRequest |
 | MA_FlightActivity | out | Supported | |
 | MA_FlightCapability | inout | Supported | Published from the advertised (C2-redacted) offer; inbound designations are consumed |
 | MA_FlightCapabilityStatus | out | Supported | |

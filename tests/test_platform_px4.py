@@ -212,6 +212,60 @@ def test_px4_battery_time_remaining_is_duration() -> None:
     plat.close()
 
 
+def test_px4_link_down_is_set_fault() -> None:
+    plat = Px4MavlinkAdapter(connection=None, autoconnect=False)
+    faults = plat.get_faults()
+    assert len(faults) == 1
+    assert faults[0].fault_code == "PX4_LINK_DOWN"
+    assert faults[0].fault_state == "SET"
+    assert plat.get_subsystem_status().subsystem_state == "DEGRADED"
+    plat.close()
+
+
+def test_px4_healthy_sys_status_is_cleared_fault() -> None:
+    plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg("HEARTBEAT", base_mode=0, system_status=4)
+    )
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "SYS_STATUS",
+            battery_remaining=80,
+            onboard_control_sensors_present=32,
+            onboard_control_sensors_enabled=32,
+            onboard_control_sensors_health=32,
+        )
+    )
+    faults = plat.get_faults()
+    assert len(faults) == 1
+    assert faults[0].fault_code == "NO_FAULT"
+    assert faults[0].fault_state == "CLEARED"
+    assert plat.get_subsystem_status().subsystem_state == "OPERATE"
+    plat.close()
+
+
+def test_px4_unhealthy_gps_is_set_fault() -> None:
+    plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg("HEARTBEAT", base_mode=0, system_status=4)
+    )
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "SYS_STATUS",
+            battery_remaining=80,
+            onboard_control_sensors_present=32,
+            onboard_control_sensors_enabled=32,
+            onboard_control_sensors_health=0,
+        )
+    )
+    faults = plat.get_faults()
+    assert len(faults) == 1
+    assert faults[0].fault_code == "SENSOR_GPS"
+    assert faults[0].fault_state == "SET"
+    assert plat.get_subsystem_status().subsystem_state == "DEGRADED"
+    plat.close()
+
+
 def test_px4_battery_duration_from_consumed_and_current() -> None:
     plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
     plat._ingest(  # pylint: disable=protected-access

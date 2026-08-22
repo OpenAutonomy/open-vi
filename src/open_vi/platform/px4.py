@@ -19,7 +19,7 @@ import threading
 import time
 from dataclasses import dataclass, replace
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from open_vi.domain import (
     CommandResult,
@@ -64,6 +64,20 @@ _TROPO_MAX_M = 11000.0
 _HDG_UNKNOWN_CDEG = 65535.0
 _TEMP_MIN_K = 150.0
 _TEMP_MAX_K = 400.0
+_FAULT_NS = uuid5(NAMESPACE_URL, "https://openautonomy.org/open-vi/px4")
+# MAV_SYS_STATUS_SENSOR_* bits PX4 reports on SYS_STATUS.
+_SENSOR_BITS: tuple[tuple[int, str, str], ...] = (
+    (1, "SENSOR_3D_GYRO", "3D gyro unhealthy"),
+    (2, "SENSOR_3D_ACCEL", "3D accel unhealthy"),
+    (4, "SENSOR_3D_MAG", "3D mag unhealthy"),
+    (8, "SENSOR_BARO", "Absolute pressure unhealthy"),
+    (16, "SENSOR_DIFF_PRESSURE", "Differential pressure unhealthy"),
+    (32, "SENSOR_GPS", "GPS unhealthy"),
+    (32768, "SENSOR_MOTOR_OUTPUTS", "Motor outputs unhealthy"),
+    (65536, "SENSOR_RC_RECEIVER", "RC receiver unhealthy"),
+    (2097152, "SENSOR_AHRS", "AHRS unhealthy"),
+    (33554432, "SENSOR_BATTERY", "Battery unhealthy"),
+)
 
 
 def _isa_temperature_k(alt_m: float) -> float:
@@ -111,6 +125,25 @@ def _tas_to_gs_mps(
 def _wrap_heading_deg(heading_deg: float) -> float:
     """Wrap degrees into ``[0, 360)``."""
     return heading_deg % 360.0
+
+
+def _unhealthy_sensor_faults(
+    present: int, enabled: int, health: int
+) -> tuple[FaultSnapshot, ...]:
+    """SET faults for sensors that are present, enabled, and not healthy."""
+    faults: list[FaultSnapshot] = []
+    watched = present & enabled
+    for bit, code, description in _SENSOR_BITS:
+        if watched & bit and health & bit == 0:
+            faults.append(
+                FaultSnapshot(
+                    fault_id=uuid5(_FAULT_NS, code),
+                    fault_code=code,
+                    fault_state="SET",
+                    fault_description=description,
+                )
+            )
+    return tuple(faults)
 
 
 def _battery_duration_s(
@@ -271,6 +304,9 @@ class _MavCache:
     time_remaining_s: float | None = None
     current_battery_a: float | None = None
     current_consumed_mah: float | None = None
+    sensors_present: int = 0
+    sensors_enabled: int = 0
+    sensors_health: int = 0
     system_status: int = 0
     armed: bool = False
     base_mode: int = 0
@@ -997,18 +1033,49 @@ class Px4MavlinkAdapter(PlatformPort):
         )
 
     def get_subsystem_status(self) -> SubsystemStatusSnapshot:
-        """Fixed flight-subsystem row (``OPERATE``, model ``px4``)."""
+        """Flight-subsystem row. ``DEGRADED`` when BIT or the link fails."""
+        state = "DEGRADED" if self._bit_failed() else "OPERATE"
         return SubsystemStatusSnapshot(
             subsystem_id=self._subsystem_id,
             subsystem_label="flight",
-            subsystem_state="OPERATE",
+            subsystem_state=state,
             model="px4",
             software_version="sitl",
         )
 
     def get_faults(self) -> tuple[FaultSnapshot, ...]:
-        """Cleared sentinel fault. This adapter does not raise PX4 faults."""
+        """Periodic BIT from SYS_STATUS, or link-down / cleared sentinel."""
+        if not self._link_ok():
+            return (
+                FaultSnapshot(
+                    fault_id=uuid5(_FAULT_NS, "PX4_LINK_DOWN"),
+                    fault_code="PX4_LINK_DOWN",
+                    fault_state="SET",
+                    fault_description="PX4 MAVLink link is down",
+                ),
+            )
+        with self._lock:
+            faults = _unhealthy_sensor_faults(
+                self._cache.sensors_present,
+                self._cache.sensors_enabled,
+                self._cache.sensors_health,
+            )
+        if faults:
+            return faults
         return (FaultSnapshot(fault_id=self._fault_id),)
+
+    def _bit_failed(self) -> bool:
+        """True when the link is down or a watched sensor is unhealthy."""
+        if not self._link_ok():
+            return True
+        with self._lock:
+            return bool(
+                _unhealthy_sensor_faults(
+                    self._cache.sensors_present,
+                    self._cache.sensors_enabled,
+                    self._cache.sensors_health,
+                )
+            )
 
     def apply_system_management(self, *, qnh_kpa: float | None = None) -> str:
         """Write QNH to PX4 and the local TSPI snapshot.
@@ -1154,6 +1221,15 @@ class Px4MavlinkAdapter(PlatformPort):
             elif mtype == "SYS_STATUS":
                 rem = int(getattr(msg, "battery_remaining", -1))
                 self._cache.battery_remaining = rem if rem >= 0 else None
+                self._cache.sensors_present = int(
+                    getattr(msg, "onboard_control_sensors_present", 0)
+                )
+                self._cache.sensors_enabled = int(
+                    getattr(msg, "onboard_control_sensors_enabled", 0)
+                )
+                self._cache.sensors_health = int(
+                    getattr(msg, "onboard_control_sensors_health", 0)
+                )
             elif mtype == "BATTERY_STATUS":
                 rem = int(getattr(msg, "battery_remaining", -1))
                 if rem >= 0:
