@@ -89,9 +89,11 @@ publish `MA_FlightCommand` / `MA_FlightCommandStatus`. It publishes
 `ResponsePlanExecutionStatus`, `RoutePlanExecutionStatus`, and
 `MA_MissionPlanExecutionStatus` as `EXECUTING`. Route-sourced
 completion is `COMPLETED`; DEACTIVATE of an executing plan is
-`FAILED`. Inbound DEACTIVATE also publishes
-`MissionPlanActivationStatus` as `DEACTIVATED`. The status package
-republishes the execution family on the tick.
+`FAILED`. A route-sourced `FAILED` / `CANCELED` from the platform
+is the same abort without an inbound command. Inbound DEACTIVATE
+and that VI abort publish `MissionPlanActivationStatus` as
+`DEACTIVATED`. The status package republishes the execution family
+on the tick.
 
 Route, query, and control publish `QUEUED`, `PROCESSING`, then
 `COMPLETED`. Advertise, TSPI, faults, subsystem status, and the

@@ -15,9 +15,9 @@ class RouteExecution:
     """One live route: plan id, route-sourced command id, and state.
 
     :meth:`activate` starts EXECUTING. The tick calls :meth:`complete`
-    when the platform finishes that command. DEACTIVATE calls
-    :meth:`mark_failed` so publishers can emit FAILED, then
-    :meth:`clear`.
+    when the platform finishes that command. Inbound DEACTIVATE and
+    a route-sourced ``FAILED`` / ``CANCELED`` call :meth:`mark_failed`
+    so publishers can emit FAILED, then :meth:`clear`.
     """
 
     def __init__(self) -> None:

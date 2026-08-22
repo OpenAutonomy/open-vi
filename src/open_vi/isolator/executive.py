@@ -195,8 +195,10 @@ class Isolator:
         """Apply session transitions, then publish command completions.
 
         Route-sourced ``COMPLETED`` calls ``execution.complete`` before
-        emit so plan-execution outs see that state. After emit, a
-        ``COMPLETED`` platform activity calls ``flight.clear``.
+        emit so plan-execution outs see that state. Route-sourced
+        ``FAILED`` / ``CANCELED`` abort the live route after emit
+        (no ``MA_FlightCommandStatus``). After emit, a ``COMPLETED``
+        platform activity calls ``flight.clear``.
         """
         updates = self.ctx.platform.poll_command_updates()
         for command_id, result in updates:
@@ -206,12 +208,44 @@ class Isolator:
             ):
                 self.ctx.execution.complete()
         publishers.publish_command_updates(self.ctx, updates)
+        for command_id, result in updates:
+            if self.ctx.execution.is_sourced(
+                command_id
+            ) and result.processing_state in {"FAILED", "CANCELED"}:
+                self._abort_executing_route()
         for result in (pair[1] for pair in updates):
             if result.processing_state != "COMPLETED":
                 continue
             activity = self.ctx.platform.active_flight_activity()
             if activity is not None and activity.activity_state == "COMPLETED":
                 self.ctx.flight.clear()
+
+    def _abort_executing_route(self) -> None:
+        """VI-initiated abort: FAILED execution, DEACTIVATED, then clear.
+
+        Used when the platform reports the route-sourced command as
+        ``FAILED`` or ``CANCELED``. Does not send CANCEL. There is no
+        inbound command status.
+        """
+        ctx = self.ctx
+        plan_id = ctx.execution.plan_id
+        if plan_id is None:
+            return
+        stored = ctx.routes.get(plan_id)
+        mission_id = stored.mission_plan_id if stored is not None else None
+        ctx.execution.mark_failed()
+        publishers.publish_plan_execution(ctx)
+        ctx.routes.commit(plan_id, "DEACTIVATED")
+        if mission_id is not None:
+            publishers.publish_mission_plan_activation_status(
+                ctx,
+                mission_plan_id=mission_id,
+                plan_activation_state="DEACTIVATED",
+                route_plan_id=plan_id,
+            )
+        ctx.execution.clear()
+        ctx.flight.clear()
+        LOGGER.info("VI abort route %s → DEACTIVATED", plan_id.hex)
 
     def _advertise_control(self) -> None:
         """Publish MA_FlightCapability and MA_FlightCapabilityStatus."""

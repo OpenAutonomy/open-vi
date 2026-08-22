@@ -28,7 +28,8 @@ not fly a path, track heading, or advance curve progress.
 Capability NEW starts an activity when idle. Activity UPDATE replaces
 the live path id without minting a new activity. CANCEL clears the
 activity when the command id is known. Tests call
-`complete_flight_command` when they need a later `COMPLETED`.
+`complete_flight_command` when they need a later `COMPLETED`, or
+`fail_flight_command` for `FAILED` / `CANCELED` (VI abort tests).
 
 `get_vehicle_state()` returns a fixed `TspiSnapshot` (constructor or
 default pose). `apply_system_management` stores QNH on that snapshot

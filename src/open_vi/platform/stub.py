@@ -220,8 +220,44 @@ class StubPlatform(PlatformPort):
         )
         return cid
 
+    def fail_flight_command(
+        self,
+        command_id: UUID | None = None,
+        *,
+        processing_state: str = "FAILED",
+    ) -> UUID | None:
+        """Queue ``FAILED`` or ``CANCELED`` for the next poll. Stub only.
+
+        *command_id* defaults to the first ``ACCEPTED`` command.
+        Returns that id, or ``None`` if nothing was live. Clears the
+        live activity. Other *processing_state* values raise
+        ``ValueError``. Not on :class:`PlatformPort`.
+        """
+        if processing_state not in {"FAILED", "CANCELED"}:
+            raise ValueError(
+                f"Unsupported fail processing_state: {processing_state}"
+            )
+        cid = command_id
+        if cid is None:
+            cid = next(
+                (
+                    key
+                    for key, state in self._commands.items()
+                    if state == "ACCEPTED"
+                ),
+                None,
+            )
+        if cid is None or self._commands.get(cid) != "ACCEPTED":
+            return None
+        self._commands[cid] = processing_state
+        self._activity = None
+        self._pending_updates.append(
+            (cid, CommandResult(processing_state=processing_state))
+        )
+        return cid
+
     def poll_command_updates(self) -> list[tuple[UUID, CommandResult]]:
-        """Drain terminal states queued by :meth:`complete_flight_command`."""
+        """Drain terminals from complete/fail flight-command helpers."""
         updates = list(self._pending_updates)
         self._pending_updates.clear()
         return updates

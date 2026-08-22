@@ -33,6 +33,7 @@ from open_vi.codec.mts import (
     MT_FLIGHT_CAPABILITY_STATUS,
     MT_FLIGHT_COMMAND_STATUS,
     MT_MA_FAULT,
+    MT_MISSION_PLAN_ACTIVATION_STATUS,
     MT_MISSION_PLAN_EXECUTION_STATUS,
     MT_NAVIGATION_REPORT,
     MT_POSITION_REPORT_DETAILED,
@@ -41,6 +42,7 @@ from open_vi.codec.mts import (
     MT_SUBSYSTEM_STATUS,
     MT_WEATHER_OBSERVATION,
 )
+from open_vi.codec.route import build_mission_plan_activation_status
 from open_vi.codec.status import build_ma_fault, build_subsystem_status
 from open_vi.codec.vehicle_state import (
     build_component_status,
@@ -133,6 +135,27 @@ def plan_execution_for_publish(
         route_plan_id=route_id,
         mission_plan_id=mission_id,
         activity_id=ctx.flight.activity_id,
+    )
+
+
+def publish_mission_plan_activation_status(
+    ctx: IsolatorContext,
+    *,
+    mission_plan_id: UUID,
+    plan_activation_state: str,
+    route_plan_id: UUID | None = None,
+) -> None:
+    """Publish ``MissionPlanActivationStatus``. Emit only."""
+    ctx.bus.publish(
+        MT_MISSION_PLAN_ACTIVATION_STATUS,
+        build_mission_plan_activation_status(
+            ctx.identity,
+            mission_plan_id=mission_plan_id,
+            plan_activation_state=plan_activation_state,
+            route_plan_id=route_plan_id,
+            schema_version=ctx.schema_version,
+            mode=ctx.message_mode,
+        ),
     )
 
 

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
+
+import pytest
 
 from isolator_helpers import attach_isolator
 from open_vi.asb import InMemoryAsb
@@ -651,3 +653,98 @@ def test_flight_command_only_skips_route_execution() -> None:
     iso.publish_status_package_once()
     assert MT_ROUTE_PLAN_EXECUTION_STATUS not in bus.published
     assert "ACTUAL" in bus.published[MT_RESPONSE_PLAN_EXECUTION_STATUS][-1]
+
+
+def _activate_primed_route(
+    bus: InMemoryAsb, platform: StubPlatform
+) -> tuple[Isolator, UUID, UUID]:
+    route_id = uuid4()
+    mission_id = uuid4()
+    iso = Isolator(
+        bus,
+        platform=platform,
+        config=IsolatorConfig(tick_republish_status=False),
+    )
+    iso.ctx.routes.prime(
+        route_id,
+        mission_plan_id=mission_id,
+        state="READY_FOR_ACTIVATION",
+        xml=_plan_xml(iso, route_id),
+    )
+    attach_isolator(iso)
+    bus.publish(
+        MT_ACTIVATION_COMMAND,
+        build_sample_route_activation_command(
+            iso.identity,
+            command_id=uuid4(),
+            mission_plan_id=mission_id,
+            route_plan_id=route_id,
+            command_type="ACTIVATE",
+        ),
+    )
+    return iso, route_id, mission_id
+
+
+@pytest.mark.parametrize("terminal", ("FAILED", "CANCELED"))
+def test_vi_deactivate_on_route_sourced_terminal(terminal: str) -> None:
+    bus = InMemoryAsb()
+    platform = StubPlatform()
+    iso, route_id, mission_id = _activate_primed_route(bus, platform)
+    command_id = iso.ctx.execution.command_id
+    assert command_id is not None
+    assert (
+        platform.fail_flight_command(command_id, processing_state=terminal)
+        == command_id
+    )
+    before_cmd = len(bus.published.get(MT_FLIGHT_COMMAND_STATUS, ()))
+    iso.publish_command_updates_once()
+    assert len(bus.published.get(MT_FLIGHT_COMMAND_STATUS, ())) == before_cmd
+    stored = iso.ctx.routes.get(route_id)
+    assert stored is not None
+    assert stored.plan_state == "DEACTIVATED"
+    assert iso.ctx.execution.plan_id is None
+    assert iso.ctx.flight.activity_id is None
+    assert platform.active_flight_activity() is None
+    failed = bus.published[MT_ROUTE_PLAN_EXECUTION_STATUS][-1]
+    assert "FAILED" in failed
+    assert route_id.hex in failed.replace("-", "")
+    activation = bus.published[MT_MISSION_PLAN_ACTIVATION_STATUS][-1]
+    assert local_name(parse_xml(activation)) == "MissionPlanActivationStatus"
+    assert "DEACTIVATED" in activation
+    assert mission_id.hex in activation.replace("-", "")
+    assert route_id.hex in activation.replace("-", "")
+    assert MT_ACTIVATION_STATUS in bus.published
+    # ACTIVATE ladder only; VI abort has no inbound command status.
+    statuses = bus.published[MT_ACTIVATION_STATUS]
+    assert all("DEACTIVATED" not in xml for xml in statuses)
+
+
+def test_direct_flight_fail_does_not_abort_route() -> None:
+    bus = InMemoryAsb()
+    platform = StubPlatform()
+    iso = Isolator(
+        bus,
+        platform=platform,
+        config=IsolatorConfig(tick_republish_status=False),
+    )
+    attach_isolator(iso)
+    command_id = uuid4()
+    bus.publish(
+        MT_FLIGHT_COMMAND,
+        build_sample_waypoint_command(
+            iso.identity,
+            command_id=command_id,
+            capability_id=iso.ctx.state.capability_id,
+        ),
+    )
+    assert platform.fail_flight_command(command_id) == command_id
+    iso.publish_command_updates_once()
+    assert MT_MISSION_PLAN_ACTIVATION_STATUS not in bus.published
+    assert MT_ROUTE_PLAN_EXECUTION_STATUS not in bus.published
+    assert "FAILED" in bus.published[MT_FLIGHT_COMMAND_STATUS][-1]
+
+
+def test_fail_flight_command_rejects_unknown_state() -> None:
+    platform = StubPlatform()
+    with pytest.raises(ValueError, match="processing_state"):
+        platform.fail_flight_command(processing_state="COMPLETED")

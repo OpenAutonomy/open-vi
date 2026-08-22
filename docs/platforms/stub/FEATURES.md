@@ -43,6 +43,7 @@ Activity UPDATE only. Unknown modes are `REJECTED`.
 | `inject_contingency` | Partial | Collision avoidance, mechanical damage, sensor failure, clear. Not vehicle-driven. |
 | `set_readiness` | Supported | Test helper. |
 | `complete_flight_command` | Supported | Queues `COMPLETED` for Isolator tick. |
+| `fail_flight_command` | Supported | Queues `FAILED` or `CANCELED` for Isolator tick. Clears the live activity. |
 
 ## Route ACTIVATE
 

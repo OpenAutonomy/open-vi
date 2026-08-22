@@ -73,7 +73,7 @@ when the platform accepts.
 | 1.2.5.3 | Prepare for Route Activation | Supported | Isolator state `READY_FOR_ACTIVATION`. |
 | 1.2.5.4 | Receive Deactivate Route | Supported | DEACTIVATE from ready is store-only. From ACTIVATED, Capability CANCEL clears the live activity and publishes `FAILED` execution status. Both publish `MissionPlanActivationStatus` as `DEACTIVATED`. |
 | 1.2.5.5 | Validate Route Plan | Partial | VALID if stored XML parses to a finite non-empty path, else INVALID. `WeatherAreaData` is ignored. Envelope rejects stay on ACTIVATE (backend). |
-| 1.2.5.6 | VI Deactivate Route | Not supported | No VI-initiated `MissionPlanActivationStatus` / `RoutePlanExecutionStatus` abort. |
+| 1.2.5.6 | VI Deactivate Route | Supported | When a route-sourced command returns `FAILED` or `CANCELED`, Isolator commits `DEACTIVATED`, publishes `FAILED` execution status and `MissionPlanActivationStatus`, and clears the live sessions. No inbound command status. Direct flight commands do not abort a route. |
 
 ### 1.2.6 Status
 
@@ -84,7 +84,7 @@ when the platform accepts.
 | 1.2.6.3 | Query Airfield Update | Partial | `AirfieldReport`. No runway geometry or linked TO/L `MA_RoutePlan`. |
 | 1.2.6.4 | Query Route Plan | Partial | Returns stored plans plus File*. No preloaded takeoff/landing set. |
 | 1.2.6.5 | Receive Barometric Pressure | Supported | `MA_SystemManagementRequest` QNH → `apply_system_management` → COMPLETED or REJECTED. |
-| 1.2.6.6 | Receive Execution Status | Partial | Live `ResponsePlanExecutionStatus` / `RoutePlanExecutionStatus` / `MA_MissionPlanExecutionStatus` on ACTIVATE, tick, COMPLETED, and DEACTIVATE-as-FAILED. `TaskStatus` on task command. No `ActivityPlan*` / `TaskPlanExecutionStatus`. |
+| 1.2.6.6 | Receive Execution Status | Partial | Live `ResponsePlanExecutionStatus` / `RoutePlanExecutionStatus` / `MA_MissionPlanExecutionStatus` on ACTIVATE, tick, COMPLETED, inbound DEACTIVATE-as-FAILED, and VI abort. `TaskStatus` on task command. No `ActivityPlan*` / `TaskPlanExecutionStatus`. |
 | 1.2.6.7 | Receive Vehicle Performance Values | Partial | Publishes the offer the platform advertised. No Isolator airspeed or load-factor curves. |
 | 1.2.6.8 | Receive Vehicle State Data | Partial | Activity, `MA_PositionReportDetailed`, `WeatherObservation`, `NavigationReport`, `ComponentStatus`. Kinematics are populated; fuel mass/duration are not. |
 | 1.2.6.9 | Request Terrain Data | Not supported | MUC **MA Terrain Data**. No `ElevationRequest*`. |
@@ -140,7 +140,7 @@ Direction is relative to VI. Core unless noted.
 | MA_TaskCommand | in | Supported | |
 | MA_TaskCommandStatus | out | Supported | |
 | MA_Task | inout | Partial | Reject suggest only |
-| MissionPlanActivationStatus | out | Partial | On inbound DEACTIVATE (`DEACTIVATED`). No VI-initiated abort. |
+| MissionPlanActivationStatus | out | Supported | On inbound DEACTIVATE and VI abort (`DEACTIVATED`). |
 | NavigationReport | out | Partial | Percent; no fuel mass/duration |
 | QueryDataRequest | in | Partial | Capability, route, airfield |
 | QueryDataRequestStatus | out | Partial | No `Result` |
