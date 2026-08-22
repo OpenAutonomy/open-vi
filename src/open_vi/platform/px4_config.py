@@ -1,6 +1,7 @@
 """User-asserted PX4 vehicle facts a running instance does not publish.
 
-The adapter copies these onto ``snapshot()`` / ``get_vehicle_state()``.
+The adapter copies these onto ``snapshot()``. Remaining fuel is
+live telemetry, not this file.
 Isolator publishes whatever the port returns. This module does not
 talk to PX4 or check the values against the vehicle.
 """
@@ -22,7 +23,7 @@ except ImportError:  # pragma: no cover - 3.11+ is required
 
 _SPEED_REFS = frozenset({"GROUNDSPEED", "TRUE_AIRSPEED", "CALIBRATED_AIRSPEED"})
 _ALT_REFS = frozenset({"WGS_HAE", "AGL", "MSL", "ALTITUDE_BAROMETRIC"})
-_TOP_KEYS = frozenset({"fuel_mass_kg", "envelope", "performance"})
+_TOP_KEYS = frozenset({"envelope", "performance"})
 _ENVELOPE_KEYS = frozenset({"min_rel_alt_m", "max_rel_alt_m"})
 _PERF_KEYS = frozenset(
     {
@@ -55,9 +56,8 @@ _ACCEL_KEYS = frozenset(
 
 @dataclass(frozen=True)
 class Px4VehicleConfig:
-    """Static PX4 facts that are not live MAVLink telemetry."""
+    """Static PX4 envelope facts that are not live MAVLink telemetry."""
 
-    fuel_mass_kg: float | None = None
     min_rel_alt_m: float | None = None
     max_rel_alt_m: float | None = None
     profile: FlightModeProfile = FlightModeProfile()
@@ -94,9 +94,6 @@ def load_px4_vehicle_config(path: str | Path) -> Px4VehicleConfig:
 
 def _parse_vehicle(data: dict[str, Any]) -> Px4VehicleConfig:
     _reject_unknown("config", data, _TOP_KEYS)
-    fuel = _optional_float(data, "fuel_mass_kg")
-    if fuel is not None and fuel < 0.0:
-        raise ValueError("fuel_mass_kg must be >= 0")
     envelope = data.get("envelope", {})
     if envelope is None:
         envelope = {}
@@ -110,7 +107,6 @@ def _parse_vehicle(data: dict[str, Any]) -> Px4VehicleConfig:
         raise ValueError("performance must be a table")
     _reject_unknown("performance", performance, _PERF_KEYS)
     return Px4VehicleConfig(
-        fuel_mass_kg=fuel,
         min_rel_alt_m=_optional_float(envelope, "min_rel_alt_m"),
         max_rel_alt_m=_optional_float(envelope, "max_rel_alt_m"),
         profile=_parse_profile(performance),

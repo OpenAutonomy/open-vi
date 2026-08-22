@@ -23,7 +23,6 @@ def _write(tmp_path: Path, text: str) -> Path:
 
 def test_example_vehicle_toml_loads() -> None:
     cfg = load_px4_vehicle_config(EXAMPLE)
-    assert cfg.fuel_mass_kg == pytest.approx(2.5)
     assert cfg.min_rel_alt_m == pytest.approx(10.0)
     assert cfg.max_rel_alt_m == pytest.approx(500.0)
     assert len(cfg.profile.max_airspeed) == 2
@@ -44,6 +43,12 @@ def test_missing_file_raises(tmp_path: Path) -> None:
 
 def test_unknown_key_raises(tmp_path: Path) -> None:
     path = _write(tmp_path, "dry_mass_kg = 10\n")
+    with pytest.raises(ValueError, match="unknown keys"):
+        load_px4_vehicle_config(path)
+
+
+def test_remaining_fuel_is_not_a_config_field(tmp_path: Path) -> None:
+    path = _write(tmp_path, "fuel_mass_kg = 2.5\n")
     with pytest.raises(ValueError, match="unknown keys"):
         load_px4_vehicle_config(path)
 
@@ -80,15 +85,17 @@ def test_adapter_loads_config_path() -> None:
     plat = Px4MavlinkAdapter(
         connection=None, autoconnect=False, config_path=str(EXAMPLE)
     )
-    assert plat.get_vehicle_state().fuel_mass_kg == pytest.approx(2.5)
+    assert plat.get_vehicle_state().fuel_mass_kg is None
+    profile = plat.snapshot().offer.waypoint_profile
+    assert profile is not None
+    assert profile.max_climb_rate_mps == pytest.approx(5.0)
     plat.close()
 
 
-def test_adapter_applies_config_fuel_and_curves() -> None:
+def test_adapter_applies_config_curves() -> None:
     cfg = load_px4_vehicle_config(EXAMPLE)
     plat = Px4MavlinkAdapter(connection=None, autoconnect=False, config=cfg)
-    state = plat.get_vehicle_state()
-    assert state.fuel_mass_kg == pytest.approx(2.5)
+    assert plat.get_vehicle_state().fuel_mass_kg is None
     profile = plat.snapshot().offer.waypoint_profile
     assert profile is not None
     assert profile.min_altitude_m == pytest.approx(10.0)

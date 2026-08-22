@@ -32,7 +32,7 @@ AGL so a hold at the advertised home HAE is inside the bound.
 | `submit_flight_command()` | Supported | `WAYPOINT_FOLLOWING`, `CURVE_FOLLOWING`, and `HSA_CSA`. Link down is `CAPABILITY_UNAVAILABLE`. |
 | `poll_command_updates()` | Supported | `COMPLETED` from `MISSION_ITEM_REACHED`. |
 | `active_flight_activity()` | Supported | Live mission activity or none. |
-| `get_vehicle_state()` | Supported | Lat/lon/alt, NED, attitude, airspeed, heading, battery percent, endurance duration from `BATTERY_STATUS`. Fuel mass is omitted unless the vehicle TOML sets `fuel_mass_kg`. |
+| `get_vehicle_state()` | Supported | Lat/lon/alt, NED, attitude, airspeed, heading, battery percent, endurance duration from `BATTERY_STATUS`. Fuel mass is omitted (no mass sensor). |
 | `get_service_status()` | Supported | Process uptime. |
 | `get_subsystem_status()` | Supported | `OPERATE` when BIT is clean; `DEGRADED` on link-down or an unhealthy watched sensor. |
 | `get_faults()` | Supported | Periodic BIT from `SYS_STATUS` sensor present/enabled/health. Link-down is `PX4_LINK_DOWN`. Healthy is a cleared sentinel. |

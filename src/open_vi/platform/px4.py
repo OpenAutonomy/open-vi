@@ -392,7 +392,6 @@ class Px4MavlinkAdapter(PlatformPort):
         )
         self._takeoff_alt_m = takeoff_alt_m
         self._vehicle = _load_vehicle(config, config_path)
-        self._fuel_mass_kg = self._vehicle.fuel_mass_kg
         self._min_rel_alt_m = _first_present(
             min_rel_alt_m,
             self._vehicle.min_rel_alt_m,
@@ -1051,7 +1050,6 @@ class Px4MavlinkAdapter(PlatformPort):
                 true_airspeed_mps=c.airspeed_mps,
                 calibrated_airspeed_mps=c.airspeed_mps,
                 fuel_percent=fuel,
-                fuel_mass_kg=self._fuel_mass_kg,
                 fuel_duration_s=duration_s,
                 magnetic_heading_rad=heading_rad,
                 component_id=self._component_id,

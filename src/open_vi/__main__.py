@@ -51,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--px4-config",
         default=os.environ.get("PX4_CONFIG"),
-        help="PX4 vehicle TOML for facts PX4 does not publish",
+        help="PX4 vehicle TOML for the static flight envelope",
     )
     args = parser.parse_args(argv)
     logging.basicConfig(

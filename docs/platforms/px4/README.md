@@ -80,13 +80,13 @@ adapter's capture disk, not a shared Mission Autonomy constant.
 Relative-altitude envelope defaults to 10–500 m AGL
 (`PX4_MIN_REL_ALT_M`, `PX4_MAX_REL_ALT_M`).
 
-`--px4-config` / `PX4_CONFIG` is an optional TOML file for facts
-a running PX4 instance does not publish: remaining fuel mass,
+`--px4-config` / `PX4_CONFIG` is an optional TOML file for the
+static flight envelope a running PX4 instance does not publish:
 airspeed samples, acceleration limits, and climb / turn /
-descent rates. Isolator publishes whatever this adapter puts on
-`snapshot()` and `get_vehicle_state()`. The file is not checked
-against the vehicle; that is the operator's. An example ships as
-`examples/px4-vehicle.toml`.
+descent rates. Remaining fuel is live telemetry, not this file.
+Isolator publishes whatever this adapter puts on `snapshot()`.
+The file is not checked against the vehicle; that is the
+operator's. An example ships as `examples/px4-vehicle.toml`.
 
 ```bash
 open-vi --platform px4 --px4-config examples/px4-vehicle.toml
@@ -179,8 +179,7 @@ heartbeat and position are fresher than 10 s; otherwise
 airspeed, heading, battery percent, and endurance duration into
 `TspiSnapshot`. Duration is `time_remaining` when PX4 estimates
 it, otherwise remaining mAh / current from consumed and
-percent. Fuel mass is omitted unless the vehicle TOML sets
-`fuel_mass_kg`.
+percent. Fuel mass is omitted; SITL has no mass sensor.
 `get_faults()` is periodic BIT from `SYS_STATUS` sensor
 present / enabled / health. An unhealthy watched sensor is
 `SET`. Link-down is `PX4_LINK_DOWN`. Clean BIT is a cleared

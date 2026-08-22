@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- PX4 vehicle TOML is the static flight envelope only. Remaining
+  fuel mass is omitted; it is live state, not a config field.
+
 ## [0.4.0] - 2026-08-22
 
 PX4 fills facts Isolator already published: leftover HSA refs,

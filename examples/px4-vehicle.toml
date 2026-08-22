@@ -1,9 +1,8 @@
-# PX4 vehicle facts a running PX4 instance does not publish.
-# open-vi copies these onto MA_FlightCapability and NavigationReport.
+# Static PX4 flight envelope. A running instance does not publish
+# these. Remaining fuel is live telemetry, not this file.
+# open-vi copies these onto MA_FlightCapability.
 # You own whether the numbers match the vehicle PX4 is flying.
 # Values below are illustrative, not SITL defaults.
-
-fuel_mass_kg = 2.5
 
 # Relative-altitude envelope (same meaning as PX4_MIN/MAX_REL_ALT_M).
 # Advertised as AGL until home HAE is known, then as HAE.
