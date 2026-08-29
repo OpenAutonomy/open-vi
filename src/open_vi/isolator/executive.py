@@ -9,6 +9,7 @@ never imports STOMP, ActiveMQ, MAVLink, PX4, or Stub.
 from __future__ import annotations
 
 import logging
+import queue
 import threading
 import time
 
@@ -37,9 +38,12 @@ class Isolator:
 
     ``attach`` opens the session and subscribes each handler's inbound
     types. ``start`` attaches, advertises control, publishes the
-    optional status package and vehicle-state outs, and runs the tick
-    loop. Tests that need inbound only call ``attach``; tests that
-    need capability on the bus call ``advertise_once``. Construction
+    optional status package and vehicle-state outs, and runs the
+    Isolator thread. That thread is the only live writer: inbound is
+    queued onto it, and the tick runs there. Tests that need inbound
+    only call ``attach``; tests that need capability on the bus call
+    ``advertise_once``. Those entry points take the same session lock
+    so a test ``dispatch`` cannot race a test ``_tick``. Construction
     preloads home takeoff and landing ``MA_RoutePlan`` into the store.
     """
 
@@ -78,6 +82,9 @@ class Isolator:
             airfield=airfield,
         )
         self._handlers = default_handlers()
+        self._session = threading.RLock()
+        self._inbound: queue.SimpleQueue[tuple[str, str]] = queue.SimpleQueue()
+        self._wakeup = threading.Event()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._attached = False
@@ -108,10 +115,39 @@ class Isolator:
     def dispatch(self, message_type: str, xml: str) -> None:
         """Route one inbound body to the first handler that claims it.
 
-        Same path as the live bus callback. Tests call this directly.
-        Handler exceptions are logged so one fault cannot drop the
-        rest of the session. Unknown types are logged and ignored.
+        Same path as the live bus callback. After ``start``, the body
+        is queued onto the Isolator thread so inbound and tick cannot
+        interleave. Before ``start`` (tests), the handler runs here
+        under the session lock. Handler exceptions are logged so one
+        fault cannot drop the rest of the session. Unknown types are
+        logged and ignored.
         """
+        if self._on_isolator_thread():
+            self._dispatch_locked(message_type, xml)
+            return
+        if self._isolator_thread_running():
+            self._inbound.put((message_type, xml))
+            self._wakeup.set()
+            return
+        self._dispatch_locked(message_type, xml)
+
+    def _isolator_thread_running(self) -> bool:
+        """True when the Isolator thread is alive (live ``start`` path)."""
+        thread = self._thread
+        return thread is not None and thread.is_alive()
+
+    def _on_isolator_thread(self) -> bool:
+        """True when the caller is already the Isolator thread."""
+        thread = self._thread
+        return thread is not None and threading.current_thread() is thread
+
+    def _dispatch_locked(self, message_type: str, xml: str) -> None:
+        """Run one handler under the session lock."""
+        with self._session:
+            self._dispatch_unlocked(message_type, xml)
+
+    def _dispatch_unlocked(self, message_type: str, xml: str) -> None:
+        """Run one handler. Caller holds ``_session`` or is the sole writer."""
         for handler in self._handlers:
             if handler.handles(message_type):
                 try:
@@ -121,15 +157,30 @@ class Isolator:
                 return
         LOGGER.warning("no handler for %s", message_type)
 
+    def _drain_inbound(self) -> None:
+        """Handle queued inbound bodies on the Isolator thread."""
+        while True:
+            try:
+                message_type, xml = self._inbound.get_nowait()
+            except queue.Empty:
+                return
+            self._dispatch_locked(message_type, xml)
+
     def start(self) -> None:
-        """Attach, advertise, publish optional startup outs, and tick."""
+        """Attach, advertise, publish optional startup outs, and tick.
+
+        Startup outs run under the session lock on this thread. After
+        the Isolator thread starts, inbound is queued onto it.
+        """
         self.attach()
-        self._advertise_control()
-        if self.config.publish_status_package:
-            self.publish_status_package_once()
-        if self.config.publish_vehicle_state:
-            self.publish_vehicle_state_once()
+        with self._session:
+            self._advertise_control()
+            if self.config.publish_status_package:
+                publishers.publish_status_package(self.ctx)
+            if self.config.publish_vehicle_state:
+                publishers.publish_vehicle_state(self.ctx)
         self._stop.clear()
+        self._wakeup.clear()
         self._thread = threading.Thread(
             target=self._tick_loop, name="open-vi-isolator", daemon=True
         )
@@ -141,8 +192,9 @@ class Isolator:
         )
 
     def stop(self) -> None:
-        """Stop the tick loop, disconnect the bus, and clear attach state."""
+        """Stop the Isolator thread, disconnect the bus, clear attach."""
         self._stop.set()
+        self._wakeup.set()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
             self._thread = None
@@ -163,31 +215,38 @@ class Isolator:
 
     def advertise_once(self) -> None:
         """Publish capability and status without starting the tick loop."""
-        self._advertise_control()
+        with self._session:
+            self._advertise_control()
 
     def publish_status_package_once(self) -> None:
         """Publish ControlStatus, execution status, and SubsystemStatus."""
-        publishers.publish_status_package(self.ctx)
+        with self._session:
+            publishers.publish_status_package(self.ctx)
 
     def publish_faults_once(self) -> None:
         """Publish ``MA_Fault`` from the platform fault list."""
-        publishers.publish_faults(self.ctx)
+        with self._session:
+            publishers.publish_faults(self.ctx)
 
     def publish_subsystem_status_once(self) -> None:
         """Publish ``SubsystemStatus`` from the platform."""
-        publishers.publish_subsystem_status(self.ctx)
+        with self._session:
+            publishers.publish_subsystem_status(self.ctx)
 
     def publish_capability_status_once(self) -> None:
         """Publish ``MA_FlightCapabilityStatus`` only."""
-        publishers.publish_capability_status(self.ctx)
+        with self._session:
+            publishers.publish_capability_status(self.ctx)
 
     def publish_flight_capability_once(self) -> None:
         """Publish ``MA_FlightCapability`` only."""
-        publishers.publish_flight_capability(self.ctx)
+        with self._session:
+            publishers.publish_flight_capability(self.ctx)
 
     def publish_vehicle_state_once(self) -> None:
         """Publish the five Receive Vehicle State Data outs."""
-        publishers.publish_vehicle_state(self.ctx)
+        with self._session:
+            publishers.publish_vehicle_state(self.ctx)
 
     def publish_command_updates_once(self) -> None:
         """Apply session transitions, then publish command completions.
@@ -198,6 +257,11 @@ class Isolator:
         (no ``MA_FlightCommandStatus``). After emit, a ``COMPLETED``
         platform activity calls ``flight.clear``.
         """
+        with self._session:
+            self._publish_command_updates()
+
+    def _publish_command_updates(self) -> None:
+        """Command-completion transitions. Caller holds ``_session``."""
         updates = self.ctx.platform.poll_command_updates()
         for command_id, result in updates:
             if (
@@ -250,16 +314,25 @@ class Isolator:
         publishers.advertise_control(self.ctx)
 
     def _tick_loop(self) -> None:
-        """Call ``_tick`` every ``tick_period_s``.
+        """Drain inbound, then ``_tick`` every ``tick_period_s``.
 
-        Log and keep going on error.
+        Inbound wakes the wait so a command is not delayed until the
+        next period. Log and keep going on tick error.
         """
         period = self.config.tick_period_s
-        while not self._stop.wait(period):
-            try:
-                self._tick()
-            except Exception:  # pylint: disable=broad-exception-caught
-                LOGGER.exception("Isolator tick failed")
+        next_tick = time.monotonic() + period
+        while not self._stop.is_set():
+            self._drain_inbound()
+            remaining = next_tick - time.monotonic()
+            if remaining <= 0:
+                try:
+                    self._tick()
+                except Exception:  # pylint: disable=broad-exception-caught
+                    LOGGER.exception("Isolator tick failed")
+                next_tick = time.monotonic() + period
+                continue
+            self._wakeup.wait(timeout=remaining)
+            self._wakeup.clear()
 
     def _tick(self) -> None:
         """One period: command completions, control offer, status, TSPI.
@@ -270,20 +343,22 @@ class Isolator:
         the offer is not ``AVAILABLE``, unpairs an acquired
         controller (§1.2.2.8).
         """
-        self.publish_command_updates_once()
-        snap = self.ctx.platform.snapshot()
-        if (
-            self.ctx.state.last_availability != snap.readiness.availability
-            or self.config.tick_republish_status
-        ):
-            # Republish offer+status so a late harness subscriber still sees
-            # control-mode authorization (not only the initial advertise).
-            self._advertise_control()
-        unpair_if_unavailable(self.ctx, snap.readiness.availability)
-        if self.config.publish_status_package:
-            self.publish_status_package_once()
-        if self.config.publish_vehicle_state:
-            self.publish_vehicle_state_once()
+        with self._session:
+            self._publish_command_updates()
+            snap = self.ctx.platform.snapshot()
+            if (
+                self.ctx.state.last_availability != snap.readiness.availability
+                or self.config.tick_republish_status
+            ):
+                # Republish offer+status so a late harness subscriber
+                # still sees control-mode authorization (not only the
+                # initial advertise).
+                self._advertise_control()
+            unpair_if_unavailable(self.ctx, snap.readiness.availability)
+            if self.config.publish_status_package:
+                publishers.publish_status_package(self.ctx)
+            if self.config.publish_vehicle_state:
+                publishers.publish_vehicle_state(self.ctx)
 
 
 def _preload_home_routes(

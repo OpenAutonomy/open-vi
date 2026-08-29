@@ -52,8 +52,9 @@ state: accept/reject, TSPI, and status. Description is in
 
 `Px4MavlinkAdapter` is telemetry, `WAYPOINT_FOLLOWING` (mission
 upload, arm, takeoff, mission start), and `HSA_CSA` (offboard
-hold). Description and SITL are in
-[platforms/px4](platforms/px4/README.md). Coverage is in
+hold). Link, mission, offboard, and telemetry are sibling
+modules under `src/open_vi/platform/px4/`. Description and SITL
+are in [platforms/px4](platforms/px4/README.md). Coverage is in
 [platforms/px4/FEATURES.md](platforms/px4/FEATURES.md).
 
 `import open_vi.platform` loads the port and Stub. PX4 is imported only

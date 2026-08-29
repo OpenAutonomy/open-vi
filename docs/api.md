@@ -58,4 +58,14 @@ Generated from source docstrings.
 
 ::: open_vi.platform.px4
 
+::: open_vi.platform.px4.adapter
+
+::: open_vi.platform.px4.link
+
+::: open_vi.platform.px4.mission
+
+::: open_vi.platform.px4.offboard
+
+::: open_vi.platform.px4.telemetry
+
 ::: open_vi.platform.px4_config

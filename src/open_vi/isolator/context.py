@@ -23,6 +23,7 @@ class IsolatorContext:
     ``state`` holds single-owner fields. ``flight`` and ``execution``
     own the live activity and route. ``routes`` is the plan ladder.
     ``airfield`` is the preloaded home field and TO/L plan ids.
+    Isolator serializes writers: inbound and tick do not interleave.
     """
 
     bus: AsbPort

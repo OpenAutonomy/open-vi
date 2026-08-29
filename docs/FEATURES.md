@@ -4,15 +4,33 @@ Coverage of the ASK 5.0a Vehicle Interface Volume (v. 5.0a, 21 APR
 2026). Sections follow that volume: §1.2 interactions, then §1.3
 compliance and the Minimum Message Set.
 
-This is Isolator coverage of the Core Mission Use Case unless a row
-names another MUC. Backend coverage is under
-[platforms](platforms/README.md).
+This is the Core Mission Use Case unless a row names another MUC.
+A single Supported is not a flown product. Each §1.2 row has three
+axes. Adapter detail is under [platforms](platforms/README.md).
 
-| Status | Meaning |
+| Axis | Meaning |
 | --- | --- |
-| Supported | Required messages and sequence run as Isolator product behavior |
-| Partial | Some of the sequence or fields exist; required steps, execution, or fields are missing |
-| Not supported | No handler or outbound |
+| Sequence | Isolator runs the required messages and ladder |
+| Execution | Isolator applies the product effect (submit, activate, assign, validate). Store-and-ack or republish-only is not this |
+| Backend | A vehicle adapter performs the work Isolator submitted or supplies the facts Isolator publishes |
+
+| Status | Sequence / Execution | Backend |
+| --- | --- | --- |
+| Supported | The axis is complete for Core | — |
+| Partial | Some steps or fields; notes say what is missing | — |
+| Not supported | No handler, no effect, or other MUC | — |
+| n/a | — | Isolator-only; no vehicle work |
+| PX4 | — | `Px4MavlinkAdapter` does the work (SITL) |
+| PX4 partial | — | PX4 does part of the work |
+| none | — | No adapter implements it |
+
+Stub is the default test backend. It accepts or injects; it does not
+fly. Stub rows live in [platforms/stub](platforms/stub/FEATURES.md).
+PX4 rows live in [platforms/px4](platforms/px4/FEATURES.md).
+
+§1.2 Core (36 rows): Sequence 34 Supported, 2 Not supported
+(terrain, weapons). Execution 16 Supported, 5 Partial, 13 n/a, 2
+Not supported. Backend is not 34/36.
 
 Volume §1.4 (Mission and Flight Autonomy Capabilities) allocates work
 to MA or FA. It is not a VI interface checklist, so it is not repeated
@@ -22,41 +40,41 @@ here.
 
 ### 1.2.1 Contingencies
 
-| § | Interaction | Status | Notes |
-| --- | --- | --- | --- |
-| 1.2.1.1 | Collision Avoidance | Supported | Republishes the capability pair when `snapshot()` readiness is `CONSTRAINT_COLLISION_AVOIDANCE`. Vehicle-driven detect-and-avoid is the backend. |
-| 1.2.1.2 | Intra-Vehicle Comms Failure | Supported | Periodic `SubsystemStatus`; answers `SubsystemStatusDataRequest`. Loss-of-comms plan is MA's. |
-| 1.2.1.3 | MA Failsafe | Supported | Inbound `MA_Response` is stored and acked with `MA_SystemNotification`. `ActivatePlan` that names a stored `MA_RoutePlan` submits `WAYPOINT_FOLLOWING` and publishes execution status. Trigger monitoring is not implemented. If the plan is not stored, Isolator notifies only. |
-| 1.2.1.4 | Mechanical Damage Reporting | Supported | Publishes `MA_Fault` from `get_faults()` on the status-package tick and on ServiceStatusDataRequest. PX4 BIT is `SYS_STATUS` sensor health. |
-| 1.2.1.5 | Sensor Failure | Supported | Publishes `SubsystemStatus` then `MA_Fault` when the platform reports them. |
+| § | Interaction | Seq | Exec | Back | Notes |
+| --- | --- | --- | --- | --- | --- |
+| 1.2.1.1 | Collision Avoidance | Supported | n/a | none | Republishes the capability pair when `snapshot()` readiness is `CONSTRAINT_COLLISION_AVOIDANCE`. Detect-and-avoid is vehicle-driven; no adapter has it. |
+| 1.2.1.2 | Intra-Vehicle Comms Failure | Supported | n/a | n/a | Periodic `SubsystemStatus`; answers `SubsystemStatusDataRequest`. Loss-of-comms plan is MA's. |
+| 1.2.1.3 | MA Failsafe | Supported | Partial | PX4 | Ingest `MA_Response` and notify. `ActivatePlan` of a stored route submits `WAYPOINT_FOLLOWING`. No trigger monitor. Missing plan: notify only. |
+| 1.2.1.4 | Mechanical Damage Reporting | Supported | n/a | PX4 | Publishes `MA_Fault` from `get_faults()` on the status-package tick and ServiceStatusDataRequest. PX4 BIT is `SYS_STATUS` sensor health. |
+| 1.2.1.5 | Sensor Failure | Supported | n/a | PX4 | Publishes `SubsystemStatus` then `MA_Fault` when the platform reports them. |
 
 ### 1.2.2 Control and tasking
 
-| § | Interaction | Status | Notes |
-| --- | --- | --- | --- |
-| 1.2.2.1 | Control by Curve Following | Supported | Isolator parses the NURBS and submits Capability NEW / Activity UPDATE / Capability CANCEL → status and `MA_FlightActivity`. PX4 samples the spine to a mission. Stub accepts only. `CurveTraversingParameters` and `AppendCurve` are not implemented. |
-| 1.2.2.2 | Control by HSA/CSA Command | Supported | Isolator parses and submits Capability NEW / Activity UPDATE / Capability CANCEL → status and `MA_FlightActivity`. PX4 converts leftover refs onto the offboard hold. `SpeedOptimization` is `REJECTED`. Stub accepts only. |
-| 1.2.2.3 | Control by Waypoint Following | Supported | Capability NEW / Activity UPDATE / Capability CANCEL → status and `MA_FlightActivity`. Optional reject `MA_Task`. Rejects may include `CannotComplyDetails/ValidationResult` from the platform. Taxi, ATC hold, and payload actions are not implemented. |
-| 1.2.2.4 | Control Mode Authorization | Supported | Publishes `MA_FlightCapability` then `MA_FlightCapabilityStatus` from `snapshot()`. Performance profile is the backend. |
-| 1.2.2.5 | MA-VI Command Task | Supported | Inbound `MA_Task` is stored and acked with `MA_SystemNotification`. Own reject-suggest publishes are ignored. `MA_TaskCommand` NEW / CANCEL → status and `TaskStatus`. |
-| 1.2.2.6 | Modify Capabilities | Supported | Isolator republishes the capability pair when `snapshot()` availability or the advertised offer changes. Mode reduction from another SystemID is §1.2.2.9. There is no separate FA command. |
-| 1.2.2.7 | Receive Control Request | Supported | ACQUIRE / STEAL / RELEASE with status ladder and `MA_ControlAssignment`. VI-initiated revoke is §1.2.2.8. |
-| 1.2.2.8 | Unpair Control Assignment | Supported | When availability is not `AVAILABLE`, Isolator publishes `CANCELED` `MA_ControlRequestStatus` for the stored acquire/steal RequestID and `MA_ControlAssignment` as `REMOVED`, then clears the assignment. |
-| 1.2.2.9 | Update C2 Control Designations | Supported | Inbound `MA_FlightCapability` from another SystemID intersects the platform offer. Isolator readvertises the redacted pair. Own publishes are ignored. `ObjectState` `REMOVED` clears the overlay. Commands for a redacted mode are `REJECTED`. |
+| § | Interaction | Seq | Exec | Back | Notes |
+| --- | --- | --- | --- | --- | --- |
+| 1.2.2.1 | Control by Curve Following | Supported | Supported | PX4 partial | Isolator parses NURBS and submits NEW / UPDATE / CANCEL → status and `MA_FlightActivity`. PX4 samples the spine to a mission. No `CurveTraversingParameters` or `AppendCurve`. |
+| 1.2.2.2 | Control by HSA/CSA Command | Supported | Supported | PX4 | Isolator parses and submits NEW / UPDATE / CANCEL. PX4 leftover refs convert onto the offboard hold. `SpeedOptimization` is `REJECTED`. |
+| 1.2.2.3 | Control by Waypoint Following | Supported | Supported | PX4 | NEW / UPDATE / CANCEL → status and `MA_FlightActivity`. Optional reject `MA_Task`. Rejects may include `CannotComplyDetails`. No taxi, ATC hold, or payload actions. |
+| 1.2.2.4 | Control Mode Authorization | Supported | n/a | PX4 | Publishes `MA_FlightCapability` then `MA_FlightCapabilityStatus` from `snapshot()`. Performance profile is the adapter. |
+| 1.2.2.5 | MA-VI Command Task | Supported | Partial | none | Ingest `MA_Task` and notify. `MA_TaskCommand` NEW / CANCEL → status and `TaskStatus`. No vehicle task. |
+| 1.2.2.6 | Modify Capabilities | Supported | n/a | PX4 | Republishes when `snapshot()` availability or the advertised offer changes. Mode reduction from another SystemID is §1.2.2.9. |
+| 1.2.2.7 | Receive Control Request | Supported | Supported | n/a | ACQUIRE / STEAL / RELEASE with status ladder and `MA_ControlAssignment`. |
+| 1.2.2.8 | Unpair Control Assignment | Supported | Supported | n/a | When availability is not `AVAILABLE`, `CANCELED` status, `REMOVED` assignment, then clear. |
+| 1.2.2.9 | Update C2 Control Designations | Supported | Supported | n/a | Inbound `MA_FlightCapability` from another SystemID redacts the offer. Isolator readvertises. Commands for a redacted mode are `REJECTED`. |
 
 ### 1.2.3 COP
 
-| § | Interaction | Status | Notes |
-| --- | --- | --- | --- |
-| 1.2.3.1 | VI Updates to COP | Supported | Tick republishes the capability pair when `tick_republish_status` is on (default), plus activity, position, weather, navigation, component status, and the status package. |
+| § | Interaction | Seq | Exec | Back | Notes |
+| --- | --- | --- | --- | --- | --- |
+| 1.2.3.1 | VI Updates to COP | Supported | n/a | PX4 | Tick republishes the capability pair when `tick_republish_status` is on (default), plus activity, position, weather, navigation, component status, and the status package. Facts are the adapter's. |
 
 ### 1.2.4 Data validation
 
-| § | Interaction | Status | Notes |
-| --- | --- | --- | --- |
-| 1.2.4.1 | Checksum Validation | Supported | Stored routes emit `FileMetadata` with SHA-256. Query `FAILED` with `RequestProcessingStateReason` if stored XML no longer matches that digest. |
-| 1.2.4.2 | Query for Missing Data | Supported | Native MTs by default. `QueryIdentifiersOnly` returns `Result/ID` and no bodies. An empty match is `COMPLETED` with no `Result`. |
-| 1.2.4.3 | Route Plan Data Validation | Supported | Composition of the two rows above. |
+| § | Interaction | Seq | Exec | Back | Notes |
+| --- | --- | --- | --- | --- | --- |
+| 1.2.4.1 | Checksum Validation | Supported | Supported | n/a | Stored routes emit `FileMetadata` with SHA-256. Query `FAILED` if stored XML no longer matches. |
+| 1.2.4.2 | Query for Missing Data | Supported | Supported | n/a | Native MTs by default. `QueryIdentifiersOnly` is IDs only. Empty match is `COMPLETED` with no `Result`. |
+| 1.2.4.3 | Route Plan Data Validation | Supported | Supported | n/a | Composition of the two rows above. |
 
 ### 1.2.5 Route plan behaviors
 
@@ -66,49 +84,51 @@ waypoints from stored `MA_RoutePlan` XML. ACTIVATE submits
 `WAYPOINT_FOLLOWING` on `PlatformPort` and commits `ACTIVATED` only
 when the platform accepts.
 
-| § | Interaction | Status | Notes |
-| --- | --- | --- | --- |
-| 1.2.5.1 | Activate Route | Supported | Parses the stored path; submits Capability NEW or Activity UPDATE. Publishes `MA_FlightActivity`. Taxi, ATC hold, and payload actions are not implemented. |
-| 1.2.5.2 | Convert and Upload Route | Supported | Stores `MA_RoutePlan`, notifies, and emits File*. Native VMS conversion is the backend. |
-| 1.2.5.3 | Prepare for Route Activation | Supported | Isolator state `READY_FOR_ACTIVATION`. |
-| 1.2.5.4 | Receive Deactivate Route | Supported | DEACTIVATE from ready is store-only. From ACTIVATED, Capability CANCEL clears the live activity and publishes `FAILED` execution status. Both publish `MissionPlanActivationStatus` as `DEACTIVATED`. |
-| 1.2.5.5 | Validate Route Plan | Supported | VALID if stored XML parses to a finite non-empty path and `WeatherAreaData` (when present) is not SEVERE/EXTREME icing or turbulence. Envelope rejects stay on ACTIVATE (backend). |
-| 1.2.5.6 | VI Deactivate Route | Supported | When a route-sourced command returns `FAILED` or `CANCELED`, Isolator commits `DEACTIVATED`, publishes `FAILED` execution status and `MissionPlanActivationStatus`, and clears the live sessions. No inbound command status. Direct flight commands do not abort a route. |
+| § | Interaction | Seq | Exec | Back | Notes |
+| --- | --- | --- | --- | --- | --- |
+| 1.2.5.1 | Activate Route | Supported | Supported | PX4 | Parses the stored path; submits NEW or UPDATE. Publishes `MA_FlightActivity`. No taxi, ATC hold, or payload actions. |
+| 1.2.5.2 | Convert and Upload Route | Supported | Partial | none | Stores `MA_RoutePlan`, notifies, and emits File*. No native VMS conversion. |
+| 1.2.5.3 | Prepare for Route Activation | Supported | Supported | n/a | Isolator state `READY_FOR_ACTIVATION`. |
+| 1.2.5.4 | Receive Deactivate Route | Supported | Supported | PX4 | From ready: store-only. From ACTIVATED: Capability CANCEL and `FAILED` execution status. Both publish `MissionPlanActivationStatus` `DEACTIVATED`. |
+| 1.2.5.5 | Validate Route Plan | Supported | Partial | n/a | VALID if stored XML parses to a finite non-empty path and `WeatherAreaData` is not SEVERE/EXTREME icing or turbulence. Envelope rejects stay on ACTIVATE (adapter). |
+| 1.2.5.6 | VI Deactivate Route | Supported | Supported | PX4 | Route-sourced `FAILED` / `CANCELED` from the platform: `DEACTIVATED`, `FAILED` execution, clear sessions. Direct flight commands do not abort a route. |
 
 ### 1.2.6 Status
 
-| § | Interaction | Status | Notes |
-| --- | --- | --- | --- |
-| 1.2.6.1 | Exchange Heartbeat — Subsystem Status Reports | Supported | Periodic `ServiceStatus` / `SubsystemStatus`; answers both data-request MTs. |
-| 1.2.6.2 | Publish Control Status | Supported | Periodic `ControlStatus` with VI as `PrimaryController` and `MissionControl` (`ControllerSystemID` is Isolator; `InMission` when a flight, route, or task is live). The acquired controller is `SecondaryController` when both SystemID and ServiceID are stored. No `CapabilityManager` or `TransferInfo`. |
-| 1.2.6.3 | Query Airfield Update | Supported | `AirfieldReport` includes `Information/Runway` (direction, length, takeoff/landing Start+Limit). Query also emits the linked takeoff and landing `MA_RoutePlan`. |
-| 1.2.6.4 | Query Route Plan | Supported | Returns the preloaded TO/L set plus peer-uploaded plans and File*. |
-| 1.2.6.5 | Receive Barometric Pressure | Supported | `MA_SystemManagementRequest` QNH → `apply_system_management` → COMPLETED or REJECTED. |
-| 1.2.6.6 | Receive Execution Status | Supported | Live `ResponsePlanExecutionStatus` / `RoutePlanExecutionStatus` / `MA_MissionPlanExecutionStatus` on ACTIVATE, tick, COMPLETED, inbound DEACTIVATE-as-FAILED, and VI abort. Idle `ActivityPlanExecutionStatus`, `RouteActivityPlanExecutionStatus`, and `TaskPlanExecutionStatus` are SystemID + Source (no ActivityPlan / RouteActivityPlan / TaskPlan IDs). `TaskStatus` on task command. |
-| 1.2.6.7 | Receive Vehicle Performance Values | Supported | Isolator publishes `FlightCapabilityPerformanceProfile` from `snapshot()`. PX4 fills waypoint / HSA / curve altitude min/max. Airspeed, acceleration, and rate limits come from the optional PX4 vehicle TOML; Isolator does not invent them. |
-| 1.2.6.8 | Receive Vehicle State Data | Supported | Activity, `MA_PositionReportDetailed`, `WeatherObservation`, `NavigationReport`, `ComponentStatus` from `get_vehicle_state()`. Duration is emitted when the port has it. Fuel mass is the backend; Isolator does not invent it. PX4 omits mass (no sensor). |
-| 1.2.6.9 | Request Terrain Data | Not supported | MUC **MA Terrain Data**. No `ElevationRequest*`. |
-| 1.2.6.10 | Vehicle Status Reporting | Supported | Periodic `SubsystemStatus`. |
-| 1.2.6.11 | VI Responds to Query for Flight Capabilities | Supported | Query ladder then native `MA_FlightCapability`. `COMPLETED` includes `Result/ID` for the capability. |
+| § | Interaction | Seq | Exec | Back | Notes |
+| --- | --- | --- | --- | --- | --- |
+| 1.2.6.1 | Exchange Heartbeat — Subsystem Status Reports | Supported | n/a | n/a | Periodic `ServiceStatus` / `SubsystemStatus`; answers both data-request MTs. |
+| 1.2.6.2 | Publish Control Status | Supported | n/a | n/a | Isolator is `PrimaryController` and `MissionControl`. Acquired controller is `SecondaryController` when both IDs are stored. `InMission` when a flight, route, or task is live. No `CapabilityManager` or `TransferInfo`. |
+| 1.2.6.3 | Query Airfield Update | Supported | Partial | n/a | `AirfieldReport` runway geometry and linked TO/L `MA_RoutePlan`. The field is synthesized from first TSPI (1,500 m, heading 90°), not a surveyed airfield. |
+| 1.2.6.4 | Query Route Plan | Supported | Supported | n/a | Preloaded TO/L set plus peer-uploaded plans and File*. |
+| 1.2.6.5 | Receive Barometric Pressure | Supported | Supported | PX4 | `MA_SystemManagementRequest` QNH → `apply_system_management`. PX4 writes `SENS_BARO_QNH`. |
+| 1.2.6.6 | Receive Execution Status | Supported | n/a | PX4 | Live plan-execution outs on ACTIVATE, tick, COMPLETED, DEACTIVATE-as-FAILED, and VI abort. Idle activity / route-activity / task plan status is SystemID + Source only. |
+| 1.2.6.7 | Receive Vehicle Performance Values | Supported | n/a | PX4 partial | Isolator publishes `snapshot()`. PX4 fills waypoint / HSA / curve altitude min/max. Airspeed, acceleration, and rates come from optional vehicle TOML. |
+| 1.2.6.8 | Receive Vehicle State Data | Supported | n/a | PX4 partial | Activity, position, weather, navigation, component status from `get_vehicle_state()`. PX4 omits fuel mass (no sensor). Duration when the port has it. |
+| 1.2.6.9 | Request Terrain Data | Not supported | Not supported | none | MUC **MA Terrain Data**. No `ElevationRequest*`. |
+| 1.2.6.10 | Vehicle Status Reporting | Supported | n/a | PX4 | Periodic `SubsystemStatus` from the adapter. |
+| 1.2.6.11 | VI Responds to Query for Flight Capabilities | Supported | Supported | n/a | Query ladder then native `MA_FlightCapability`. `COMPLETED` includes `Result/ID`. |
 
 ### 1.2.7 Weapon employment
 
-| § | Interaction | Status | Notes |
-| --- | --- | --- | --- |
-| 1.2.7.1 | Validate Release Envelope | Not supported | No strike `TaskID` / release-envelope check. |
+| § | Interaction | Seq | Exec | Back | Notes |
+| --- | --- | --- | --- | --- | --- |
+| 1.2.7.1 | Validate Release Envelope | Not supported | Not supported | none | No strike `TaskID` / release-envelope check. |
 
 ## 1.3 Interface compliance
 
-| ID | Requirement | Status | Notes |
-| --- | --- | --- | --- |
-| MA-L1-015 | Support the VI MMS for signals tagged `VI = 1` | Partial | Core MMS Supported. `ElevationRequest*` is other MUC. `MA_ActionStatus` is not published. |
-| MA-L1-016 | Implement required VI feature-profile sequences (optional sequences excepted) | Supported | Required Core sequences. Terrain and weapons are other MUC. |
+| ID | Requirement | Seq | Exec | Notes |
+| --- | --- | --- | --- | --- |
+| MA-L1-015 | Support the VI MMS for signals tagged `VI = 1` | Partial | n/a | Core MMS Sequence Supported. `ElevationRequest*` is other MUC. `MA_ActionStatus` is not published. |
+| MA-L1-016 | Implement required VI feature-profile sequences (optional sequences excepted) | Supported | Partial | Required Core sequences run. Several rows have no Isolator effect or no adapter. Terrain and weapons are other MUC. |
 
 ### 1.3.1 VI MMS
 
-Direction is relative to VI. Core unless noted.
+Direction is relative to VI. Core unless noted. This table is
+**Sequence** (message present). Execution and Backend stay on the
+§1.2 rows.
 
-| Message | Direction | Status | Notes |
+| Message | Direction | Sequence | Notes |
 | --- | --- | --- | --- |
 | ActivityPlanExecutionStatus | out | Supported | Idle Source; no ActivityPlanID |
 | AirfieldReport | out | Supported | Home field with runway geometry |
@@ -126,7 +146,7 @@ Direction is relative to VI. Core unless noted.
 | MA_FlightActivity | out | Supported | |
 | MA_FlightCapability | inout | Supported | Published from the advertised (C2-redacted) offer; inbound designations are consumed |
 | MA_FlightCapabilityStatus | out | Supported | |
-| MA_FlightCommand | in | Supported | Three Core modes parsed; submit is the backend |
+| MA_FlightCommand | in | Supported | Three Core modes parsed; submit is Execution / Backend |
 | MA_FlightCommandStatus | out | Supported | Rejects may include `CannotComplyDetails` |
 | MA_MissionPlanActivationCommand | inout | Supported | Inbound ladder; ACTIVATE submits waypoints |
 | MA_MissionPlanActivationCommandStatus | out | Supported | |

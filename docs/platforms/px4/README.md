@@ -16,8 +16,14 @@ flowchart LR
   Px4 <-->|"MAVLink UDP"| SITL
 ```
 
-The port contract is in [PLATFORM.md](../../PLATFORM.md). What this
-adapter covers versus Isolator is in [FEATURES.md](FEATURES.md).
+The port contract is in [PLATFORM.md](../../PLATFORM.md). Backend
+coverage is in [FEATURES.md](FEATURES.md). Sequence and Execution
+are in the Volume table.
+
+The adapter composes four modules under `src/open_vi/platform/px4/`:
+link (MAVLink session), mission (waypoint upload), offboard (HSA
+hold), and telemetry (cache, BIT, TSPI). A second vehicle reuses
+those modules; it does not copy `Px4MavlinkAdapter`.
 
 The adapter does telemetry, `WAYPOINT_FOLLOWING`, `CURVE_FOLLOWING`,
 and `HSA_CSA`.

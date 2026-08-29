@@ -4,6 +4,15 @@
 
 ### Changed
 
+- Isolator session writes are serialized. After `start`, inbound is
+  queued onto the Isolator thread; `dispatch` and the tick take one
+  session lock so they cannot interleave.
+- FEATURES §1.2 rows split into Sequence, Execution, and Backend.
+  34/36 is Sequence only. Execution is 16 Supported, 5 Partial.
+  Stub is not a flown backend.
+- PX4 is a package: link, mission, offboard, and telemetry. The
+  adapter composes them. `from open_vi.platform.px4 import
+  Px4MavlinkAdapter` is unchanged.
 - PX4 vehicle TOML is the static flight envelope only. Remaining
   fuel mass is omitted; it is live state, not a config field.
 

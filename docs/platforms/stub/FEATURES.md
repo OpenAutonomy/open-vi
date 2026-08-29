@@ -1,12 +1,13 @@
 # Stub features
 
-Coverage of what `StubPlatform` does on `PlatformPort`. Isolator
-sequences and the VI MMS are in [FEATURES.md](../../FEATURES.md).
-The adapter description is in [README.md](README.md).
+Backend column for `StubPlatform` on `PlatformPort`. Sequence and
+Execution are in [FEATURES.md](../../FEATURES.md). Stub accepts or
+injects; it does not fly. The adapter description is in
+[README.md](README.md).
 
 | Status | Meaning |
 | --- | --- |
-| Supported | Stub implements the port behavior Isolator needs |
+| Supported | Stub implements the port hook Isolator calls |
 | Partial | Accept or inject exists; vehicle execution or fields are missing |
 | Not supported | Stub rejects or has no hook |
 
