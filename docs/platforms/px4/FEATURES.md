@@ -1,12 +1,12 @@
 # PX4 features
 
-Coverage of what `Px4MavlinkAdapter` does on `PlatformPort`. Isolator
-sequences and the VI MMS are in [FEATURES.md](../../FEATURES.md).
-Install and SITL are in [README.md](README.md).
+Backend column for `Px4MavlinkAdapter` on `PlatformPort`. Sequence
+and Execution are in [FEATURES.md](../../FEATURES.md). Install and
+SITL are in [README.md](README.md).
 
 | Status | Meaning |
 | --- | --- |
-| Supported | PX4 SITL runs the port behavior Isolator needs |
+| Supported | PX4 SITL runs the port behavior Isolator submitted |
 | Partial | Some fields or modes exist; execution or curves are missing |
 | Not supported | Adapter rejects or has no mapping |
 

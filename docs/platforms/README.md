@@ -4,8 +4,9 @@ A platform is one `PlatformPort` implementation. Isolator owns A-GRA
 sequences. The port contract is in [PLATFORM.md](../PLATFORM.md). How
 to add a backend is in [ADDING_A_VEHICLE.md](../ADDING_A_VEHICLE.md).
 
-Isolator Volume coverage is [FEATURES.md](../FEATURES.md). Each
-backend has its own README and FEATURES.
+Volume coverage is [FEATURES.md](../FEATURES.md) (Sequence,
+Execution, Backend). Each adapter page is the Backend column
+for that vehicle.
 
 | Backend | README | Features |
 | --- | --- | --- |

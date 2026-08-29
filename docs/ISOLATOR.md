@@ -38,9 +38,12 @@ sequenceDiagram
 
 `attach()` connects the bus, registers `dispatch`, and subscribes each
 handler's `inbound_mts`. `start()` attaches, advertises control, and runs
-the tick loop. Handlers parse with the codec, call `RouteStore` and/or
-`PlatformPort`, and publish replies. A message with no request or response
-id is dropped.
+the Isolator thread. After `start`, inbound XML is queued onto that
+thread; the loop drains the queue, then publishes the period outs.
+Handlers and the tick share one session lock so tests that call
+`dispatch` or `_tick` without `start` still cannot interleave. Handlers
+parse with the codec, call `RouteStore` and/or `PlatformPort`, and
+publish replies. A message with no request or response id is dropped.
 
 ## Sessions
 

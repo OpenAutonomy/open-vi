@@ -28,8 +28,8 @@ A-GRA route ladder.
 | Method | Role |
 | --- | --- |
 | `snapshot()` | Control offer and readiness (advertise / tick) |
-| `submit_flight_command()` | Accept or reject a flight command (Capability NEW/CANCEL or Activity UPDATE) |
-| `poll_command_updates()` | Terminal command states since last poll (default: none) |
+| `submit_flight_command()` | Accept or reject a flight command (Capability NEW/CANCEL or Activity UPDATE). Must return promptly — background the vehicle I/O and report failure through `poll_command_updates()` |
+| `poll_command_updates()` | Terminal command states reached since last poll — mission completion, or a background execution failure/cancellation (default: none) |
 | `active_flight_activity()` | Current activity for `MA_FlightActivity` |
 | `get_vehicle_state()` | TSPI, airdata, components (`TspiSnapshot`) |
 | `get_service_status()` | VI service heartbeat fields |
@@ -43,6 +43,13 @@ ladder is `RouteStore` on Isolator, not this ABC. ACTIVATE and
 DEACTIVATE call `submit_flight_command` with a waypoint path or
 CANCEL. `inject_contingency` is Stub-only and stays off the port.
 
+Isolator's inbound dispatch and periodic tick share one thread once
+`start()` runs, so `submit_flight_command` must not block on vehicle
+I/O — a slow call stalls every periodic publish until it returns.
+`Px4MavlinkAdapter` validates synchronously, accepts, then runs arm /
+upload / climb-wait on a background thread and reports a background
+failure or cancellation through `poll_command_updates()`.
+
 ## Backends
 
 `StubPlatform` is the default for tests and `open-vi`. It is deterministic
@@ -52,8 +59,9 @@ state: accept/reject, TSPI, and status. Description is in
 
 `Px4MavlinkAdapter` is telemetry, `WAYPOINT_FOLLOWING` (mission
 upload, arm, takeoff, mission start), and `HSA_CSA` (offboard
-hold). Description and SITL are in
-[platforms/px4](platforms/px4/README.md). Coverage is in
+hold). Link, mission, offboard, and telemetry are sibling
+modules under `src/open_vi/platform/px4/`. Description and SITL
+are in [platforms/px4](platforms/px4/README.md). Coverage is in
 [platforms/px4/FEATURES.md](platforms/px4/FEATURES.md).
 
 `import open_vi.platform` loads the port and Stub. PX4 is imported only

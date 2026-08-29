@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -408,8 +409,14 @@ def test_px4_rejects_hsa_magnetic_without_headings() -> None:
             ),
         )
     )
-    assert result.processing_state == "REJECTED"
-    assert result.reason == "STATE_OR_SETTINGS"
+    # Missing compass/EKF yaw is only discovered once the background
+    # execution resolves the heading, so it accepts, then fails async.
+    assert result.processing_state == "ACCEPTED"
+    plat._wait_exec_idle()  # pylint: disable=protected-access
+    updates = plat.poll_command_updates()
+    assert len(updates) == 1
+    assert updates[0][1].processing_state == "FAILED"
+    assert updates[0][1].reason == "STATE_OR_SETTINGS"
     plat.close()
 
 
@@ -562,6 +569,9 @@ def test_px4_mission_reached_completes_last_waypoint() -> None:
         )
     )
     assert result.processing_state == "ACCEPTED"
+    # Mission upload/arm/start run on the background exec thread; wait
+    # for it to finish before the vehicle can "reach" the waypoint.
+    plat._wait_exec_idle()  # pylint: disable=protected-access
     # Already airborne: takeoff is omitted, so the only item is seq 0.
     plat._ingest(  # pylint: disable=protected-access
         _FakeMsg("MISSION_ITEM_REACHED", seq=0)
@@ -870,6 +880,7 @@ def test_px4_hsa_accepts_and_streams(
     assert result.processing_state == "ACCEPTED"
     assert result.activity_id is not None
     assert plat.active_flight_activity() is not None
+    plat._wait_exec_idle()  # pylint: disable=protected-access
     assert conn.position_targets
     live = plat._hsa_live  # pylint: disable=protected-access
     assert live is not None
@@ -895,6 +906,7 @@ def test_px4_hsa_empty_holds_current(
         )
     )
     assert result.processing_state == "ACCEPTED"
+    plat._wait_exec_idle()  # pylint: disable=protected-access
     live = plat._hsa_live  # pylint: disable=protected-access
     assert live is not None
     assert live.heading_deg == pytest.approx(0.0)
@@ -1046,7 +1058,8 @@ def test_px4_hsa_execution_fail_uses_state_or_settings(
 ) -> None:
     plat = _airborne_px4(monkeypatch)
 
-    def fail(_hsa: HsaCsaSetpoint) -> None:
+    def fail(_hsa: HsaCsaSetpoint, *, cancel: object = None) -> None:
+        del cancel
         raise RuntimeError("COMMAND_ACK command=400 result=1")
 
     monkeypatch.setattr(plat, "_execute_hsa_csa", fail)
@@ -1059,8 +1072,13 @@ def test_px4_hsa_execution_fail_uses_state_or_settings(
             hsa=_hsa_in_band(),
         )
     )
-    assert result.processing_state == "REJECTED"
-    assert result.reason == "STATE_OR_SETTINGS"
+    # Execution now runs off-thread: accept up front, fail async.
+    assert result.processing_state == "ACCEPTED"
+    plat._wait_exec_idle()  # pylint: disable=protected-access
+    updates = plat.poll_command_updates()
+    assert len(updates) == 1
+    assert updates[0][1].processing_state == "FAILED"
+    assert updates[0][1].reason == "STATE_OR_SETTINGS"
     plat.close()
 
 
@@ -1101,6 +1119,7 @@ def test_px4_hsa_activity_update_replaces_vector(
     assert updated.processing_state == "ACCEPTED"
     assert updated.new_activity is False
     assert updated.activity_id == live_id
+    plat._wait_exec_idle()  # pylint: disable=protected-access
     live = plat._hsa_live  # pylint: disable=protected-access
     assert live is not None
     assert live.heading_deg == pytest.approx(180.0)
@@ -1166,6 +1185,125 @@ def test_px4_hsa_capability_new_while_live_rejected(
     )
     assert second.processing_state == "REJECTED"
     assert plat.active_flight_activity() is not None
+    plat.close()
+
+
+def test_px4_waypoint_submit_returns_before_climb_completes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """submit_flight_command must not block on the climb wait itself."""
+    pytest.importorskip("pymavlink")
+    conn = _FakeConn()
+    plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
+    plat._ingest(_FakeMsg("HEARTBEAT", base_mode=128))  # pylint: disable=protected-access
+    # Not airborne, so execute_waypoint_following will wait_airborne.
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=0,
+            lon=0,
+            alt=470000,
+            relative_alt=0,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=0,
+        )
+    )
+
+    def fake_recv_match(**kwargs: object) -> object | None:
+        types = kwargs.get("type")
+        if types == "MISSION_ACK":
+            return _FakeMsg("MISSION_ACK", type=0)
+        if isinstance(types, list) and "MISSION_REQUEST" in types:
+            return _FakeMsg("MISSION_REQUEST", seq=0)
+        if types == "HEARTBEAT":
+            return _FakeMsg("HEARTBEAT", base_mode=128, system_status=4)
+        # wait_airborne's plain poll: the vehicle never climbs, and each
+        # call costs real wall time -- inline execution would take >60s.
+        time.sleep(0.02)
+        return None
+
+    conn.recv_match = fake_recv_match  # type: ignore[method-assign]
+    monkeypatch.setattr(plat, "_wait_command_ack_locked", lambda *a, **k: None)
+
+    started = time.monotonic()
+    result = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="WAYPOINT_FOLLOWING",
+            waypoints=(_IN_BAND,),
+        )
+    )
+    elapsed = time.monotonic() - started
+    assert result.processing_state == "ACCEPTED"
+    assert elapsed < 1.0
+    plat.close()  # cancels the still-climbing background execution
+
+
+def test_px4_cancel_interrupts_slow_climb_promptly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CANCEL must not wait out the full climb timeout to take effect."""
+    pytest.importorskip("pymavlink")
+    conn = _FakeConn()
+    plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
+    plat._ingest(_FakeMsg("HEARTBEAT", base_mode=128))  # pylint: disable=protected-access
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=0,
+            lon=0,
+            alt=470000,
+            relative_alt=0,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=0,
+        )
+    )
+
+    def fake_recv_match(**kwargs: object) -> object | None:
+        types = kwargs.get("type")
+        if types == "MISSION_ACK":
+            return _FakeMsg("MISSION_ACK", type=0)
+        if isinstance(types, list) and "MISSION_REQUEST" in types:
+            return _FakeMsg("MISSION_REQUEST", seq=0)
+        if types == "HEARTBEAT":
+            return _FakeMsg("HEARTBEAT", base_mode=128, system_status=4)
+        return None  # wait_airborne's plain poll: never airborne
+
+    conn.recv_match = fake_recv_match  # type: ignore[method-assign]
+    monkeypatch.setattr(plat, "_wait_command_ack_locked", lambda *a, **k: None)
+
+    command_id = uuid4()
+    accepted = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=command_id,
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="WAYPOINT_FOLLOWING",
+            waypoints=(_IN_BAND,),
+        )
+    )
+    assert accepted.processing_state == "ACCEPTED"
+    time.sleep(0.05)  # let the exec thread reach wait_airborne
+
+    started = time.monotonic()
+    canceled = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=command_id,
+            capability_id=uuid4(),
+            command_state="CANCEL",
+            mode="WAYPOINT_FOLLOWING",
+        )
+    )
+    elapsed = time.monotonic() - started
+    assert canceled.processing_state == "CANCELED"
+    # wait_airborne polls every 0.1s and checks cancel each time, not 60s.
+    assert elapsed < 1.0
     plat.close()
 
 

@@ -16,8 +16,14 @@ flowchart LR
   Px4 <-->|"MAVLink UDP"| SITL
 ```
 
-The port contract is in [PLATFORM.md](../../PLATFORM.md). What this
-adapter covers versus Isolator is in [FEATURES.md](FEATURES.md).
+The port contract is in [PLATFORM.md](../../PLATFORM.md). Backend
+coverage is in [FEATURES.md](FEATURES.md). Sequence and Execution
+are in the Volume table.
+
+The adapter composes four modules under `src/open_vi/platform/px4/`:
+link (MAVLink session), mission (waypoint upload), offboard (HSA
+hold), and telemetry (cache, BIT, TSPI). A second vehicle reuses
+those modules; it does not copy `Px4MavlinkAdapter`.
 
 The adapter does telemetry, `WAYPOINT_FOLLOWING`, `CURVE_FOLLOWING`,
 and `HSA_CSA`.
@@ -105,19 +111,27 @@ envelope. Those rejects never start a mission.
 
 ## Waypoint execute
 
-An accepted `WAYPOINT_FOLLOWING` uploads a mission, arms, starts
-MISSION, and waits until relative altitude shows climb. An Activity
+An accepted `WAYPOINT_FOLLOWING` returns `ACCEPTED` as soon as the
+path clears validation; the mission upload, arm, MISSION start, and
+wait until relative altitude shows climb all run on a background
+thread so `submit_flight_command` never blocks the Isolator (it
+shares one thread with periodic status/TSPI publishing after
+`start`). A failure discovered during that background work — a
+timeout, a rejected arm — is reported as `FAILED` on the next
+`poll_command_updates`, not as a synchronous reject. An Activity
 UPDATE with the live `ActivityID` runs the same upload without
-minting a new activity. The command is rejected if the link is
-down, the path fails the envelope check, or Activity is not UPDATE
-against the live id.
+minting a new activity. The command is rejected up front (before any
+background work starts) if the link is down, the path fails the
+envelope check, or Activity is not UPDATE against the live id.
 
 ## HSA execute
 
-An accepted `HSA_CSA` arms (and takes off if still on the ground),
-primes offboard setpoints, switches OFFBOARD, and streams
-heading × groundspeed plus AGL. Leftover refs convert onto that
-vector:
+An accepted `HSA_CSA` returns `ACCEPTED` immediately; arming (and
+climb, if still on the ground), priming offboard setpoints, and the
+switch to OFFBOARD run on the same background thread as
+`WAYPOINT_FOLLOWING` execution before the setpoint stream starts.
+Streamed heading × groundspeed plus AGL follows once OFFBOARD is
+established. Leftover refs convert onto that vector:
 
 | Commanded | Becomes | Source |
 | --- | --- | --- |
@@ -151,15 +165,18 @@ adapter subtracts that from each waypoint.
 sequenceDiagram
   participant Iso as Isolator
   participant Px4 as Px4MavlinkAdapter
+  participant Exec as background thread
   participant FC as PX4
 
   Iso->>Px4: submit_flight_command(WAYPOINT_FOLLOWING)
-  Px4->>FC: MISSION_COUNT + items
-  Note over Px4,FC: item 0 NAV_TAKEOFF, then NAV_WAYPOINT
-  Px4->>FC: ARM
-  Px4->>FC: set_mode MISSION + MISSION_START
-  Px4->>FC: wait relative_alt climb
   Px4-->>Iso: ACCEPTED + activity ACTIVE_UNCONSTRAINED
+  Px4->>Exec: start execution
+  Exec->>FC: MISSION_COUNT + items
+  Note over Exec,FC: item 0 NAV_TAKEOFF, then NAV_WAYPOINT
+  Exec->>FC: ARM
+  Exec->>FC: set_mode MISSION + MISSION_START
+  Exec->>FC: wait relative_alt climb
+  Note over Px4,Exec: a failure here reports FAILED on the next poll_command_updates
 ```
 
 A standalone PX4 TAKEOFF mode sits at `MIS_TAKEOFF_ALT`. Embedding

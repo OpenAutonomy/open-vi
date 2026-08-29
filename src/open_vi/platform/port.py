@@ -26,14 +26,25 @@ class PlatformPort(ABC):
 
     @abstractmethod
     def submit_flight_command(self, cmd: FlightCommandRequest) -> CommandResult:
-        """Accept or reject a flight capability command."""
+        """Accept or reject a flight capability command.
+
+        Must return promptly (validation only, no vehicle I/O). Once a
+        command is ``ACCEPTED``, long-running work (arming, upload,
+        waiting for climb) runs in the background; a terminal
+        ``FAILED``/``CANCELED``/``COMPLETED`` outcome reached later is
+        reported through ``poll_command_updates``, not by blocking this
+        call. The Isolator tick and inbound dispatch share one thread,
+        so a slow ``submit_flight_command`` stalls all periodic
+        publishing for as long as it blocks.
+        """
 
     def poll_command_updates(self) -> list[tuple[UUID, CommandResult]]:
         """Return newly reached terminal command states since the last poll.
 
         Used by the Isolator tick to publish ``MA_FlightCommandStatus``
-        when a previously accepted command finishes (``COMPLETED``).
-        Default is no updates.
+        when a previously accepted command finishes (``COMPLETED``) or
+        fails in the background (``FAILED``, ``CANCELED``). Default is
+        no updates.
         """
         return []
 

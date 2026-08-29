@@ -5,7 +5,8 @@ An adapter owns the vehicle protocol: the link, framing, and mapping into
 and File*. A new vehicle is a new `PlatformPort`; it is not a change to
 Isolator, codec, or the bus. The port methods are in [PLATFORM.md](PLATFORM.md).
 PX4 is the worked example ([platforms/px4](platforms/px4/README.md),
-`src/open_vi/platform/px4.py`).
+`src/open_vi/platform/px4/`). Link, mission, offboard, and telemetry
+are separate modules; the adapter composes them.
 
 ## Contract
 
@@ -32,7 +33,10 @@ The design depends on these rules:
 
 ## Steps
 
-1. Add a module under `src/open_vi/platform/` and implement `PlatformPort`.
+1. Add a module or package under `src/open_vi/platform/` and
+   implement `PlatformPort`. A MAVLink vehicle can import
+   `open_vi.platform.px4.link` / `mission` / `offboard` /
+   `telemetry` instead of copying `Px4MavlinkAdapter`.
 2. Wire it in `make_platform()` / CLI `--platform` (`open_vi/__main__.py`).
    Import the adapter inside that branch so `import open_vi.platform` does
    not load it.

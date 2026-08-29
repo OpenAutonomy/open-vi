@@ -5,8 +5,8 @@ native UCI/A-GRA XML on the Abstract Service Bus and drives the vehicle
 through `PlatformPort`. Isolator owns A-GRA sequences. A new vehicle is a
 new adapter; it is not a change to Isolator or the codec.
 
-What the ASK 5.0a Volume requires, and what Isolator covers, is in
-[FEATURES.md](FEATURES.md). The bus face is in [ASB.md](ASB.md),
+What the ASK 5.0a Volume requires, split by Sequence, Execution,
+and Backend, is in [FEATURES.md](FEATURES.md). The bus face is in [ASB.md](ASB.md),
 sequences are in [ISOLATOR.md](ISOLATOR.md),
 parse and build are in [CODEC.md](CODEC.md), the vehicle port is in
 [PLATFORM.md](PLATFORM.md), and backends are in
@@ -94,7 +94,8 @@ against the catalog.
 
 Isolator owns identity, session state (`IsolatorState`,
 `FlightSession`, `RouteExecution`), `RouteStore`, the tick loop, and
-dispatch to handlers. The default SystemID is `open-vi` under this
+dispatch to handlers. After `start`, inbound and tick run on the
+Isolator thread; a session lock serializes the same writes in tests. The default SystemID is `open-vi` under this
 project's namespace UUID. `Isolator.__init__` requires
 `platform: PlatformPort`. It does not default to Stub and does not
 import Stub.

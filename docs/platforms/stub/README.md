@@ -15,8 +15,9 @@ flowchart LR
   Port --> Stub
 ```
 
-The port contract is in [PLATFORM.md](../../PLATFORM.md). What Stub
-covers versus Isolator is in [FEATURES.md](FEATURES.md).
+The port contract is in [PLATFORM.md](../../PLATFORM.md). Backend
+coverage is in [FEATURES.md](FEATURES.md). Sequence and Execution
+are in the Volume table.
 
 ## Behavior
 

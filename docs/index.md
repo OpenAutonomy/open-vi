@@ -12,7 +12,7 @@ Install and run from the
 
 ## Documentation
 
-- [Features](FEATURES.md) — ASK 5.0a Isolator coverage
+- [Features](FEATURES.md) — ASK 5.0a Sequence / Execution / Backend
 - [Architecture](ARCHITECTURE.md) — layers, ports, and an example path
 - [Isolator](ISOLATOR.md) — sequences, handlers, and `RouteStore`
 - [Platform](PLATFORM.md) — `PlatformPort` methods
