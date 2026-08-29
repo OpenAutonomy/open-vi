@@ -18,8 +18,11 @@ import pytest
 
 from open_vi.asb import InMemoryAsb
 from open_vi.codec.command import build_sample_waypoint_command
-from open_vi.codec.mts import MT_FLIGHT_COMMAND, MT_FLIGHT_COMMAND_STATUS
-from open_vi.codec.mts import MT_SUBSYSTEM_STATUS
+from open_vi.codec.mts import (
+    MT_FLIGHT_COMMAND,
+    MT_FLIGHT_COMMAND_STATUS,
+    MT_SUBSYSTEM_STATUS,
+)
 from open_vi.config import IsolatorConfig
 from open_vi.domain import Waypoint
 from open_vi.isolator import Isolator
@@ -63,7 +66,11 @@ class _NeverAirborneConn:
         return None
 
     def mode_mapping(self) -> dict[str, tuple[int, int, int]]:
-        return {"TAKEOFF": (29, 4, 2), "MISSION": (29, 4, 4), "HOLD": (29, 4, 3)}
+        return {
+            "TAKEOFF": (29, 4, 2),
+            "MISSION": (29, 4, 4),
+            "HOLD": (29, 4, 3),
+        }
 
     def set_mode(self, *args: object) -> bool:
         del args
@@ -116,7 +123,9 @@ def test_slow_px4_command_does_not_stall_periodic_publishing() -> None:
             command_id=uuid4(),
             capability_id=iso.ctx.state.capability_id,
             waypoints=(
-                Waypoint(latitude_deg=38.0, longitude_deg=-77.0, altitude_m=130.0),
+                Waypoint(
+                    latitude_deg=38.0, longitude_deg=-77.0, altitude_m=130.0
+                ),
             ),
         )
         bus.publish(MT_FLIGHT_COMMAND, xml)

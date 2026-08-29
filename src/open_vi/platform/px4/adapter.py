@@ -444,7 +444,9 @@ class Px4MavlinkAdapter(PlatformPort):
         try:
             runner()
         except CommandCanceled:
-            LOGGER.info("PX4 command %s canceled during execution", command_id.hex)
+            LOGGER.info(
+                "PX4 command %s canceled during execution", command_id.hex
+            )
         except Exception as exc:  # pylint: disable=broad-exception-caught
             LOGGER.exception("PX4 command execution failed")
             with self._lock:
@@ -470,7 +472,7 @@ class Px4MavlinkAdapter(PlatformPort):
     def _execute_or_reject(
         self, cmd: FlightCommandRequest
     ) -> tuple[CommandResult | None, Callable[[], None] | None]:
-        """Validate, or return a runner that flies waypoints, a curve, or HSA."""
+        """Validate, or return a runner to fly waypoints, a curve, or HSA."""
         if cmd.mode == "HSA_CSA":
             return self._execute_hsa_or_reject(cmd)
         if cmd.mode == "CURVE_FOLLOWING":
@@ -547,7 +549,7 @@ class Px4MavlinkAdapter(PlatformPort):
     def _execute_hsa_or_reject(
         self, cmd: FlightCommandRequest
     ) -> tuple[CommandResult | None, Callable[[], None] | None]:
-        """Validate, or return a runner that starts/replaces an offboard hold."""
+        """Validate, or return a runner that starts/replaces the hold."""
         rejected = validate_hsa_setpoint(
             cmd.hsa,
             min_rel_alt_m=0.0,
@@ -557,7 +559,9 @@ class Px4MavlinkAdapter(PlatformPort):
         if rejected is not None:
             return rejected, None
         hsa = cmd.hsa or HsaCsaSetpoint()
-        return None, lambda: self._execute_hsa_csa(hsa, cancel=self._exec_cancel)
+        return None, lambda: self._execute_hsa_csa(
+            hsa, cancel=self._exec_cancel
+        )
 
     def _execute_hsa_csa(
         self, hsa: HsaCsaSetpoint, *, cancel: threading.Event | None = None
