@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 from collections.abc import Callable
 from typing import Any
 
@@ -251,6 +252,7 @@ def execute_waypoint_following(
     is_armed: Callable[[], bool],
     ingest: Callable[[Any], None],
     wait_ack: Callable[[int, float], None],
+    cancel: threading.Event | None = None,
 ) -> int:
     """Upload mission, arm, start MISSION mode. Returns last seq."""
     remaining = remaining_waypoints(waypoints, here, capture_m=path_clearance_m)
@@ -294,6 +296,7 @@ def execute_waypoint_following(
                 hold_alt,
                 relative_alt_m=relative_alt_m,
                 ingest=ingest,
+                cancel=cancel,
             )
     LOGGER.info(
         "PX4 waypoint mission executing (%s WPs, takeoff=%s last_seq=%s)",

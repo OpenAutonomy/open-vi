@@ -7,6 +7,12 @@
 - Isolator session writes are serialized. After `start`, inbound is
   queued onto the Isolator thread; `dispatch` and the tick take one
   session lock so they cannot interleave.
+- PX4 `submit_flight_command` validates synchronously and returns
+  immediately; arming, mission upload, and waiting for climb now run
+  on a background thread, reporting a background failure or a CANCEL
+  through `poll_command_updates`. A blocking command no longer stalls
+  the Isolator's periodic status/TSPI publishing, which shares one
+  thread with inbound dispatch after `start`.
 - FEATURES §1.2 rows split into Sequence, Execution, and Backend.
   34/36 is Sequence only. Execution is 16 Supported, 5 Partial.
   Stub is not a flown backend.

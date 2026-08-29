@@ -211,6 +211,7 @@ class OffboardHold:
         ingest: Callable[[object], None],
         wait_ack: Callable[[int, float], None],
         relative_alt_m: Callable[[], float],
+        cancel: threading.Event | None = None,
     ) -> None:
         """Hold or replace an offboard heading/speed/altitude vector."""
         already = self.thread is not None and self.thread.is_alive()
@@ -243,6 +244,7 @@ class OffboardHold:
                         relative_alt_m=relative_alt_m,
                         ingest=ingest,
                         tick=self.send_setpoint_locked,
+                        cancel=cancel,
                     )
             self._start_thread()
         except Exception:

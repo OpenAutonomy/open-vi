@@ -19,6 +19,10 @@ _QNH_PARAM = "SENS_BARO_QNH"
 _QNH_ACK_TIMEOUT_S = 5.0
 
 
+class CommandCanceled(Exception):
+    """Raised out of a blocking wait when a CANCEL arrives mid-execution."""
+
+
 class MavlinkLink:
     """One MAVLink connection plus the IO lock the reader shares."""
 
@@ -243,8 +247,13 @@ class MavlinkLink:
         relative_alt_m: Callable[[], float],
         ingest: Callable[[Any], None],
         tick: Callable[[], None] | None = None,
+        cancel: threading.Event | None = None,
     ) -> None:
-        """Wait until relative altitude shows climb. Holds ``io_lock``."""
+        """Wait until relative altitude shows climb. Holds ``io_lock``.
+
+        Raises :class:`CommandCanceled` as soon as *cancel* is set,
+        rather than waiting out the full climb timeout.
+        """
         airborne_m = min(5.0, max(2.0, alt_m * 0.25))
         if relative_alt_m() >= airborne_m:
             LOGGER.info("PX4 already airborne; skipping climb wait")
@@ -252,6 +261,8 @@ class MavlinkLink:
         conn = self.require_conn()
         deadline = time.monotonic() + 60.0
         while time.monotonic() < deadline:
+            if cancel is not None and cancel.is_set():
+                raise CommandCanceled("wait_airborne canceled")
             if tick is not None:
                 tick()
             msg = conn.recv_match(blocking=True, timeout=0.1)
