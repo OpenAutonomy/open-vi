@@ -45,6 +45,12 @@ Handlers and the tick share one session lock so tests that call
 parse with the codec, call `RouteStore` and/or `PlatformPort`, and
 publish replies. A message with no request or response id is dropped.
 
+`stop()` joins the Isolator thread (`timeout`, default `2.0`); if it
+doesn't stop in time, the thread stays tracked rather than being
+dropped, so a later `start()` raises `RuntimeError` instead of
+spawning a second thread that would race the stuck one over the
+shared session lock and inbound queue.
+
 ## Sessions
 
 `IsolatorState` holds single-owner fields: capability id, last

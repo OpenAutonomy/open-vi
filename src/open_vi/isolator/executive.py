@@ -171,7 +171,20 @@ class Isolator:
 
         Startup outs run under the session lock on this thread. After
         the Isolator thread starts, inbound is queued onto it.
+
+        Raises ``RuntimeError`` if the Isolator thread is already
+        running — including a prior ``stop`` that did not finish
+        within its join timeout. Starting a second thread here would
+        have it share ``_stop``/``_wakeup`` with the still-running
+        one: clearing those would let the old thread's loop condition
+        go true again once it finally does return, so it keeps
+        looping alongside the new thread instead of exiting.
         """
+        if self._isolator_thread_running():
+            raise RuntimeError(
+                "Isolator is already started, or a previous stop() has "
+                "not finished; call stop() first"
+            )
         self.attach()
         with self._session:
             self._advertise_control()
@@ -191,13 +204,27 @@ class Isolator:
             self.ctx.state.capability_id.hex,
         )
 
-    def stop(self) -> None:
-        """Stop the Isolator thread, disconnect the bus, clear attach."""
+    def stop(self, *, timeout: float = 2.0) -> None:
+        """Stop the Isolator thread, disconnect the bus, clear attach.
+
+        If the thread does not stop within *timeout*, it is left
+        running and still tracked on ``_thread`` (not cleared), so a
+        later ``start`` refuses to spawn a second thread rather than
+        racing the stuck one. The bus is disconnected either way.
+        """
         self._stop.set()
         self._wakeup.set()
-        if self._thread is not None:
-            self._thread.join(timeout=2.0)
-            self._thread = None
+        thread = self._thread
+        if thread is not None:
+            thread.join(timeout=timeout)
+            if thread.is_alive():
+                LOGGER.error(
+                    "Isolator thread did not stop within %.1fs; leaving "
+                    "it tracked so start() refuses to run a second one",
+                    timeout,
+                )
+            else:
+                self._thread = None
         self.ctx.bus.disconnect()
         self._attached = False
         LOGGER.info("Isolator stopped")

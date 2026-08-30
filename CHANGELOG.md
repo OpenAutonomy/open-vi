@@ -7,6 +7,12 @@
 - Isolator session writes are serialized. After `start`, inbound is
   queued onto the Isolator thread; `dispatch` and the tick take one
   session lock so they cannot interleave.
+- `Isolator.start()` now refuses (`RuntimeError`) to run if the
+  Isolator thread is already alive, including one `stop()` couldn't
+  join within its timeout. `stop()` no longer clears `_thread` when
+  the join times out, so a stuck thread stays tracked instead of a
+  second thread racing it once the stuck call finally returns.
+  `stop()` also takes an optional `timeout` (default `2.0`).
 - PX4 `submit_flight_command` validates synchronously and returns
   immediately; arming, mission upload, and waiting for climb now run
   on a background thread, reporting a background failure or a CANCEL
