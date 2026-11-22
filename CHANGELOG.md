@@ -38,6 +38,25 @@
   Px4MavlinkAdapter` is unchanged.
 - PX4 vehicle TOML is the static flight envelope only. Remaining
   fuel mass is omitted; it is live state, not a config field.
+- PX4 no longer arms or launches the vehicle on Mission Autonomy's
+  behalf. Capability readiness (`snapshot()` /
+  `MA_FlightCapabilityStatus`) now requires telemetry to show the
+  vehicle already armed and airborne (`relative_alt >= 2 m`);
+  `TEMPORARILY_UNAVAILABLE` / `PX4_AWAITING_LAUNCH` reports it
+  otherwise, alongside the existing `PX4_LINK_DOWN`.
+  `submit_flight_command` rejects with the matching reason. A-GRA's
+  `LAUNCH` capability is a separate, structurally independent task the
+  schema does not prescribe a message sequence for; launching stays an
+  external step (QGroundControl, or a boot script driving PX4's own
+  `commander` shell) rather than an implicit VI side effect.
+
+### Removed
+
+- The PX4 adapter's implicit arm/takeoff: `mission.py` and
+  `offboard.py` no longer arm, upload a `NAV_TAKEOFF` mission item, or
+  wait for climb before executing a command. `MavlinkLink.arm` /
+  `wait_airborne` remain as unreferenced primitives for a future
+  `LAUNCH` capability to reuse.
 
 ## [0.4.0] - 2026-08-22
 

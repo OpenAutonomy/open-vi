@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import time
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -154,13 +153,16 @@ def test_px4_telemetry_and_snapshot() -> None:
         )
     )
     plat._ingest(conn._queue.pop(0))  # pylint: disable=protected-access
+    # home_hae_m = alt - relative_alt = 120.0, matching the profile/HSA
+    # assertions below -- alt is bumped by the same 30m as relative_alt
+    # so satisfying the armed+airborne readiness gate doesn't shift home.
     conn.push(
         _FakeMsg(
             "GLOBAL_POSITION_INT",
             lat=388895000,
             lon=-770353000,
-            alt=120000,
-            relative_alt=0,
+            alt=150000,
+            relative_alt=30000,
             vx=100,
             vy=-50,
             vz=0,
@@ -188,7 +190,7 @@ def test_px4_telemetry_and_snapshot() -> None:
     state = plat.get_vehicle_state()
     assert state.latitude_deg == pytest.approx(38.8895)
     assert state.longitude_deg == pytest.approx(-77.0353)
-    assert state.altitude_m == pytest.approx(120.0)
+    assert state.altitude_m == pytest.approx(150.0)
     assert state.north_speed_mps == pytest.approx(1.0)
     assert state.fuel_duration_s is None
     assert state.fuel_mass_kg is None
@@ -303,6 +305,108 @@ def test_px4_rejects_when_link_down() -> None:
     )
 
 
+def test_px4_snapshot_armed_not_airborne_is_awaiting_launch() -> None:
+    plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
+    plat._ingest(_FakeMsg("HEARTBEAT", base_mode=128))  # pylint: disable=protected-access
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=0,
+            lon=0,
+            alt=470000,
+            relative_alt=0,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=0,
+        )
+    )
+    assert plat.snapshot().readiness == ControlReadiness(
+        available=False,
+        availability="TEMPORARILY_UNAVAILABLE",
+        reason="PX4_AWAITING_LAUNCH",
+    )
+    plat.close()
+
+
+def test_px4_snapshot_not_armed_is_awaiting_launch() -> None:
+    plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
+    plat._ingest(_FakeMsg("HEARTBEAT", base_mode=0))  # pylint: disable=protected-access
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=0,
+            lon=0,
+            alt=500000,
+            relative_alt=30000,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=0,
+        )
+    )
+    assert plat.snapshot().readiness == ControlReadiness(
+        available=False,
+        availability="TEMPORARILY_UNAVAILABLE",
+        reason="PX4_AWAITING_LAUNCH",
+    )
+    plat.close()
+
+
+def test_px4_snapshot_armed_and_airborne_is_available() -> None:
+    plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
+    plat._ingest(_FakeMsg("HEARTBEAT", base_mode=128))  # pylint: disable=protected-access
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=0,
+            lon=0,
+            alt=500000,
+            relative_alt=30000,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=0,
+        )
+    )
+    assert plat.snapshot().readiness == ControlReadiness(
+        available=True,
+        availability="AVAILABLE",
+    )
+    plat.close()
+
+
+def test_px4_rejects_when_armed_but_not_airborne() -> None:
+    plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
+    plat._ingest(_FakeMsg("HEARTBEAT", base_mode=128))  # pylint: disable=protected-access
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=0,
+            lon=0,
+            alt=470000,
+            relative_alt=0,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=0,
+        )
+    )
+    result = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="WAYPOINT_FOLLOWING",
+            waypoints=(Waypoint(1.0, 2.0, 50.0),),
+        )
+    )
+    assert result.processing_state == "REJECTED"
+    assert result.reason == "CAPABILITY_UNAVAILABLE"
+    assert result.reason_description == "PX4_AWAITING_LAUNCH"
+    plat.close()
+
+
 def _sample_curve(
     *, center_alt_m: float | None = None
 ) -> CurveFollowingSetpoint:
@@ -324,7 +428,20 @@ def test_px4_rejects_empty_curve() -> None:
     conn = _FakeConn()
     plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
     plat._ingest(  # pylint: disable=protected-access
-        _FakeMsg("HEARTBEAT", base_mode=0)
+        _FakeMsg("HEARTBEAT", base_mode=128)
+    )
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=0,
+            lon=0,
+            alt=470000,
+            relative_alt=30000,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=0,
+        )
     )
     result = plat.submit_flight_command(
         FlightCommandRequest(
@@ -364,13 +481,17 @@ def test_px4_curve_rejects_out_of_envelope() -> None:
     plat._ingest(  # pylint: disable=protected-access
         _FakeMsg("HEARTBEAT", base_mode=128)
     )
+    # home_hae_m = alt - relative_alt = 470.0, unchanged from a grounded
+    # fixture -- alt is bumped by the same 30m as relative_alt so the
+    # envelope math below (relative to home) is unaffected by satisfying
+    # the armed+airborne readiness gate.
     plat._ingest(  # pylint: disable=protected-access
         _FakeMsg(
             "GLOBAL_POSITION_INT",
             lat=0,
             lon=0,
-            alt=470000,
-            relative_alt=0,
+            alt=500000,
+            relative_alt=30000,
             vx=0,
             vy=0,
             vz=0,
@@ -395,7 +516,20 @@ def test_px4_rejects_hsa_magnetic_without_headings() -> None:
     conn = _FakeConn()
     plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
     plat._ingest(  # pylint: disable=protected-access
-        _FakeMsg("HEARTBEAT", base_mode=0)
+        _FakeMsg("HEARTBEAT", base_mode=128)
+    )
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=0,
+            lon=0,
+            alt=470000,
+            relative_alt=30000,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=0,
+        )
     )
     result = plat.submit_flight_command(
         FlightCommandRequest(
@@ -424,7 +558,20 @@ def test_px4_rejects_hsa_speed_optimization() -> None:
     conn = _FakeConn()
     plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
     plat._ingest(  # pylint: disable=protected-access
-        _FakeMsg("HEARTBEAT", base_mode=0)
+        _FakeMsg("HEARTBEAT", base_mode=128)
+    )
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=0,
+            lon=0,
+            alt=470000,
+            relative_alt=30000,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=0,
+        )
     )
     result = plat.submit_flight_command(
         FlightCommandRequest(
@@ -917,7 +1064,7 @@ def test_px4_hsa_empty_holds_current(
     plat.close()
 
 
-def test_px4_hsa_ground_hae_climbs_to_takeoff() -> None:
+def test_resolve_hsa_altitude_floor_below_2m_uses_default_alt() -> None:
     plat = Px4MavlinkAdapter(connection=_FakeConn(), autoconnect=False)
     plat._ingest(  # pylint: disable=protected-access
         _FakeMsg("HEARTBEAT", base_mode=0)
@@ -1187,125 +1334,6 @@ def test_px4_hsa_capability_new_while_live_rejected(
     )
     assert second.processing_state == "REJECTED"
     assert plat.active_flight_activity() is not None
-    plat.close()
-
-
-def test_px4_waypoint_submit_returns_before_climb_completes(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """submit_flight_command must not block on the climb wait itself."""
-    pytest.importorskip("pymavlink")
-    conn = _FakeConn()
-    plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
-    plat._ingest(_FakeMsg("HEARTBEAT", base_mode=128))  # pylint: disable=protected-access
-    # Not airborne, so execute_waypoint_following will wait_airborne.
-    plat._ingest(  # pylint: disable=protected-access
-        _FakeMsg(
-            "GLOBAL_POSITION_INT",
-            lat=0,
-            lon=0,
-            alt=470000,
-            relative_alt=0,
-            vx=0,
-            vy=0,
-            vz=0,
-            hdg=0,
-        )
-    )
-
-    def fake_recv_match(**kwargs: object) -> object | None:
-        types = kwargs.get("type")
-        if types == "MISSION_ACK":
-            return _FakeMsg("MISSION_ACK", type=0)
-        if isinstance(types, list) and "MISSION_REQUEST" in types:
-            return _FakeMsg("MISSION_REQUEST", seq=0)
-        if types == "HEARTBEAT":
-            return _FakeMsg("HEARTBEAT", base_mode=128, system_status=4)
-        # wait_airborne's plain poll: the vehicle never climbs, and each
-        # call costs real wall time -- inline execution would take >60s.
-        time.sleep(0.02)
-        return None
-
-    conn.recv_match = fake_recv_match  # type: ignore[method-assign]
-    monkeypatch.setattr(plat, "_wait_command_ack_locked", lambda *a, **k: None)
-
-    started = time.monotonic()
-    result = plat.submit_flight_command(
-        FlightCommandRequest(
-            command_id=uuid4(),
-            capability_id=uuid4(),
-            command_state="NEW",
-            mode="WAYPOINT_FOLLOWING",
-            waypoints=(_IN_BAND,),
-        )
-    )
-    elapsed = time.monotonic() - started
-    assert result.processing_state == "ACCEPTED"
-    assert elapsed < 1.0
-    plat.close()  # cancels the still-climbing background execution
-
-
-def test_px4_cancel_interrupts_slow_climb_promptly(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """CANCEL must not wait out the full climb timeout to take effect."""
-    pytest.importorskip("pymavlink")
-    conn = _FakeConn()
-    plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
-    plat._ingest(_FakeMsg("HEARTBEAT", base_mode=128))  # pylint: disable=protected-access
-    plat._ingest(  # pylint: disable=protected-access
-        _FakeMsg(
-            "GLOBAL_POSITION_INT",
-            lat=0,
-            lon=0,
-            alt=470000,
-            relative_alt=0,
-            vx=0,
-            vy=0,
-            vz=0,
-            hdg=0,
-        )
-    )
-
-    def fake_recv_match(**kwargs: object) -> object | None:
-        types = kwargs.get("type")
-        if types == "MISSION_ACK":
-            return _FakeMsg("MISSION_ACK", type=0)
-        if isinstance(types, list) and "MISSION_REQUEST" in types:
-            return _FakeMsg("MISSION_REQUEST", seq=0)
-        if types == "HEARTBEAT":
-            return _FakeMsg("HEARTBEAT", base_mode=128, system_status=4)
-        return None  # wait_airborne's plain poll: never airborne
-
-    conn.recv_match = fake_recv_match  # type: ignore[method-assign]
-    monkeypatch.setattr(plat, "_wait_command_ack_locked", lambda *a, **k: None)
-
-    command_id = uuid4()
-    accepted = plat.submit_flight_command(
-        FlightCommandRequest(
-            command_id=command_id,
-            capability_id=uuid4(),
-            command_state="NEW",
-            mode="WAYPOINT_FOLLOWING",
-            waypoints=(_IN_BAND,),
-        )
-    )
-    assert accepted.processing_state == "ACCEPTED"
-    time.sleep(0.05)  # let the exec thread reach wait_airborne
-
-    started = time.monotonic()
-    canceled = plat.submit_flight_command(
-        FlightCommandRequest(
-            command_id=command_id,
-            capability_id=uuid4(),
-            command_state="CANCEL",
-            mode="WAYPOINT_FOLLOWING",
-        )
-    )
-    elapsed = time.monotonic() - started
-    assert canceled.processing_state == "CANCELED"
-    # wait_airborne polls every 0.1s and checks cancel each time, not 60s.
-    assert elapsed < 1.0
     plat.close()
 
 

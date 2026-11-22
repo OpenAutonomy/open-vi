@@ -183,6 +183,10 @@ def resolve_hsa(
                 rel = float(hsa.altitude_m)
         else:
             rel = float(hsa.altitude_m)
+    # Below 2 m AGL is either an unresolved request or an explicit
+    # near-ground hold; either way, fall back to the platform's default
+    # hold altitude -- this is a safety floor, not a takeoff instruction
+    # (VI no longer launches; see docs/platforms/px4/README.md).
     if rel < 2.0:
         rel = takeoff_alt_m
     return ResolvedHsa(
@@ -206,14 +210,16 @@ class OffboardHold:
         self,
         live: ResolvedHsa,
         *,
-        airborne: bool,
-        is_armed: Callable[[], bool],
-        ingest: Callable[[object], None],
-        wait_ack: Callable[[int, float], None],
         relative_alt_m: Callable[[], float],
-        cancel: threading.Event | None = None,
     ) -> None:
-        """Hold or replace an offboard heading/speed/altitude vector."""
+        """Hold or replace an offboard heading/speed/altitude vector.
+
+        The vehicle must already be armed and airborne -- VI no longer
+        arms or climbs on the vehicle's behalf (see
+        ``docs/platforms/px4/README.md``). Raises if reached while not
+        airborne -- that indicates a readiness-gate bug, not a normal
+        path.
+        """
         already = self.thread is not None and self.thread.is_alive()
         with self._lock:
             self.live = live
@@ -225,27 +231,19 @@ class OffboardHold:
                 live.rel_alt_m,
             )
             return
+        rel_now = relative_alt_m()
+        if rel_now < 2.0:
+            raise RuntimeError(
+                f"OffboardHold.start_or_replace called while not airborne "
+                f"(relative_alt={rel_now:.1f}m); VI no longer arms or "
+                f"launches PX4 -- this indicates a readiness-gate bug"
+            )
         try:
             with self._link.io_lock:
-                if airborne:
-                    self._link.hold()
+                self._link.hold()
                 self.prime_locked()
                 if not self._link.set_mode("OFFBOARD"):
                     raise RuntimeError("PX4 OFFBOARD mode not available")
-                self._link.arm(
-                    force=True,
-                    is_armed=is_armed,
-                    ingest=ingest,
-                    wait_ack=wait_ack,
-                )
-                if not airborne:
-                    self._link.wait_airborne(
-                        live.rel_alt_m,
-                        relative_alt_m=relative_alt_m,
-                        ingest=ingest,
-                        tick=self.send_setpoint_locked,
-                        cancel=cancel,
-                    )
             self._start_thread()
         except Exception:
             self.stop()

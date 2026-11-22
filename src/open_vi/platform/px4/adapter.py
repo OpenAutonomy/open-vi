@@ -233,17 +233,23 @@ class Px4MavlinkAdapter(PlatformPort):
         self._link.close()
 
     def snapshot(self) -> PlatformSnapshot:
-        """Waypoint, HSA, and curve offer plus link-based readiness."""
-        if self._link_ok():
-            readiness = ControlReadiness(
-                available=True,
-                availability="AVAILABLE",
-            )
-        else:
+        """Waypoint, HSA, and curve offer plus link+flight-state readiness."""
+        if not self._link_ok():
             readiness = ControlReadiness(
                 available=False,
                 availability="TEMPORARILY_UNAVAILABLE",
                 reason="PX4_LINK_DOWN",
+            )
+        elif not self._flight_ready():
+            readiness = ControlReadiness(
+                available=False,
+                availability="TEMPORARILY_UNAVAILABLE",
+                reason="PX4_AWAITING_LAUNCH",
+            )
+        else:
+            readiness = ControlReadiness(
+                available=True,
+                availability="AVAILABLE",
             )
         offer = ControlOffer(
             capability_types=self._offer.capability_types,
@@ -285,7 +291,7 @@ class Px4MavlinkAdapter(PlatformPort):
             return CommandResult(
                 processing_state="REJECTED",
                 reason="CAPABILITY_UNAVAILABLE",
-                reason_description="PX4 link not available",
+                reason_description=snap.readiness.reason or "PX4 not available",
             )
         if cmd.choice == "Activity":
             return self._submit_activity(cmd)
@@ -500,9 +506,7 @@ class Px4MavlinkAdapter(PlatformPort):
             return rejected, None
         self._offboard.stop()
         waypoints = cmd.waypoints
-        return None, lambda: self._execute_waypoint_following(
-            waypoints, cancel=self._exec_cancel
-        )
+        return None, lambda: self._execute_waypoint_following(waypoints)
 
     def _execute_curve_or_reject(
         self, cmd: FlightCommandRequest
@@ -531,9 +535,7 @@ class Px4MavlinkAdapter(PlatformPort):
             )
         waypoints = sample_curve_waypoints(curve, altitude_m=altitude_m)
         self._offboard.stop()
-        return None, lambda: self._execute_waypoint_following(
-            waypoints, cancel=self._exec_cancel
-        )
+        return None, lambda: self._execute_waypoint_following(waypoints)
 
     def _curve_altitude_m(self, curve: CurveFollowingSetpoint | None) -> float:
         """HAE for every sample: center, current, or home + takeoff."""
@@ -559,26 +561,15 @@ class Px4MavlinkAdapter(PlatformPort):
         if rejected is not None:
             return rejected, None
         hsa = cmd.hsa or HsaCsaSetpoint()
-        return None, lambda: self._execute_hsa_csa(
-            hsa, cancel=self._exec_cancel
-        )
+        return None, lambda: self._execute_hsa_csa(hsa)
 
-    def _execute_hsa_csa(
-        self, hsa: HsaCsaSetpoint, *, cancel: threading.Event | None = None
-    ) -> None:
+    def _execute_hsa_csa(self, hsa: HsaCsaSetpoint) -> None:
         """Hold or replace an offboard heading/speed/altitude vector."""
         live = self._resolve_hsa(hsa)
         with self._lock:
             self._mission_last_seq = None
-        airborne = self._relative_alt_m() >= 2.0
         self._offboard.start_or_replace(
-            live,
-            airborne=airborne,
-            is_armed=self._is_armed,
-            ingest=self._ingest,
-            wait_ack=self._wait_command_ack_locked,
-            relative_alt_m=self._relative_alt_m,
-            cancel=cancel,
+            live, relative_alt_m=self._relative_alt_m
         )
 
     def _resolve_hsa(self, hsa: HsaCsaSetpoint) -> Any:
@@ -680,6 +671,17 @@ class Px4MavlinkAdapter(PlatformPort):
                 self._cache, connected=self._link.conn is not None
             )
 
+    def _flight_ready(self) -> bool:
+        """True once telemetry shows the vehicle armed and airborne.
+
+        Distinct from `_link_ok()`: the MAVLink session can be healthy
+        while the vehicle is still on the ground waiting for a human
+        to arm and launch it externally. VI no longer arms or takes
+        off on MA's behalf; it only advertises AVAILABLE once that
+        external launch has visibly happened.
+        """
+        return self._is_armed() and self._relative_alt_m() >= 2.0
+
     def _ingest(self, msg: Any) -> None:
         """Update the telemetry cache; complete the mission if reached."""
         with self._lock:
@@ -732,21 +734,15 @@ class Px4MavlinkAdapter(PlatformPort):
     def _execute_waypoint_following(
         self,
         waypoints: tuple[Waypoint, ...],
-        *,
-        cancel: threading.Event | None = None,
     ) -> None:
-        """Upload mission, arm, start MISSION mode."""
+        """Upload mission and start MISSION mode. Vehicle must already fly."""
         last_seq = execute_waypoint_following(
             self._link,
             waypoints,
             here=self._current_ll(),
             relative_alt_m=self._relative_alt_m,
-            takeoff_alt_m=self._takeoff_alt_m,
             path_clearance_m=self._path_clearance_m,
-            is_armed=self._is_armed,
-            ingest=self._ingest,
             wait_ack=self._wait_command_ack_locked,
-            cancel=cancel,
         )
         with self._lock:
             self._mission_last_seq = last_seq
