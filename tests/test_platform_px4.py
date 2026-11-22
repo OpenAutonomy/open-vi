@@ -646,10 +646,10 @@ def test_px4_waypoint_execute_accepts(
     conn.recv_match = fake_recv_match  # type: ignore[method-assign]
     pytest.importorskip("pymavlink")
 
-    # ARM_DISARM 400, DO_SET_MODE 176, MISSION_START 300. The mode ack
-    # is waited on before MISSION_START; see
-    # test_px4_start_mission_waits_for_mode_ack_before_start.
-    acks = {"arm": 400, "set_mode": 176, "mission_start": 300}
+    # DO_SET_MODE 176 then MISSION_START 300 — the only two acks this
+    # path waits on now that VI no longer arms the vehicle. Ordering is
+    # pinned by test_px4_start_mission_waits_for_mode_ack_before_start.
+    acks = {"set_mode": 176, "mission_start": 300}
 
     def fake_wait(command: int, timeout: float = 5.0) -> None:
         del timeout
