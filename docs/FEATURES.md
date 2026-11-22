@@ -28,9 +28,11 @@ Stub is the default test backend. It accepts or injects; it does not
 fly. Stub rows live in [platforms/stub](platforms/stub/FEATURES.md).
 PX4 rows live in [platforms/px4](platforms/px4/FEATURES.md).
 
-§1.2 Core (36 rows): Sequence 34 Supported, 2 Not supported
-(terrain, weapons). Execution 16 Supported, 5 Partial, 13 n/a, 2
-Not supported. Backend is not 34/36.
+§1.2 Core (36 numbered rows): Sequence 34 Supported, 2 Not
+supported (terrain, weapons). Execution 16 Supported, 5 Partial, 13
+n/a, 2 Not supported. Backend is not 34/36. `Launch` under §1.2.2 is
+listed Not supported without a § and is not in these counts; see that
+row.
 
 Volume §1.4 (Mission and Flight Autonomy Capabilities) allocates work
 to MA or FA. It is not a VI interface checklist, so it is not repeated
@@ -61,6 +63,7 @@ here.
 | 1.2.2.7 | Receive Control Request | Supported | Supported | n/a | ACQUIRE / STEAL / RELEASE with status ladder and `MA_ControlAssignment`. |
 | 1.2.2.8 | Unpair Control Assignment | Supported | Supported | n/a | When availability is not `AVAILABLE`, `CANCELED` status, `REMOVED` assignment, then clear. |
 | 1.2.2.9 | Update C2 Control Designations | Supported | Supported | n/a | Inbound `MA_FlightCapability` from another SystemID redacts the offer. Isolator readvertises. Commands for a redacted mode are `REJECTED`. |
+| — | Launch | Not supported | Not supported | none | A-GRA `LAUNCH` is structurally independent from the control modes and the schema prescribes no message sequence for it. No handler, no capability offer, no adapter work. Launch is an external step (QGroundControl, or a boot script driving PX4's `commander`). This gates every PX4 flight row: `snapshot()` withholds `AVAILABLE` until the vehicle is already armed and airborne. `MavlinkLink.arm` / `wait_airborne` are unreferenced primitives kept for a future implementation. **§ unconfirmed** — not yet matched to a numbered §1.2 interaction, so it is excluded from the row counts below. |
 
 ### 1.2.3 COP
 

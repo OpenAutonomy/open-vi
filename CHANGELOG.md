@@ -8,6 +8,12 @@
   with defaults and effect. 14 of the 25 had been undocumented,
   including `AGRA_SCHEMA_VERSION` and `AGRA_MESSAGE_MODE`, which are
   written into `MessageHeader` on every outbound message.
+- FEATURES §1.2.2 lists `Launch` as Not supported. A-GRA `LAUNCH` is
+  structurally independent from the control modes and the schema
+  prescribes no message sequence for it, so VI does not implement it —
+  but it gates every PX4 flight row, and the matrix had been silent on
+  it. Listed without a § until it is matched to a numbered §1.2
+  interaction, so the row counts are unchanged.
 
 ### Changed
 
