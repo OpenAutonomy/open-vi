@@ -3,6 +3,10 @@ name: ci
 on:
   push:
     branches: [main, master]
+    # Release tags publish the versioned GHCR image. Without this the
+    # image job's semver tag rule and refs/tags/ push condition never
+    # fire, because a `branches` filter excludes tag pushes.
+    tags: ["v*"]
   pull_request:
 
 permissions:
