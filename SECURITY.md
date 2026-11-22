@@ -10,10 +10,19 @@ queue. Fixes land on `main`; there is no backport branch.
 
 ## What this software assumes
 
-open-vi is a prototype. **The Abstract Service Bus has no authentication,
-no authorization, and no in-process TLS.** open-vi is a STOMP client.
-Any peer that can open the same STOMP port can publish and subscribe as
-any identity.
+open-vi is a prototype. **The Abstract Service Bus it is deployed
+against is not authenticated, not authorized, and has no in-process
+TLS.** open-vi is a STOMP client. Against such a broker, any peer that
+can open the same STOMP port can publish and subscribe as any
+identity.
+
+That is the deployment posture, not a client limitation. open-vi can
+send STOMP credentials when the broker requires them
+(`ASB_USERNAME` / `ASB_PASSWORD`, or the legacy `ACTIVEMQ_*`
+spelling; `ASB_ANONYMOUS` forces anonymous). There is still no
+in-process TLS, and authorization remains the broker's to enforce.
+The variables are in the
+[configuration reference](https://openautonomy.github.io/open-vi/CONFIGURATION/).
 
 `compose/vi.yml` runs the VI image against `BROKER_HOST`. Bind the
 broker on a network you already trust. A finding is interesting here if

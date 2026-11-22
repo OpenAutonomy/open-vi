@@ -173,7 +173,7 @@ Direction is relative to VI. Core unless noted. This table is
 | ServiceStatus | inout | Supported | |
 | ServiceStatusDataRequest | in | Supported | |
 | ServiceStatusDataRequestStatus | out | Supported | |
-| SubsystemStatus | inout | Supported | Published; inbound ServiceStatus is the peer heartbeat |
+| SubsystemStatus | out | Supported | Published. The peer heartbeat arrives as inbound `ServiceStatus`, not this type |
 | SubsystemStatusDataRequest | in | Supported | |
 | SubsystemStatusDataRequestStatus | out | Supported | |
 | TaskPlanExecutionStatus | out | Supported | Idle Source; no TaskPlanID |
