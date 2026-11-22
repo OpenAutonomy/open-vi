@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from open_vi.codec.ns import SCHEMA_VERSION
 from open_vi.identity import (
     DEFAULT_NAMESPACE_NAME,
     DEFAULT_NAMESPACE_UUID,
@@ -51,7 +52,7 @@ class IsolatorConfig:
     system_label: str = DEFAULT_SYSTEM_NAME
     namespace_name: str = DEFAULT_NAMESPACE_NAME
     namespace_uuid: str = str(DEFAULT_NAMESPACE_UUID)
-    schema_version: str = "005.0a"
+    schema_version: str = SCHEMA_VERSION
     message_mode: str = "SIMULATION"
     tick_period_s: float = 5.0
     tick_republish_status: bool = True
@@ -72,7 +73,9 @@ class IsolatorConfig:
                 "VI_NAMESPACE_UUID",
                 str(DEFAULT_NAMESPACE_UUID),
             ),
-            schema_version=os.environ.get("AGRA_SCHEMA_VERSION", "005.0a"),
+            schema_version=os.environ.get(
+                "AGRA_SCHEMA_VERSION", SCHEMA_VERSION
+            ),
             message_mode=os.environ.get("AGRA_MESSAGE_MODE", "SIMULATION"),
             tick_period_s=float(os.environ.get("VI_TICK_PERIOD_S", "5")),
             tick_republish_status=os.environ.get(
