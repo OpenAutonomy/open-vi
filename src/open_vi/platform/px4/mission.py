@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
-import threading
 from collections.abc import Callable
-from typing import Any
 
 from open_vi.domain import Waypoint
 from open_vi.platform.px4.link import MavlinkLink
@@ -105,13 +103,6 @@ def mission_rel_alt_m(
     if home_hae_m is None:
         return max(floor, float(altitude_m))
     return max(floor, float(altitude_m) - home_hae_m)
-
-
-def flight_rel_alt_m(relative_alt_m: float, takeoff_alt_m: float) -> float:
-    """One AGL for every mission item so PX4 3D capture can succeed."""
-    if relative_alt_m >= 2.0:
-        return relative_alt_m
-    return takeoff_alt_m
 
 
 def upload_waypoints(
@@ -247,14 +238,25 @@ def execute_waypoint_following(
     *,
     here: tuple[float, float] | None,
     relative_alt_m: Callable[[], float],
-    takeoff_alt_m: float,
     path_clearance_m: float,
-    is_armed: Callable[[], bool],
-    ingest: Callable[[Any], None],
     wait_ack: Callable[[int, float], None],
-    cancel: threading.Event | None = None,
 ) -> int:
-    """Upload mission, arm, start MISSION mode. Returns last seq."""
+    """Upload mission and start MISSION mode. Returns last seq.
+
+    The vehicle must already be armed and airborne -- VI no longer
+    arms or launches PX4 (see ``docs/platforms/px4/README.md``); a
+    human does that externally, and
+    ``Px4MavlinkAdapter.snapshot()`` withholds AVAILABLE until
+    telemetry confirms it. Raises if reached while not airborne --
+    that indicates a readiness-gate bug, not a normal path.
+    """
+    rel_now = relative_alt_m()
+    if rel_now < 2.0:
+        raise RuntimeError(
+            f"execute_waypoint_following called while not airborne "
+            f"(relative_alt={rel_now:.1f}m); VI no longer arms or launches "
+            f"PX4 -- this indicates a readiness-gate bug"
+        )
     remaining = remaining_waypoints(waypoints, here, capture_m=path_clearance_m)
     if len(remaining) < len(waypoints):
         LOGGER.info(
@@ -263,45 +265,27 @@ def execute_waypoint_following(
             len(remaining),
             path_clearance_m,
         )
-    rel_now = relative_alt_m()
-    airborne = rel_now >= 2.0
-    hold_alt = flight_rel_alt_m(rel_now, takeoff_alt_m)
     rel_wps = tuple(
         Waypoint(
             latitude_deg=wp.latitude_deg,
             longitude_deg=wp.longitude_deg,
-            altitude_m=hold_alt,
+            altitude_m=rel_now,
         )
         for wp in remaining
     )
     with link.io_lock:
-        if airborne:
-            link.hold()
+        link.hold()
         last_seq = upload_waypoints(
             link,
             rel_wps,
-            takeoff_alt_m=hold_alt,
-            include_takeoff=not airborne,
+            takeoff_alt_m=rel_now,
+            include_takeoff=False,
             path_clearance_m=path_clearance_m,
         )
-        link.arm(
-            force=True,
-            is_armed=is_armed,
-            ingest=ingest,
-            wait_ack=wait_ack,
-        )
         start_mission(link, wait_ack=wait_ack)
-        if not airborne:
-            link.wait_airborne(
-                hold_alt,
-                relative_alt_m=relative_alt_m,
-                ingest=ingest,
-                cancel=cancel,
-            )
     LOGGER.info(
-        "PX4 waypoint mission executing (%s WPs, takeoff=%s last_seq=%s)",
+        "PX4 waypoint mission executing (%s WPs, last_seq=%s)",
         len(remaining),
-        "skip" if airborne else f"{hold_alt:.1f}m",
         last_seq,
     )
     return last_seq

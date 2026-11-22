@@ -46,9 +46,11 @@ CANCEL. `inject_contingency` is Stub-only and stays off the port.
 Isolator's inbound dispatch and periodic tick share one thread once
 `start()` runs, so `submit_flight_command` must not block on vehicle
 I/O — a slow call stalls every periodic publish until it returns.
-`Px4MavlinkAdapter` validates synchronously, accepts, then runs arm /
-upload / climb-wait on a background thread and reports a background
-failure or cancellation through `poll_command_updates()`.
+`Px4MavlinkAdapter` validates synchronously (including that the
+vehicle is already armed and airborne — it never arms or launches PX4
+itself), accepts, then runs the mission upload on a background thread
+and reports a background failure or cancellation through
+`poll_command_updates()`.
 
 ## Backends
 
@@ -58,11 +60,11 @@ state: accept/reject, TSPI, and status. Description is in
 [platforms/stub/FEATURES.md](platforms/stub/FEATURES.md).
 
 `Px4MavlinkAdapter` is telemetry, `WAYPOINT_FOLLOWING` (mission
-upload, arm, takeoff, mission start), and `HSA_CSA` (offboard
-hold). Link, mission, offboard, and telemetry are sibling
-modules under `src/open_vi/platform/px4/`. Description and SITL
-are in [platforms/px4](platforms/px4/README.md). Coverage is in
-[platforms/px4/FEATURES.md](platforms/px4/FEATURES.md).
+upload, mission start — the vehicle must already be armed and
+airborne), and `HSA_CSA` (offboard hold). Link, mission, offboard,
+and telemetry are sibling modules under `src/open_vi/platform/px4/`.
+Description and SITL are in [platforms/px4](platforms/px4/README.md).
+Coverage is in [platforms/px4/FEATURES.md](platforms/px4/FEATURES.md).
 
 `import open_vi.platform` loads the port and Stub. PX4 is imported only
 inside `make_platform("px4")`.

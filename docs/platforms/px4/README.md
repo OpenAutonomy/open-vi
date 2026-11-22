@@ -26,14 +26,14 @@ hold), and telemetry (cache, BIT, TSPI). A second vehicle reuses
 those modules; it does not copy `Px4MavlinkAdapter`.
 
 The adapter does telemetry, `WAYPOINT_FOLLOWING`, `CURVE_FOLLOWING`,
-and `HSA_CSA`.
-Arm, takeoff, and mission start stay inside the adapter. Mission
-Autonomy sends `MA_FlightCommand`, not UCI arm or takeoff.
+and `HSA_CSA`. It does not arm or launch: the vehicle must already be
+armed and airborne before any command is accepted (see Telemetry).
+Mission Autonomy sends `MA_FlightCommand`, not UCI arm or takeoff.
 Capability NEW starts a mission or offboard hold when idle. Activity
 UPDATE is the replan: waypoint replace reuses the airborne path
-(hold, drop prefix waypoints, skip takeoff); HSA replaces the live
-vector. Both keep the live `activity_id`. A second Capability NEW
-while airborne is rejected.
+(hold, drop prefix waypoints); HSA replaces the live vector. Both
+keep the live `activity_id`. A second Capability NEW while airborne
+is rejected.
 
 Before upload, the adapter checks the path against a
 relative-altitude envelope (default 10–500 m AGL;
@@ -112,26 +112,27 @@ envelope. Those rejects never start a mission.
 ## Waypoint execute
 
 An accepted `WAYPOINT_FOLLOWING` returns `ACCEPTED` as soon as the
-path clears validation; the mission upload, arm, MISSION start, and
-wait until relative altitude shows climb all run on a background
-thread so `submit_flight_command` never blocks the Isolator (it
-shares one thread with periodic status/TSPI publishing after
-`start`). A failure discovered during that background work — a
-timeout, a rejected arm — is reported as `FAILED` on the next
+path clears validation and telemetry confirms the vehicle is armed
+and airborne; the mission upload and MISSION start run on a
+background thread so `submit_flight_command` never blocks the
+Isolator (it shares one thread with periodic status/TSPI publishing
+after `start`). A failure discovered during that background work — a
+timeout, a missing ack — is reported as `FAILED` on the next
 `poll_command_updates`, not as a synchronous reject. An Activity
 UPDATE with the live `ActivityID` runs the same upload without
 minting a new activity. The command is rejected up front (before any
-background work starts) if the link is down, the path fails the
-envelope check, or Activity is not UPDATE against the live id.
+background work starts) if the link is down, the vehicle is not yet
+armed and airborne, the path fails the envelope check, or Activity is
+not UPDATE against the live id.
 
 ## HSA execute
 
-An accepted `HSA_CSA` returns `ACCEPTED` immediately; arming (and
-climb, if still on the ground), priming offboard setpoints, and the
-switch to OFFBOARD run on the same background thread as
-`WAYPOINT_FOLLOWING` execution before the setpoint stream starts.
-Streamed heading × groundspeed plus AGL follows once OFFBOARD is
-established. Leftover refs convert onto that vector:
+An accepted `HSA_CSA` returns `ACCEPTED` immediately once telemetry
+confirms the vehicle is armed and airborne; priming offboard
+setpoints and the switch to OFFBOARD run on the same background
+thread as `WAYPOINT_FOLLOWING` execution before the setpoint stream
+starts. Streamed heading × groundspeed plus AGL follows once OFFBOARD
+is established. Leftover refs convert onto that vector:
 
 | Commanded | Becomes | Source |
 | --- | --- | --- |
@@ -169,29 +170,33 @@ sequenceDiagram
   participant FC as PX4
 
   Iso->>Px4: submit_flight_command(WAYPOINT_FOLLOWING)
+  Note over Px4: requires telemetry showing armed + airborne, else REJECTED
   Px4-->>Iso: ACCEPTED + activity ACTIVE_UNCONSTRAINED
   Px4->>Exec: start execution
-  Exec->>FC: MISSION_COUNT + items
-  Note over Exec,FC: item 0 NAV_TAKEOFF, then NAV_WAYPOINT
-  Exec->>FC: ARM
+  Exec->>FC: MISSION_COUNT + NAV_WAYPOINT items
   Exec->>FC: set_mode MISSION + MISSION_START
-  Exec->>FC: wait relative_alt climb
   Note over Px4,Exec: a failure here reports FAILED on the next poll_command_updates
 ```
 
-A standalone PX4 TAKEOFF mode sits at `MIS_TAKEOFF_ALT`. Embedding
-takeoff as mission item 0 and then `MISSION_START` is the path that
-climbs. `apply_system_management` writes `SENS_BARO_QNH` (hPa) and
-the local TSPI snapshot (`kollsman_hpa`). Link down or a missing
-param ack is `REJECTED`.
+The adapter never uploads a takeoff item; the vehicle must already be
+airborne before a mission or offboard hold starts (see Telemetry).
+`apply_system_management` writes `SENS_BARO_QNH` (hPa) and the local
+TSPI snapshot (`kollsman_hpa`). Link down or a missing param ack is
+`REJECTED`.
 
 ## Telemetry
 
 A reader thread ingests HEARTBEAT, GLOBAL_POSITION_INT, ATTITUDE,
 VFR_HUD, WIND / WIND_COV, SCALED_PRESSURE, SYS_STATUS, and
-`BATTERY_STATUS`. `snapshot()` is `AVAILABLE` while
-heartbeat and position are fresher than 10 s; otherwise
-`TEMPORARILY_UNAVAILABLE` / `PX4_LINK_DOWN`.
+`BATTERY_STATUS`. `snapshot()` is `AVAILABLE` only once heartbeat and
+position are fresher than 10 s *and* telemetry shows the vehicle
+armed and airborne (HEARTBEAT's armed bit and
+`GLOBAL_POSITION_INT.relative_alt >= 2 m`). Otherwise it is
+`TEMPORARILY_UNAVAILABLE`: `PX4_LINK_DOWN` when the link itself is
+stale, `PX4_AWAITING_LAUNCH` when the link is fine but the vehicle
+isn't armed and airborne yet. The adapter never arms or launches PX4
+itself — a human (or a boot script driving PX4's own `commander`
+shell) does that externally.
 `get_vehicle_state()` maps lat/lon/alt, NED speeds, attitude,
 airspeed, heading, battery percent, and endurance duration into
 `TspiSnapshot`. Duration is `time_remaining` when PX4 estimates

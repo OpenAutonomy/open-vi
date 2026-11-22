@@ -2,9 +2,9 @@
 
 Reproduces the review finding end to end: before the PX4 adapter ran
 command execution on a background thread, a blocking
-``submit_flight_command`` (e.g. waiting for climb) shared the single
-Isolator thread with the tick loop, so ``SubsystemStatus`` and
-``MA_FlightCapabilityStatus`` stopped publishing for as long as the
+``submit_flight_command`` (e.g. waiting on a MISSION_START ack) shared
+the single Isolator thread with the tick loop, so ``SubsystemStatus``
+and ``MA_FlightCapabilityStatus`` stopped publishing for as long as the
 command blocked.
 """
 
@@ -37,8 +37,8 @@ class _FakeMsg:
         return self._mtype
 
 
-class _NeverAirborneConn:
-    """Acks arm/mission fast, but the vehicle never reports a climb."""
+class _NoMissionStartAckConn:
+    """Acks the mission upload fast, but MISSION_START never gets an ACK."""
 
     def __init__(self) -> None:
         self.target_system = 1
@@ -59,9 +59,9 @@ class _NeverAirborneConn:
             return _FakeMsg("MISSION_ACK", type=0)
         if isinstance(types, list) and "MISSION_REQUEST" in types:
             return _FakeMsg("MISSION_REQUEST", seq=0)
-        if types == "HEARTBEAT":
-            return _FakeMsg("HEARTBEAT", base_mode=128, system_status=4)
-        # wait_airborne's plain poll (no `type=`): relative_alt never climbs.
+        # wait_command_ack's poll for MAV_CMD_MISSION_START: never arrives,
+        # so the exec thread stays inside its 5s timeout for the window
+        # this test checks periodic publishing against.
         time.sleep(0.01)
         return None
 
@@ -85,24 +85,23 @@ def test_slow_px4_command_does_not_stall_periodic_publishing() -> None:
     # pylint: disable-next=import-outside-toplevel
     from open_vi.platform.px4 import Px4MavlinkAdapter
 
-    conn = _NeverAirborneConn()
+    conn = _NoMissionStartAckConn()
     plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
     plat._ingest(_FakeMsg("HEARTBEAT", base_mode=128))  # pylint: disable=protected-access
+    # home_hae_m = alt - relative_alt = 100.0; armed + airborne so the
+    # command is accepted under the readiness gate.
     plat._ingest(  # pylint: disable=protected-access
         _FakeMsg(
             "GLOBAL_POSITION_INT",
             lat=0,
             lon=0,
-            alt=100000,
-            relative_alt=0,
+            alt=130000,
+            relative_alt=30000,
             vx=0,
             vy=0,
             vz=0,
             hdg=0,
         )
-    )
-    plat._wait_command_ack_locked = (  # type: ignore[method-assign]
-        lambda *a, **k: None
     )
 
     bus = InMemoryAsb()
@@ -133,8 +132,8 @@ def test_slow_px4_command_does_not_stall_periodic_publishing() -> None:
         assert status is not None
         assert "ACCEPTED" in status
 
-        # The fake vehicle never reports a climb, so the PX4 exec thread
-        # is still inside wait_airborne for the whole window below. If
+        # MISSION_START never gets a COMMAND_ACK, so the PX4 exec thread
+        # is still inside wait_command_ack for the whole window below. If
         # the Isolator thread were blocked on that call (the bug this
         # fix addresses), no further tick could publish here.
         before = len(bus.published[MT_SUBSYSTEM_STATUS])
