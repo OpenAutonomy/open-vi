@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-22
+
+Isolator serializes session writes, and PX4 command execution moves
+off the Isolator thread, so a blocking vehicle command no longer
+stalls periodic status and TSPI. VI no longer arms or launches PX4:
+readiness requires telemetry showing the vehicle already armed and
+airborne, and `LAUNCH` stays an external step. PX4 is a package of
+link, mission, offboard, and telemetry. §1.2 rows split into
+Sequence, Execution, and Backend — 34/36 is Sequence only.
+
 ### Fixed
 
 - PX4 `start_mission` waits for the `DO_SET_MODE` ack before sending
