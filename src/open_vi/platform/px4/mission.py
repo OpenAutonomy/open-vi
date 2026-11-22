@@ -221,6 +221,16 @@ def start_mission(
     conn = link.require_conn()
     if not link.set_mode("MISSION"):
         link.set_mode("AUTO.MISSION")
+    # PX4 denies MISSION_START (COMMAND_ACK result=2) if it hasn't
+    # finished the AUTO.MISSION nav_state transition yet -- the mode
+    # switch above is itself a MAV_CMD_DO_SET_MODE that PX4 acks once
+    # applied, so wait for that ack before racing MISSION_START in
+    # behind it (verified live: sending them back to back denied
+    # MISSION_START outright on the fixed-wing airframe).
+    try:
+        wait_ack(mavutil.mavlink.MAV_CMD_DO_SET_MODE, 2.0)
+    except TimeoutError:
+        LOGGER.warning("No ACK for DO_SET_MODE; continuing")
     conn.mav.command_long_send(
         conn.target_system,
         conn.target_component,
