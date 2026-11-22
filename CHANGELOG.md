@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- PX4 `start_mission` waits for the `DO_SET_MODE` ack before sending
+  `MISSION_START`. PX4 denies `MISSION_START` (`COMMAND_ACK`
+  result=2) while the `AUTO.MISSION` nav_state transition from the
+  preceding mode switch is still in flight; sending the two back to
+  back denied the start outright on a fixed-wing airframe. A silent
+  mode ack still falls through to `MISSION_START` after a 2 s
+  timeout, so an adapter that never acks the switch does not lose
+  the start.
+
 ### Changed
 
 - Isolator session writes are serialized. After `start`, inbound is

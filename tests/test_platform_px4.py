@@ -646,8 +646,10 @@ def test_px4_waypoint_execute_accepts(
     conn.recv_match = fake_recv_match  # type: ignore[method-assign]
     pytest.importorskip("pymavlink")
 
-    # MISSION_START ack uses command 300.
-    acks = {"arm": 400, "mission_start": 300}
+    # DO_SET_MODE 176 then MISSION_START 300 — the only two acks this
+    # path waits on now that VI no longer arms the vehicle. Ordering is
+    # pinned by test_px4_start_mission_waits_for_mode_ack_before_start.
+    acks = {"set_mode": 176, "mission_start": 300}
 
     def fake_wait(command: int, timeout: float = 5.0) -> None:
         del timeout
@@ -1354,3 +1356,78 @@ def test_px4_hsa_rejects_out_of_envelope(
     assert result.validation_results == ("PERFORMANCE_LIMIT_EXCEEDED",)
     assert conn.position_targets == []
     plat.close()
+
+
+def test_px4_start_mission_waits_for_mode_ack_before_start() -> None:
+    """MISSION_START must follow the DO_SET_MODE ack, not race it.
+
+    PX4 denies MISSION_START (``COMMAND_ACK`` result=2) while the
+    nav_state transition from the preceding mode switch is still in
+    flight, so ``start_mission`` waits for that ack first.
+    """
+    pytest.importorskip("pymavlink")
+    from pymavlink import mavutil
+
+    from open_vi.platform.px4.link import MavlinkLink
+    from open_vi.platform.px4.mission import start_mission
+
+    conn = _FakeConn()
+    events: list[tuple[str, int]] = []
+    conn.set_mode = lambda *a: events.append(  # type: ignore[method-assign]
+        ("set_mode", 0)
+    )
+    conn.mav.command_long_send = lambda *a, **k: events.append(
+        ("command_long", int(a[2]))
+    )
+    link = MavlinkLink(
+        "udpin:127.0.0.1:14540",
+        heartbeat_timeout_s=1.0,
+        on_message=lambda _m: None,
+        connection=conn,
+    )
+
+    def wait_ack(command: int, timeout: float) -> None:
+        del timeout
+        events.append(("wait_ack", int(command)))
+
+    start_mission(link, wait_ack=wait_ack)
+
+    assert events == [
+        ("set_mode", 0),
+        ("wait_ack", mavutil.mavlink.MAV_CMD_DO_SET_MODE),
+        ("command_long", mavutil.mavlink.MAV_CMD_MISSION_START),
+        ("wait_ack", mavutil.mavlink.MAV_CMD_MISSION_START),
+    ]
+
+
+def test_px4_start_mission_survives_missing_mode_ack() -> None:
+    """A silent DO_SET_MODE still sends MISSION_START.
+
+    Waiting on the mode ack is an ordering guard, not a precondition:
+    an adapter that never acks the mode switch must not lose the
+    mission start.
+    """
+    pytest.importorskip("pymavlink")
+    from pymavlink import mavutil
+
+    from open_vi.platform.px4.link import MavlinkLink
+    from open_vi.platform.px4.mission import start_mission
+
+    conn = _FakeConn()
+    sent: list[int] = []
+    conn.mav.command_long_send = lambda *a, **k: sent.append(int(a[2]))
+    link = MavlinkLink(
+        "udpin:127.0.0.1:14540",
+        heartbeat_timeout_s=1.0,
+        on_message=lambda _m: None,
+        connection=conn,
+    )
+
+    def wait_ack(command: int, timeout: float) -> None:
+        del timeout
+        if command == mavutil.mavlink.MAV_CMD_DO_SET_MODE:
+            raise TimeoutError(command)
+
+    start_mission(link, wait_ack=wait_ack)
+
+    assert mavutil.mavlink.MAV_CMD_MISSION_START in sent
