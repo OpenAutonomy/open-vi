@@ -38,14 +38,11 @@ DEFAULT_XSD = (
 # Builders that do not yet match A-GRA v5.0a. Measured against the
 # fetched catalog, not assumed.
 #
-# What remains is the plan-execution family: it emits flat
-# ExecutionState / RoutePlanID / MissionPlanID / ActivityID where the
-# schema has a repeating PlanExecutionStatus composite, and
-# ExecutingSystemID where the schema says SystemID.
-# RoutePlanExecutionStatus additionally requires CurrentSegment, which
-# needs the vehicle's current path segment — PX4 receives it as
-# MISSION_ITEM_REACHED.seq and currently discards it, so that one needs
-# a PlatformPort addition rather than a reshape.
+# What remains is RoutePlanExecutionStatus, which requires
+# CurrentSegment: the path and segment the vehicle is currently
+# navigating. PX4 receives that as MISSION_ITEM_REACHED.seq and
+# discards it after the terminal check, so filling it needs a
+# PlatformPort addition rather than a reshape of existing data.
 #
 # §1.2.6.6 and §1.2.5.6 both require these messages from the VI, so
 # they cannot be dropped; see docs/FEATURES.md.
@@ -55,8 +52,6 @@ DEFAULT_XSD = (
 # directions: a newly non-conformant type fails, and so does one that
 # starts validating while still listed here.
 KNOWN_NON_CONFORMANT = {
-    "MA_MissionPlanExecutionStatus",
-    "ResponsePlanExecutionStatus",
     "RoutePlanExecutionStatus",
 }
 
@@ -150,3 +145,29 @@ def test_known_gaps_are_still_published(corpus) -> None:
     """A listed type that is no longer published is a stale entry."""
     stale = sorted(KNOWN_NON_CONFORMANT - set(corpus))
     assert not stale, f"{stale} are no longer published; drop them"
+
+
+def test_plan_execution_states_match_the_schema_enumeration(schema) -> None:
+    """The hand-copied enum in test_codec_plan_execution.py is correct.
+
+    That module duplicates PlanExecutionStateEnum so its vocabulary
+    assertions work without the catalog fetched. This reads the real
+    enumeration and fails if the copy drifts from it.
+    """
+    from open_vi.codec.control_status import _PLAN_EXECUTION_STATE
+    from test_codec_plan_execution import SCHEMA_STATES
+
+    enumeration = None
+    for name, xsd_type in schema.types.items():
+        if name and "PlanExecutionState" in str(name):
+            values = getattr(xsd_type, "enumeration", None)
+            if values:
+                enumeration = set(values)
+                break
+    assert enumeration, "no PlanExecutionState enumeration in the catalog"
+    assert SCHEMA_STATES == enumeration, (
+        f"hand-copied states {sorted(SCHEMA_STATES)} != catalog "
+        f"{sorted(enumeration)}"
+    )
+    unknown = sorted(set(_PLAN_EXECUTION_STATE.values()) - enumeration)
+    assert not unknown, f"codec emits non-enumerated states: {unknown}"

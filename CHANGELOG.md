@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Plan-execution status carries A-GRA's `PlanExecutionStatus`
+  composite — a plan id and a state — instead of flat
+  `ExecutionState` / `RoutePlanID` / `MissionPlanID` / `ActivityID`
+  siblings, and names the system `SystemID` rather than
+  `ExecutingSystemID`. `Source` is emitted on all three. §1.2.6.6
+  names `PlanExecutionStatus.PlanExecutionState` as the required
+  field, so this is the shape the standard asks for.
+  `MA_MissionPlanExecutionStatus` keys its composite on
+  `MissionPlanID`; the other two use `PlanID`.
+- A route reaching completion published `COMPLETED`, which is not a
+  `PlanExecutionStateEnum` member — the token is `COMPLETE`. The codec
+  now maps domain states to wire tokens, leaving the domain
+  vocabulary (and the internal comparison in `isolator/publishers.py`)
+  untouched. An unmapped state passes through rather than being
+  rewritten, so a new one fails conformance instead of going out as a
+  plausible wrong value.
+  `tests/test_codec_plan_execution.py` drives `RouteExecution`'s own
+  setters to assert every state it can reach has a wire token.
+- `ActivityID` is no longer emitted on these three messages. A-GRA has
+  no place for it in any of their content models, so it was a field
+  the VI was adding that the standard does not carry here.
+- **35 of 36** published message types now validate, up from 33.
+  `RoutePlanExecutionStatus` is the only one left: it needs
+  `CurrentSegment`, which requires the vehicle's current path segment
+  through `PlatformPort`.
+
+### Changed
+
+- FEATURES §1.2.6.6 drops to Partial Sequence. The interaction's
+  message set is incomplete while `RoutePlanExecutionStatus` omits
+  `CurrentSegment` and `MA_ActionStatus` is unpublished — the previous
+  Supported reading counted the messages present rather than the
+  fields §1.2.6.6 requires of them.
+
 ### Security
 
 - Inbound XML is parsed through `defusedxml`, which refuses entity and

@@ -660,9 +660,20 @@ def test_route_sourced_complete_skips_flight_command_status() -> None:
     assert stored is not None
     assert stored.plan_state == "ACTIVATED"
     assert iso.ctx.flight.activity_id is None
+    # The domain state is COMPLETED; A-GRA's PlanExecutionStateEnum
+    # token is COMPLETE. The codec maps between them, so the two
+    # assertions below deliberately differ. ProcessingState on the
+    # activation and validation ladders keeps COMPLETED — that is a
+    # different enumeration.
     assert iso.ctx.execution.state == "COMPLETED"
-    assert "COMPLETED" in bus.published[MT_ROUTE_PLAN_EXECUTION_STATUS][-1]
-    assert "COMPLETED" in bus.published[MT_RESPONSE_PLAN_EXECUTION_STATUS][-1]
+    assert (
+        "<PlanExecutionState>COMPLETE</PlanExecutionState>"
+        in bus.published[MT_ROUTE_PLAN_EXECUTION_STATUS][-1]
+    )
+    assert (
+        "<PlanExecutionState>COMPLETE</PlanExecutionState>"
+        in bus.published[MT_RESPONSE_PLAN_EXECUTION_STATUS][-1]
+    )
 
 
 def test_status_package_republishes_executing() -> None:

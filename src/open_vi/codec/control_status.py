@@ -177,18 +177,18 @@ def build_response_plan_execution_status(
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
 ) -> bytes:
-    """ResponsePlanExecutionStatus: idle Source, or live plan ids.
+    """ResponsePlanExecutionStatus: idle Source, or a live composite.
 
-    When *snapshot* is ``None`` this is SystemID + Source only.
-    A live snapshot adds ExecutionState, RoutePlanID, and optional
-    MissionPlanID / ActivityID.
+    When *snapshot* is ``None`` this is SystemID + Source only, which
+    is the idle form its three sibling plan-status messages also use.
+    A live snapshot adds one ``PlanExecutionStatus``.
     """
     children = [
         system_id(identity),
         el("Source", text=snapshot.source if snapshot is not None else source),
     ]
     if snapshot is not None:
-        children.extend(_execution_ids(snapshot))
+        children.append(_plan_execution_status(snapshot, plan_id_tag="PlanID"))
     data = el("MessageData", *children)
     root = message_envelope(
         "ResponsePlanExecutionStatus",
@@ -207,11 +207,18 @@ def build_route_plan_execution_status(
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
 ) -> bytes:
-    """RoutePlanExecutionStatus for an activated route."""
+    """RoutePlanExecutionStatus for an activated route.
+
+    Still incomplete against A-GRA: the schema requires
+    ``CurrentSegment`` (the path and segment being navigated), which
+    needs the vehicle's current segment surfaced through
+    ``PlatformPort``. Recorded in ``KNOWN_NON_CONFORMANT``.
+    """
     data = el(
         "MessageData",
-        system_id(identity, "ExecutingSystemID"),
-        *_execution_ids(snapshot),
+        system_id(identity),
+        el("Source", text=snapshot.source),
+        _plan_execution_status(snapshot, plan_id_tag="PlanID"),
     )
     root = message_envelope(
         "RoutePlanExecutionStatus",
@@ -233,8 +240,9 @@ def build_mission_plan_execution_status(
     """MA_MissionPlanExecutionStatus when MissionPlanID is known."""
     data = el(
         "MessageData",
-        system_id(identity, "ExecutingSystemID"),
-        *_execution_ids(snapshot),
+        system_id(identity),
+        el("Source", text=snapshot.source),
+        _plan_execution_status(snapshot, plan_id_tag="MissionPlanID"),
     )
     root = message_envelope(
         "MA_MissionPlanExecutionStatus",
@@ -246,16 +254,54 @@ def build_mission_plan_execution_status(
     return tostring(root)
 
 
-def _execution_ids(snapshot: PlanExecutionSnapshot) -> list:
-    """ExecutionState plus Route / Mission / Activity ids."""
-    children = [
-        el("ExecutionState", text=snapshot.execution_state),
-        id_type("RoutePlanID", snapshot.route_plan_id),
-    ]
-    if snapshot.mission_plan_id is not None:
-        children.append(id_type("MissionPlanID", snapshot.mission_plan_id))
-    if snapshot.activity_id is not None:
-        children.append(
-            id_type("ActivityID", snapshot.activity_id, "flight-activity")
-        )
-    return children
+# Domain execution state -> PlanExecutionStateEnum. The domain says
+# COMPLETED; the standard's token is COMPLETE. Mapping at the codec
+# boundary rather than renaming the domain keeps the internal
+# comparison in isolator/publishers.py working, and matches the
+# convention that wire conversion belongs here (docs/CODEC.md).
+_PLAN_EXECUTION_STATE = {
+    "PENDING": "PENDING",
+    "EXECUTING": "EXECUTING",
+    "COMPLETED": "COMPLETE",
+    "FAILED": "FAILED",
+    "CANCELED": "CANCELED",
+}
+
+
+def plan_execution_state(domain_state: str) -> str:
+    """Wire token for a domain execution state.
+
+    An unmapped state passes through unchanged, so a newly added
+    domain state shows up as a schema validation failure in the
+    conformance suite rather than being quietly rewritten into a
+    valid-looking wrong value.
+    """
+    return _PLAN_EXECUTION_STATE.get(domain_state, domain_state)
+
+
+def _plan_execution_status(
+    snapshot: PlanExecutionSnapshot, *, plan_id_tag: str
+):
+    """One ``PlanExecutionStatus`` composite.
+
+    A-GRA carries plan execution as a repeating composite of a plan id
+    and a state, not as flat sibling fields. *plan_id_tag* differs by
+    message: route and response status carry ``PlanID``, mission
+    status carries ``MissionPlanID``.
+
+    ``snapshot.activity_id`` is deliberately dropped — none of these
+    three messages has a place for it in the content model, so it was
+    information the VI was emitting that the standard does not carry
+    here.
+    """
+    plan_id = snapshot.route_plan_id
+    if plan_id_tag == "MissionPlanID" and snapshot.mission_plan_id is not None:
+        plan_id = snapshot.mission_plan_id
+    return el(
+        "PlanExecutionStatus",
+        id_type(plan_id_tag, plan_id),
+        el(
+            "PlanExecutionState",
+            text=plan_execution_state(snapshot.execution_state),
+        ),
+    )
