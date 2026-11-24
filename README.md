@@ -91,9 +91,9 @@ It lands in `schema/a-gra/` (gitignored) and is found there
 automatically; `UCI_XSD` overrides the path. CI runs this as the
 `conformance` job.
 
-**32 of the 36 published message types validate against A-GRA 5.0a
-today.** The four that do not are recorded in that module and fixed
-separately. Without a schema the tests skip, so the suite is green
+**33 of the 36 published message types validate against A-GRA 5.0a
+today.** The three that do not are the plan-execution family, recorded
+in that module with what each one needs. Without a schema the tests skip, so the suite is green
 before anyone fetches one. See the
 [configuration reference](docs/CONFIGURATION.md).
 

@@ -34,18 +34,30 @@ def build_path_element(
     airfield_id: UUID | None = None,
     runway_id: UUID | None = None,
 ):
-    """Build a Path element (PathID, PathType, Segment children).
+    """Build an A-GRA ``Path``: PathID, PathType, then linked PathSegments.
+
+    A-GRA models a path as a linked list: ``FirstInPathSegmentID``
+    names the head, and each ``PathSegment`` points at its successor
+    through ``NextPathSegment``. Each segment carries its position
+    under ``EndPoint/WayPoint/PointChoice/Point2D``.
 
     *path_type* is a PathTypeEnum token (``PRIMARY``, ``TAKEOFF``,
     ``LANDING``). *airfield_id* / *runway_id* link TO/L paths to the
     home ``AirfieldReport``.
+
+    Segment ids are ``UUID(int=index)``, 1-based, so a built path is
+    reproducible and a segment can be referenced by index elsewhere —
+    ``RoutePlanExecutionStatus/CurrentSegment`` needs exactly that.
     """
     path_id = UUID(int=1)
+    segment_ids = [UUID(int=index) for index in range(1, len(waypoints) + 1)]
     children = [
         id_type("PathID", path_id, "path-1"),
         el("PathType", text=path_type),
     ]
-    for index, waypoint in enumerate(waypoints, start=1):
+    if segment_ids:
+        children.append(id_type("FirstInPathSegmentID", segment_ids[0]))
+    for index, waypoint in enumerate(waypoints):
         point_kids = [
             el(
                 "Latitude",
@@ -58,13 +70,26 @@ def build_path_element(
         ]
         if waypoint.altitude_m is not None:
             point_kids.append(el("Altitude", text=str(waypoint.altitude_m)))
-        children.append(
+        segment_kids = [
+            id_type("PathSegmentID", segment_ids[index], f"seg-{index + 1}"),
+            el("Source", text="OPERATOR_DEFINED"),
             el(
-                "Segment",
-                id_type("PathSegmentID", UUID(int=index)),
-                el("Position", *point_kids),
+                "EndPoint",
+                el(
+                    "WayPoint",
+                    el("PointChoice", el("Point2D", *point_kids)),
+                    el("WaypointType", text="NAV_ONLY"),
+                ),
+            ),
+        ]
+        if index + 1 < len(segment_ids):
+            segment_kids.append(
+                el(
+                    "NextPathSegment",
+                    id_type("PathSegmentID", segment_ids[index + 1]),
+                )
             )
-        )
+        children.append(el("PathSegment", *segment_kids))
     if airfield_id is not None:
         children.append(id_type("AirfieldID", airfield_id, "home-field"))
     if runway_id is not None:

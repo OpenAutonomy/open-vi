@@ -140,11 +140,18 @@ def build_sample_ma_response(
     """
     if route_plan_id is None:
         response_type = "DO_NOTHING"
+        # Trigger and Response are both required on Option. A
+        # DO_NOTHING option still has to say what it is triggered by
+        # and that its response is to do nothing.
         option = el(
             "Option",
             el("OptionIndex", text="0"),
             el("ContinueEvaluation", text="false"),
             el("Enabled", text="true"),
+            el("Trigger", id_type("ResponseID", response_id)),
+            # DoNothing is a presence marker: the schema pins it to
+            # length 0, so it carries no text.
+            el("Response", el("DoNothing")),
         )
     else:
         plan_id = mission_plan_id or route_plan_id
