@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from uuid import UUID
 from xml.etree import ElementTree as ET
 
+from defusedxml.ElementTree import fromstring as _defused_fromstring
+
 from open_vi.codec.ns import NS
 from open_vi.identity import SystemIdentity, uuid_to_hex
 
@@ -153,6 +155,23 @@ def tostring(node: ET.Element, *, xml_declaration: bool = True) -> bytes:
 
 
 def parse_xml(data: str | bytes) -> ET.Element:
+    """Parse inbound UCI XML. Rejects entity and external-reference tricks.
+
+    Every inbound body on the bus reaches the codec through here, and
+    the bus is unauthenticated (SECURITY.md), so this is the only
+    place the parser's posture can be set.
+
+    The stdlib parser expands internal entities: a ~310 byte document
+    declaring nested entities expands to megabytes before any handler
+    sees it, and expat's amplification guard does not arm until the
+    document is already large, so small payloads bypass it entirely.
+    ``defusedxml`` refuses the entity declaration instead.
+
+    Raises:
+        defusedxml.common.DefusedXmlException: entity, DTD, or
+            external-reference constructs. A ``ValueError`` subclass.
+        xml.etree.ElementTree.ParseError: malformed XML.
+    """
     if isinstance(data, str):
         data = data.encode("utf-8")
-    return ET.fromstring(data)
+    return _defused_fromstring(data)
