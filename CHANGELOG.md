@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Security
+
+- Inbound XML is parsed through `defusedxml`, which refuses entity and
+  external-reference declarations instead of expanding them. Every
+  inbound body reaches the codec through
+  `open_vi.codec.xmlutil.parse_xml`, and the bus is unauthenticated,
+  so that one function is where the posture is set. Measured against
+  the stdlib parser first: a ~310 byte document declaring nested
+  entities expanded to ~3 MB with no error, because expat's
+  amplification guard does not arm until a document is already large.
+  `defusedxml` is now a runtime dependency, not an extra.
+  `tests/test_codec_xml_hardening.py` holds the boundary and fails
+  without the change.
+
+### Fixed
+
+- The `pages` job no longer races the artifact API. It uploaded the
+  Pages artifact and deployed it back to back in one job, and
+  `deploy-pages` queried metadata 1.2s after the upload began — it
+  failed the merges of #4, #6 and #9, each time leaving the published
+  docs stale, including for the 0.5.0 release. The upload now happens
+  in `docs`, where the HTML is built, so a job boundary separates it
+  from the deployment, and both sides use the default artifact name so
+  there is nothing to keep in sync. This is the layout GitHub's own
+  Pages example uses.
+
 ### Fixed
 
 - `Path` is built as A-GRA models it: a linked list of `PathSegment`

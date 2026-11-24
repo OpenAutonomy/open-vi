@@ -13,6 +13,9 @@ authors = [
     { name = "OpenAutonomy" },
 ]
 dependencies = [
+    # Inbound XML arrives from any peer on an unauthenticated bus; the
+    # stdlib parser expands entities. See SECURITY.md.
+    "defusedxml>=0.7",
     "stomp.py>=8.1.0",
 ]
 
