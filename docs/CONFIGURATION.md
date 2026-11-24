@@ -59,14 +59,30 @@ Read by the test suite only; these have no effect on a running VI.
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `UCI_XSD_DIR` | unset | Directory holding the UCI / A-GRA XSD catalog. Unset skips `tests/test_wire_xsd.py` entirely |
-| `UCI_XSD_MASTER` | unset | A single entry schema used for every message type, for a catalog that imports its types from one root |
+| `UCI_XSD` | unset | Entry document of the UCI / A-GRA XSD catalog. Unset skips `tests/test_wire_xsd.py` entirely |
 | `UPDATE_GOLDEN` | unset | Regenerates `tests/golden/` from the current build output instead of asserting against it |
 
-The schemas are controlled documents and are not vendored in this
-repository. Resolution is `$UCI_XSD_DIR/<MessageType>.xsd` first, then
-`$UCI_XSD_MASTER`; a message type that resolves to neither is reported
-as a failure rather than skipped.
+The catalog is not vendored here. It is already vendored by
+[oa-gateway](https://github.com/OpenAutonomy/oa-gateway) under
+`schema/a-gra` and `schema/uci`, and by `open-ma` under
+`third_party/a-gra/Schema` — byte-identical in both. Point `UCI_XSD` at
+one of those rather than adding a third copy:
+
+```bash
+UCI_XSD=../oa-gateway/schema/a-gra/A-GRA_MessageDefinitions_v5_0_a.xsd \
+    pytest tests/test_wire_xsd.py
+```
+
+One path is enough, following oa-gateway's own convention: the schema
+processor resolves `xs:include` / `xs:import` itself relative to that
+file, so the entry document spans the rest of the catalog. A-GRA
+v5.0a declares the OAM target namespace this codec emits, so it is the
+right entry document for open-vi; the UCI 2.5 catalog is a different
+message set.
+
+CI has no catalog, so conformance is not enforced there. Four message
+types are known not to validate; `KNOWN_NON_CONFORMANT` in that module
+records them and fails if the list goes stale in either direction.
 
 `UPDATE_GOLDEN=1` rewrites the recorded wire corpus. Read the resulting
 diff before committing it — that diff is the only review gate on a

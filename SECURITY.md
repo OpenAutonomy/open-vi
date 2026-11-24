@@ -43,7 +43,7 @@ it lets a peer do something that posture does not already permit.
   runtime. Non-conforming XML may be parsed into domain structs or
   dropped; it is not schema-rejected. Outbound messages are validated
   against an operator-supplied catalog in the test suite
-  (`UCI_XSD_DIR`), which is a build-time check, not a runtime guard.
+  (`UCI_XSD`), which is a build-time check, not a runtime guard.
 
 ## Supported versions
 

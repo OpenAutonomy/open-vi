@@ -75,17 +75,20 @@ Conformance is checked in two layers. The schema-independent layer runs
 on every `pytest`: a byte-exact golden corpus of every message the VI
 publishes, build/parse round-trips, structural invariants on the
 envelope and header, and a check that FEATURES §1.3.1 matches the
-implemented message set. The XSD layer is operator-supplied — point
-`UCI_XSD_DIR` at a catalog and it validates that same corpus against
+implemented message set. The XSD layer validates that same corpus against the A-GRA catalog,
+which is not vendored here — `oa-gateway` and `open-ma` already carry
 it:
 
 ```bash
 pip install -e ".[validate]"
-UCI_XSD_DIR=/path/to/catalog pytest tests/test_wire_xsd.py
+UCI_XSD=../oa-gateway/schema/a-gra/A-GRA_MessageDefinitions_v5_0_a.xsd \
+    pytest tests/test_wire_xsd.py
 ```
 
-Without `UCI_XSD_DIR` those tests skip, so the suite is green without
-the catalog. See the
+32 of the 36 published message types validate against A-GRA v5.0a
+today. The four that do not are recorded in that module and fixed
+separately. Without `UCI_XSD` those tests skip, so the suite is green
+without the catalog. See the
 [configuration reference](docs/CONFIGURATION.md).
 
 ## Documentation

@@ -21,11 +21,23 @@
   - `test_wire_surface.py`: FEATURES §1.3.1 against the implemented
     message set. Direction is decided by handler subscriptions and real
     `bus.publish` call sites, resolved from the AST.
-- XSD validation of that corpus against the UCI / A-GRA catalog, in
-  `tests/test_wire_xsd.py` with the new `validate` extra. The schemas
-  are controlled documents and are not vendored: point `UCI_XSD_DIR` at
-  a catalog to enable it, and the module skips when unset so the suite
-  stays green without one.
+- XSD validation of that corpus against the A-GRA catalog, in
+  `tests/test_wire_xsd.py` with the new `validate` extra. The catalog
+  is not vendored here — `oa-gateway` (`schema/a-gra`) and `open-ma`
+  (`third_party/a-gra/Schema`) already carry it, byte-identical — so
+  `UCI_XSD` points at an existing copy rather than adding a third. One
+  path is enough, following oa-gateway's convention: the processor
+  resolves `xs:include` itself from the entry document. The module
+  skips when unset, so the suite and CI stay green without a catalog.
+- Measured against A-GRA v5.0a, **32 of 36 published message types
+  validate**. The four that do not are recorded in
+  `KNOWN_NON_CONFORMANT`, which fails if a new type breaks *or* if a
+  listed one starts passing: the plan-execution family
+  (`RoutePlanExecutionStatus`, `MA_MissionPlanExecutionStatus`,
+  `ResponsePlanExecutionStatus`) emits flat fields where the schema has
+  a `PlanExecutionStatus` composite and `ExecutingSystemID` where it
+  says `SystemID`; `MA_RoutePlan` omits the `Plan` wrapper and orders
+  `ForPlanningUseOnly` before `Path` instead of after.
 
 ### Fixed
 
