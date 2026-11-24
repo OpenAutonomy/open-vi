@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Added
+
+- `docs/CONFIGURATION.md`: every environment variable open-vi reads,
+  with defaults and effect. 14 of the 25 had been undocumented,
+  including `AGRA_SCHEMA_VERSION` and `AGRA_MESSAGE_MODE`, which are
+  written into `MessageHeader` on every outbound message.
+- FEATURES §1.2.2 lists `Launch` as Not supported. A-GRA `LAUNCH` is
+  structurally independent from the control modes and the schema
+  prescribes no message sequence for it, so VI does not implement it —
+  but it gates every PX4 flight row, and the matrix had been silent on
+  it. Listed without a § until it is matched to a numbered §1.2
+  interaction, so the row counts are unchanged.
+
+### Changed
+
+- `MessageHeader/SchemaVersion` has one source. `config.py` had its
+  own literal for both the dataclass default and the
+  `AGRA_SCHEMA_VERSION` fallback, and `IsolatorContext` prefers the
+  config value, so a future bump of `open_vi.codec.ns.SCHEMA_VERSION`
+  would have left messages tagged with the stale copy. No wire change
+  today; both literals were `005.0a`.
+- `SECURITY.md` and `README.md` said the bus has no authentication.
+  That is the deployment posture, not a client limitation: open-vi
+  sends STOMP credentials when configured. Reworded, and the
+  credential variables are now documented and covered by tests
+  (`config.py` 78% to 100%, `asb/stomp_amq.py` 24% to 65%).
+
+### Fixed
+
+- FEATURES §1.3.1 listed `SubsystemStatus` as `inout`. It is published
+  only; the peer heartbeat arrives as inbound `ServiceStatus`.
+
 ## [0.5.0] - 2026-11-22
 
 Isolator serializes session writes, and PX4 command execution moves

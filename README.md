@@ -33,8 +33,10 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-There is no authentication and no TLS on the live bus. See
-[SECURITY.md](SECURITY.md).
+The bus is deployed without authentication and without TLS. open-vi
+can send STOMP credentials when a broker requires them; see
+[SECURITY.md](SECURITY.md) and the
+[configuration reference](docs/CONFIGURATION.md).
 
 `open-vi` connects to the ASB at `BROKER_HOST` (default localhost):
 
