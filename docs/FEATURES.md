@@ -110,7 +110,7 @@ when the platform accepts.
 | 1.2.6.3 | Query Airfield Update | Supported | Partial | n/a | `AirfieldReport` runway geometry and linked TO/L `MA_RoutePlan`. The field is synthesized from first TSPI (1,500 m, heading 90°), not a surveyed airfield. |
 | 1.2.6.4 | Query Route Plan | Supported | Supported | n/a | Preloaded TO/L set plus peer-uploaded plans and File*. |
 | 1.2.6.5 | Receive Barometric Pressure | Supported | Supported | PX4 | `MA_SystemManagementRequest` QNH → `apply_system_management`. PX4 writes `SENS_BARO_QNH`. |
-| 1.2.6.6 | Receive Execution Status | Partial | n/a | PX4 | Live plan-execution outs on ACTIVATE, tick, COMPLETE, DEACTIVATE-as-FAILED, and VI abort, each carrying the required `PlanExecutionStatus.PlanExecutionState`. Idle activity / route-activity / task plan status is SystemID + Source only. `RoutePlanExecutionStatus` omits the required `CurrentSegment`, and `MA_ActionStatus` is not published, so the §1.2.6.6 message set is incomplete. |
+| 1.2.6.6 | Receive Execution Status | Partial | n/a | PX4 | Live plan-execution outs on ACTIVATE, tick, COMPLETE, DEACTIVATE-as-FAILED, and VI abort, each carrying the required `PlanExecutionStatus.PlanExecutionState`. `RoutePlanExecutionStatus` carries `CurrentSegment` from the backend's route progress. Idle activity / route-activity / task plan status is SystemID + Source only. Still Partial: `MA_ActionStatus` is not published. |
 | 1.2.6.7 | Receive Vehicle Performance Values | Supported | n/a | PX4 partial | Isolator publishes `snapshot()`. PX4 fills waypoint / HSA / curve altitude min/max. Airspeed, acceleration, and rates come from optional vehicle TOML. |
 | 1.2.6.8 | Receive Vehicle State Data | Supported | n/a | PX4 partial | Activity, position, weather, navigation, component status from `get_vehicle_state()`. PX4 omits fuel mass (no sensor). Duration when the port has it. |
 | 1.2.6.9 | Request Terrain Data | Not supported | Not supported | none | MUC **MA Terrain Data**. No `ElevationRequest*`. |
@@ -174,7 +174,7 @@ Direction is relative to VI. Core unless noted. This table is
 | QueryDataRequestStatus | out | Supported | Ladder; `Result/ID` on `COMPLETED`; `FAILED` reason on checksum mismatch |
 | ResponsePlanExecutionStatus | out | Supported | Idle Source, or live ExecutionState plus plan ids |
 | RouteActivityPlanExecutionStatus | out | Supported | Idle Source; no RouteActivityPlanID |
-| RoutePlanExecutionStatus | out | Supported | `PlanExecutionStatus` composite; `EXECUTING` / `COMPLETE` / `FAILED` on the wire (the domain says `COMPLETED`). **Partial against the schema:** `CurrentSegment` is required and not emitted |
+| RoutePlanExecutionStatus | out | Supported | `PlanExecutionStatus` composite; `EXECUTING` / `COMPLETE` / `FAILED` on the wire (the domain says `COMPLETED`). `CurrentSegment` and `NextSegment` from `PlatformPort.active_route_progress()`. `PreviousSegment` is not emitted: its `ActualCaptureTime` is mandatory and the VI does not record capture times |
 | RoutePlanValidationCommand | in | Supported | Geometry plus `WeatherAreaData` override |
 | RoutePlanValidationCommandStatus | out | Supported | |
 | RoutePlanValidation | out | Supported | |

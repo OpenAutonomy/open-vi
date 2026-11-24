@@ -29,6 +29,7 @@ from open_vi.domain import (
     FlightModeProfile,
     HsaCsaSetpoint,
     PlatformSnapshot,
+    RouteProgress,
     ServiceStatusSnapshot,
     SubsystemStatusSnapshot,
     TspiSnapshot,
@@ -171,6 +172,12 @@ class Px4MavlinkAdapter(PlatformPort):
         self._pending_updates: list[tuple[UUID, CommandResult]] = []
         self._active_command_id: UUID | None = None
         self._mission_last_seq: int | None = None
+        # Progress along the submitted waypoint list. PX4 numbers
+        # mission items from the trimmed upload, so a reached
+        # sequence is _route_skipped + seq in submitted terms.
+        self._route_total: int | None = None
+        self._route_skipped = 0
+        self._route_reached_seq: int | None = None
         self._exec_thread: threading.Thread | None = None
         self._exec_cancel = threading.Event()
         self._service_id = uuid4()
@@ -687,6 +694,7 @@ class Px4MavlinkAdapter(PlatformPort):
         with self._lock:
             seq = ingest(self._cache, msg)
             if seq is not None:
+                self._route_reached_seq = seq
                 self._maybe_complete_mission_locked(seq)
 
     def _maybe_complete_mission_locked(self, seq: int) -> None:
@@ -736,7 +744,7 @@ class Px4MavlinkAdapter(PlatformPort):
         waypoints: tuple[Waypoint, ...],
     ) -> None:
         """Upload mission and start MISSION mode. Vehicle must already fly."""
-        last_seq = execute_waypoint_following(
+        last_seq, skipped = execute_waypoint_following(
             self._link,
             waypoints,
             here=self._current_ll(),
@@ -746,6 +754,28 @@ class Px4MavlinkAdapter(PlatformPort):
         )
         with self._lock:
             self._mission_last_seq = last_seq
+            self._route_total = len(waypoints)
+            self._route_skipped = skipped
+            self._route_reached_seq = None
+
+    def active_route_progress(self) -> RouteProgress | None:
+        """Progress along the submitted waypoint list, or ``None``.
+
+        ``None`` when no mission is live or no ``MISSION_ITEM_REACHED``
+        has arrived yet — before the first one the vehicle is en route
+        to the first uploaded item, and claiming a captured segment
+        then would be reporting a waypoint it has not reached.
+        """
+        with self._lock:
+            total = self._route_total
+            skipped = self._route_skipped
+            reached = self._route_reached_seq
+        if total is None or reached is None:
+            return None
+        index = min(skipped + reached, total - 1)
+        return RouteProgress(
+            waypoint_index=index, total_waypoints=total, captured=True
+        )
 
     def _current_ll(self) -> tuple[float, float] | None:
         """Cached lat/lon, or ``None`` before the first position."""

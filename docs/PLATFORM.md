@@ -68,3 +68,27 @@ Coverage is in [platforms/px4/FEATURES.md](platforms/px4/FEATURES.md).
 
 `import open_vi.platform` loads the port and Stub. PX4 is imported only
 inside `make_platform("px4")`.
+
+## Route progress
+
+``active_route_progress()`` reports where the vehicle is along the
+waypoint list **as submitted**, not along whatever the backend
+uploaded. A backend that trims or reorders owns the mapping back: PX4
+drops a leading prefix it has already captured, so its MAVLink
+mission sequence ``k`` is submitted index ``skipped + k``.
+
+``None`` means the backend cannot report it — nothing executing, or no
+notion of position along a route. It is not a default of zero.
+``RoutePlanExecutionStatus`` requires ``CurrentSegment``, and naming a
+segment the vehicle is not at would be a navigational claim the VI has
+not observed.
+
+Progress deliberately outlives the live activity. §1.2.5.6 requires a
+``RoutePlanExecutionStatus`` carrying ``CANCELED`` when the VI aborts,
+and ``CurrentSegment`` is mandatory on it, so an aborted route still
+has to say where it stopped.
+
+The index is turned into a ``PathSegmentID`` by
+``open_vi.codec.path.segment_id_for_index``, the same rule
+``build_path_element`` uses, so a status message cannot name a segment
+the route does not contain.

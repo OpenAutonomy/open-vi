@@ -91,10 +91,10 @@ It lands in `schema/a-gra/` (gitignored) and is found there
 automatically; `UCI_XSD` overrides the path. CI runs this as the
 `conformance` job.
 
-**35 of the 36 published message types validate against A-GRA 5.0a
-today.** The one that does not is `RoutePlanExecutionStatus`, which
-needs the vehicle's current path segment; it is recorded in that
-module with what it needs. Without a schema the tests skip, so the suite is green
+**All 36 published message types validate against A-GRA 5.0a.** The
+check runs in CI as the `conformance` job, and
+`KNOWN_NON_CONFORMANT` in that module is empty and asserted in both
+directions, so a regression fails rather than being absorbed. Without a schema the tests skip, so the suite is green
 before anyone fetches one. See the
 [configuration reference](docs/CONFIGURATION.md).
 

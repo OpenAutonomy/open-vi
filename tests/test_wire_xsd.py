@@ -35,25 +35,14 @@ DEFAULT_XSD = (
     _REPO_ROOT / "schema" / "a-gra" / "A-GRA_MessageDefinitions_v5_0_a.xsd"
 )
 
-# Builders that do not yet match A-GRA v5.0a. Measured against the
-# fetched catalog, not assumed.
+# Message types whose builders do not match A-GRA 5.0a. Empty: every
+# type the VI publishes validates against the fetched catalog.
 #
-# What remains is RoutePlanExecutionStatus, which requires
-# CurrentSegment: the path and segment the vehicle is currently
-# navigating. PX4 receives that as MISSION_ITEM_REACHED.seq and
-# discards it after the terminal check, so filling it needs a
-# PlatformPort addition rather than a reshape of existing data.
-#
-# §1.2.6.6 and §1.2.5.6 both require these messages from the VI, so
-# they cannot be dropped; see docs/FEATURES.md.
-#
-# This registry exists so the gate is usable while those builders are
-# fixed, not to excuse them. The assertions below are strict in both
-# directions: a newly non-conformant type fails, and so does one that
-# starts validating while still listed here.
-KNOWN_NON_CONFORMANT = {
-    "RoutePlanExecutionStatus",
-}
+# Kept rather than deleted because the assertions below are strict in
+# both directions — a newly non-conformant type fails, and a type
+# listed here that starts validating fails too. An empty set is the
+# state worth defending, not a reason to drop the mechanism.
+KNOWN_NON_CONFORMANT: set[str] = set()
 
 
 def _xsd_path() -> pathlib.Path | None:

@@ -20,6 +20,7 @@ from open_vi.domain import (
     FlightActivitySnapshot,
     FlightCommandRequest,
     PlatformSnapshot,
+    RouteProgress,
     ServiceStatusSnapshot,
     SubsystemStatusSnapshot,
     TspiSnapshot,
@@ -39,8 +40,14 @@ class StubPlatform(PlatformPort):
     all ``AVAILABLE``. ``submit_flight_command`` accepts immediately
     and returns ``ACTIVE_UNCONSTRAINED``. Tests call
     :meth:`complete_flight_command` when they need a later
-    ``COMPLETED``. :meth:`set_readiness` and :meth:`inject_contingency`
-    are harness hooks, not Isolator ICD steps.
+    ``COMPLETED``. :meth:`set_readiness`,
+    :meth:`inject_contingency` and :meth:`advance_route_progress` are
+    harness hooks, not Isolator ICD steps.
+
+    Route progress is reported, but only what a stationary vehicle can
+    truthfully claim: holding a waypoint list, at its first segment,
+    nothing captured. The pose is fixed, so nothing advances on its
+    own — :meth:`advance_route_progress` is how a test walks it.
     """
 
     def __init__(
@@ -63,6 +70,9 @@ class StubPlatform(PlatformPort):
         self._service_id = service_id or uuid4()
         self._subsystem_id = subsystem_id or uuid4()
         self._fault_id = uuid4()
+        self._route_waypoints: int | None = None
+        self._route_index = 0
+        self._route_captured = False
         self._subsystem_state = "OPERATE"
         self._faults: tuple[FaultSnapshot, ...] = (
             FaultSnapshot(fault_id=self._fault_id),
@@ -93,6 +103,10 @@ class StubPlatform(PlatformPort):
             )
         if cmd.choice == "Activity":
             return self._submit_activity(cmd)
+        if cmd.waypoints:
+            self._route_waypoints = len(cmd.waypoints)
+            self._route_index = 0
+            self._route_captured = False
         if cmd.command_state == "CANCEL":
             if cmd.command_id in self._commands:
                 self._commands[cmd.command_id] = "CANCELED"
@@ -265,6 +279,43 @@ class StubPlatform(PlatformPort):
     def active_flight_activity(self) -> FlightActivitySnapshot | None:
         """Current activity, or ``None`` if idle or canceled."""
         return self._activity
+
+    def active_route_progress(self) -> RouteProgress | None:
+        """Progress along the accepted waypoint list, or ``None``.
+
+        ``None`` until a command carrying waypoints is accepted, then
+        the last known position until another route replaces it.
+
+        It deliberately outlives the live activity. §1.2.5.6 requires
+        a ``RoutePlanExecutionStatus`` carrying ``CANCELED`` when the
+        VI aborts, and the schema makes ``CurrentSegment`` mandatory
+        on that message — so an aborted route still has to say where
+        it stopped. Clearing progress when the activity ended would
+        make that message impossible to form.
+
+        Stub does not fly, so the index only moves when
+        :meth:`advance_route_progress` is called.
+        """
+        if self._route_waypoints is None:
+            return None
+        return RouteProgress(
+            waypoint_index=self._route_index,
+            total_waypoints=self._route_waypoints,
+            captured=self._route_captured,
+        )
+
+    def advance_route_progress(self, *, captured: bool = True) -> None:
+        """Harness hook: step to the next waypoint along the route.
+
+        Not an ICD step. Lets a test walk a route without a motion
+        model; without it the index stays where the accepted command
+        left it.
+        """
+        if self._route_waypoints is None:
+            return
+        self._route_captured = captured
+        if self._route_index + 1 < self._route_waypoints:
+            self._route_index += 1
 
     def get_vehicle_state(self) -> TspiSnapshot:
         """Fixed TSPI snapshot (constructor or default pose)."""

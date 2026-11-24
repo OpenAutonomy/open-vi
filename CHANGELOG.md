@@ -2,6 +2,46 @@
 
 ## [Unreleased]
 
+### Added
+
+- `PlatformPort.active_route_progress()` and
+  `open_vi.domain.RouteProgress`, reporting where the vehicle is along
+  the waypoint list as submitted. `RoutePlanExecutionStatus` now
+  carries the `CurrentSegment` the schema requires, plus `NextSegment`
+  when there is one.
+  - The index is into the *submitted* list, not the uploaded one. PX4
+    trims a leading prefix, so its mission sequence `k` is submitted
+    index `skipped + k`; `execute_waypoint_following` returns the
+    skipped count for exactly that mapping. Reporting the raw
+    sequence would name the wrong waypoint, and a confidently wrong
+    segment is worse than none.
+  - `None` means the backend cannot report progress. It is not a
+    default of zero: naming a segment the vehicle is not at would be
+    a navigational claim the VI has not observed.
+  - Progress outlives the live activity, because §1.2.5.6 requires a
+    `CANCELED` `RoutePlanExecutionStatus` on VI abort and
+    `CurrentSegment` is mandatory on it — an aborted route still has
+    to say where it stopped.
+  - `PreviousSegment` is deliberately never emitted: its
+    `ActualCaptureTime` is mandatory and the VI does not record
+    capture times. PX4 could supply one later from when
+    `MISSION_ITEM_REACHED` arrived.
+  - `codec.path.segment_id_for_index` is the one home for the
+    index-to-id rule, so a status message cannot name a segment the
+    route it refers to does not contain.
+  - Stub reports only what a stationary vehicle can truthfully claim:
+    holding a waypoint list, at its first segment, nothing captured.
+    `advance_route_progress()` is a harness hook for walking it.
+
+### Changed
+
+- **All 36 published message types validate against A-GRA 5.0a.**
+  `KNOWN_NON_CONFORMANT` is now empty, and kept rather than deleted
+  because it is asserted in both directions — a newly non-conformant
+  type fails, and so does a listed type that starts passing.
+- FEATURES §1.2.6.6 stays Partial, now only because `MA_ActionStatus`
+  is unpublished.
+
 ### Fixed
 
 - Plan-execution status carries A-GRA's `PlanExecutionStatus`
