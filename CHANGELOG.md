@@ -4,6 +4,40 @@
 
 ### Added
 
+- Wire conformance harness. One deterministic corpus of every message
+  Isolator publishes — captured from the real publish path with the
+  in-process bus and Stub backend, covering 36 of 36 publishable
+  message types — then four layers over it:
+  - `tests/golden/`: byte-exact snapshots, so any change to the wire
+    format shows up as a reviewable diff. `UPDATE_GOLDEN=1 pytest`
+    regenerates.
+  - `test_wire_invariants.py`: envelope child order, `MessageHeader`
+    shape, undashed 32-hex UUIDs, UCI timestamp format, and the
+    concrete `SchemaVersion` on the wire. Nothing previously asserted
+    that value, so a wrong one shipped in every message with the suite
+    green.
+  - `test_wire_roundtrip.py`: build/parse fidelity for all 14 codec
+    pairs that have both sides.
+  - `test_wire_surface.py`: FEATURES §1.3.1 against the implemented
+    message set. Direction is decided by handler subscriptions and real
+    `bus.publish` call sites, resolved from the AST.
+- XSD validation of that corpus against the UCI / A-GRA catalog, in
+  `tests/test_wire_xsd.py` with the new `validate` extra. The schemas
+  are controlled documents and are not vendored: point `UCI_XSD_DIR` at
+  a catalog to enable it, and the module skips when unset so the suite
+  stays green without one.
+
+### Fixed
+
+- FEATURES §1.3.1 listed `MA_MissionPlanActivationCommand` as `inout`.
+  It has no publish site anywhere in `src/` — VI only ever receives it
+  and replies with `MA_MissionPlanActivationCommandStatus`. Found by
+  `test_wire_surface.py`; the earlier audit missed it because checking
+  whether the type name appears in the tree cannot distinguish a
+  subscription from a publication.
+
+### Added
+
 - `docs/CONFIGURATION.md`: every environment variable open-vi reads,
   with defaults and effect. 14 of the 25 had been undocumented,
   including `AGRA_SCHEMA_VERSION` and `AGRA_MESSAGE_MODE`, which are

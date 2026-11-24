@@ -39,8 +39,11 @@ it lets a peer do something that posture does not already permit.
 
 ## Known limitations, not vulnerabilities
 
-- The codec does not validate against the UCI XSD. Non-conforming XML
-  may be parsed into domain structs or dropped; it is not schema-rejected.
+- The codec does not validate **inbound** XML against the UCI XSD at
+  runtime. Non-conforming XML may be parsed into domain structs or
+  dropped; it is not schema-rejected. Outbound messages are validated
+  against an operator-supplied catalog in the test suite
+  (`UCI_XSD_DIR`), which is a build-time check, not a runtime guard.
 
 ## Supported versions
 

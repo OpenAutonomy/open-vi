@@ -2,8 +2,11 @@
 
 The codec parses and builds UCI/A-GRA XML for Isolator handlers and
 publishers. It turns a message-type document into `open_vi.domain` values
-and the reverse. It is not an XSD binding and does not validate against
-the catalog. The layers around it are in [ARCHITECTURE.md](ARCHITECTURE.md).
+and the reverse. It is not an XSD binding, and it does not validate
+inbound XML against the catalog at runtime. Outbound messages are
+checked against the catalog in the test suite when one is supplied; see
+[CONFIGURATION.md](CONFIGURATION.md). The layers around it are in
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
 ```mermaid
 flowchart LR

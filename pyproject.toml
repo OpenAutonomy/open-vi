@@ -20,9 +20,15 @@ dependencies = [
 px4 = [
     "pymavlink>=2.4.41",
 ]
+# XSD validation of the outbound corpus. The UCI / A-GRA catalog is
+# operator-supplied (UCI_XSD_DIR); see docs/CONFIGURATION.md.
+validate = [
+    "xmlschema>=3",
+]
 dev = [
     "pytest>=8.0",
     "pytest-timeout>=2.3",
+    "xmlschema>=3",
     "ruff>=0.9",
     "pylint>=3.3",
     "pymavlink>=2.4.41",

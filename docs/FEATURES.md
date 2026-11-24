@@ -151,7 +151,7 @@ Direction is relative to VI. Core unless noted. This table is
 | MA_FlightCapabilityStatus | out | Supported | |
 | MA_FlightCommand | in | Supported | Three Core modes parsed; submit is Execution / Backend |
 | MA_FlightCommandStatus | out | Supported | Rejects may include `CannotComplyDetails` |
-| MA_MissionPlanActivationCommand | inout | Supported | Inbound ladder; ACTIVATE submits waypoints |
+| MA_MissionPlanActivationCommand | in | Supported | Inbound ladder; ACTIVATE submits waypoints. VI never publishes this type — the reply is `MA_MissionPlanActivationCommandStatus` |
 | MA_MissionPlanActivationCommandStatus | out | Supported | |
 | MA_MissionPlanExecutionStatus | out | Supported | When MissionPlanID is known |
 | MA_PositionReportDetailed | out | Supported | |

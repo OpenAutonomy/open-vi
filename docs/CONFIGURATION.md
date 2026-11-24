@@ -53,6 +53,25 @@ Read by `IsolatorConfig.from_env`.
 Boolean variables accept `1`, `true`, or `yes` (case-insensitive);
 anything else is false.
 
+## Conformance testing
+
+Read by the test suite only; these have no effect on a running VI.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `UCI_XSD_DIR` | unset | Directory holding the UCI / A-GRA XSD catalog. Unset skips `tests/test_wire_xsd.py` entirely |
+| `UCI_XSD_MASTER` | unset | A single entry schema used for every message type, for a catalog that imports its types from one root |
+| `UPDATE_GOLDEN` | unset | Regenerates `tests/golden/` from the current build output instead of asserting against it |
+
+The schemas are controlled documents and are not vendored in this
+repository. Resolution is `$UCI_XSD_DIR/<MessageType>.xsd` first, then
+`$UCI_XSD_MASTER`; a message type that resolves to neither is reported
+as a failure rather than skipped.
+
+`UPDATE_GOLDEN=1` rewrites the recorded wire corpus. Read the resulting
+diff before committing it — that diff is the only review gate on a
+change to the wire format.
+
 ## Backend selection
 
 | Variable | Default | Effect |

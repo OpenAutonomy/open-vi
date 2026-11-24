@@ -66,9 +66,27 @@ pytest
 
 ## Standards
 
-UCI and A-GRA XSD documents are not in the tree. The codec builds
-CAL-friendly XML and does not validate against the catalog. Namespace and
-schema version are in `src/open_vi/codec/ns.py`.
+UCI and A-GRA XSD documents are not in the tree and are not
+redistributed here. The codec is not an XSD binding; it builds
+CAL-friendly XML. Namespace and schema version are in
+`src/open_vi/codec/ns.py`.
+
+Conformance is checked in two layers. The schema-independent layer runs
+on every `pytest`: a byte-exact golden corpus of every message the VI
+publishes, build/parse round-trips, structural invariants on the
+envelope and header, and a check that FEATURES §1.3.1 matches the
+implemented message set. The XSD layer is operator-supplied — point
+`UCI_XSD_DIR` at a catalog and it validates that same corpus against
+it:
+
+```bash
+pip install -e ".[validate]"
+UCI_XSD_DIR=/path/to/catalog pytest tests/test_wire_xsd.py
+```
+
+Without `UCI_XSD_DIR` those tests skip, so the suite is green without
+the catalog. See the
+[configuration reference](docs/CONFIGURATION.md).
 
 ## Documentation
 
