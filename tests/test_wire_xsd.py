@@ -1,21 +1,23 @@
-"""Validate the outbound corpus against the UCI / A-GRA XSD catalog.
+"""Validate the outbound corpus against the A-GRA XSD catalog.
 
-The catalog is not vendored here. It is already vendored by
-``oa-gateway`` (``schema/a-gra``, ``schema/uci``) and by ``open-ma``
-(``third_party/a-gra/Schema``), byte-identical in both; adding a third
-copy of an 8 MB document would only create a way for them to diverge.
-Point ``UCI_XSD`` at one of them instead:
+The standard is public — Distribution Statement A — but it is not
+redistributed here, the same stance ``oa-gateway`` and ``open-ma``
+take. Fetch it, pinned by digest to the same revision oa-gateway
+checks against:
 
     pip install -e ".[validate]"
-    UCI_XSD=../oa-gateway/schema/a-gra/A-GRA_MessageDefinitions_v5_0_a.xsd \\
-        pytest tests/test_wire_xsd.py
+    ./scripts/fetch-agra-schema.sh
+    pytest tests/test_wire_xsd.py
 
-One path is enough, and this follows ``oa-gateway``'s own convention:
-the schema processor resolves ``xs:include`` / ``xs:import`` itself,
-relative to that file on disk, so the entry document spans the rest of
-the catalog. Without ``UCI_XSD`` the module skips, so the suite is
-green for anyone without it — and CI, which has no catalog, does not
-enforce conformance.
+The schema lands in ``schema/a-gra/`` (gitignored) and is found there
+automatically. ``UCI_XSD`` overrides the path for a program-specific
+Message Set or an offline mirror.
+
+One path is enough: the processor resolves ``xs:include`` /
+``xs:import`` itself relative to the entry document, so
+``A-GRA_MessageDefinitions_v5_0_a.xsd`` spans the catalog. Without a
+schema the module skips, so the suite is green before anyone fetches
+one.
 """
 
 from __future__ import annotations
@@ -28,9 +30,13 @@ import pytest
 from wire_helpers import capture_corpus
 
 XSD_ENV = "UCI_XSD"
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+DEFAULT_XSD = (
+    _REPO_ROOT / "schema" / "a-gra" / "A-GRA_MessageDefinitions_v5_0_a.xsd"
+)
 
 # Builders that do not yet match A-GRA v5.0a. Measured against the
-# vendored catalog, not assumed. Each is a real wire-format defect:
+# fetched catalog, not assumed. Each is a real wire-format defect:
 #
 #   the plan-execution family emits flat fields where the schema has a
 #   PlanExecutionStatus composite, and ExecutingSystemID where the
@@ -52,19 +58,19 @@ KNOWN_NON_CONFORMANT = {
 
 
 def _xsd_path() -> pathlib.Path | None:
+    """``UCI_XSD`` if set, else the fetched catalog, else ``None``."""
     raw = os.environ.get(XSD_ENV, "").strip()
-    if not raw:
-        return None
-    path = pathlib.Path(raw).expanduser()
-    return path if path.is_file() else None
+    if raw:
+        path = pathlib.Path(raw).expanduser()
+        return path if path.is_file() else None
+    return DEFAULT_XSD if DEFAULT_XSD.is_file() else None
 
 
 pytestmark = pytest.mark.skipif(
     _xsd_path() is None,
     reason=(
-        f"{XSD_ENV} is unset or not a file; the UCI/A-GRA catalog is not "
-        "vendored here — point it at oa-gateway/schema/a-gra/"
-        "A-GRA_MessageDefinitions_v5_0_a.xsd"
+        "no A-GRA catalog: run ./scripts/fetch-agra-schema.sh, or set "
+        f"{XSD_ENV} to an entry document"
     ),
 )
 

@@ -62,27 +62,35 @@ Read by the test suite only; these have no effect on a running VI.
 | `UCI_XSD` | unset | Entry document of the UCI / A-GRA XSD catalog. Unset skips `tests/test_wire_xsd.py` entirely |
 | `UPDATE_GOLDEN` | unset | Regenerates `tests/golden/` from the current build output instead of asserting against it |
 
-The catalog is not vendored here. It is already vendored by
-[oa-gateway](https://github.com/OpenAutonomy/oa-gateway) under
-`schema/a-gra` and `schema/uci`, and by `open-ma` under
-`third_party/a-gra/Schema` — byte-identical in both. Point `UCI_XSD` at
-one of those rather than adding a third copy:
+The A-GRA standard is public — Distribution Statement A, approved for
+public release — but it is not redistributed in this repository, the
+same stance [oa-gateway](https://github.com/OpenAutonomy/oa-gateway)
+and `open-ma` take. Fetch it:
 
 ```bash
-UCI_XSD=../oa-gateway/schema/a-gra/A-GRA_MessageDefinitions_v5_0_a.xsd \
-    pytest tests/test_wire_xsd.py
+./scripts/fetch-agra-schema.sh
 ```
 
-One path is enough, following oa-gateway's own convention: the schema
-processor resolves `xs:include` / `xs:import` itself relative to that
-file, so the entry document spans the rest of the catalog. A-GRA
-v5.0a declares the OAM target namespace this codec emits, so it is the
-right entry document for open-vi; the UCI 2.5 catalog is a different
-message set.
+Files land in `schema/a-gra/`, which is gitignored, and are checked
+against the digests pinned in `scripts/agra-schema.sha256` — the same
+source, tag and digests as oa-gateway's `scripts/fetch-agra-schema.sh`.
+The two repositories have to agree on what "A-GRA 5.0a" means or their
+conformance results are not comparable. Upstream is pinned at the
+`v5.0a` tag, not `main`, which has since moved to A-GRA 6.0a.
 
-CI has no catalog, so conformance is not enforced there. Four message
-types are known not to validate; `KNOWN_NON_CONFORMANT` in that module
-records them and fails if the list goes stale in either direction.
+`tests/test_wire_xsd.py` finds that directory automatically, so
+`UCI_XSD` is only needed for a program-specific Message Set or an
+offline mirror. One path is enough: the processor resolves
+`xs:include` / `xs:import` itself relative to the entry document, so
+`A-GRA_MessageDefinitions_v5_0_a.xsd` spans the catalog.
+
+A-GRA 5.0a declares the OAM target namespace this codec emits, so it
+is the right entry document for open-vi; the UCI 2.5 catalog
+oa-gateway also fetches is a different message set.
+
+CI runs this as the `conformance` job. Four message types are known
+not to validate; `KNOWN_NON_CONFORMANT` in that module records them
+and fails if the list goes stale in either direction.
 
 `UPDATE_GOLDEN=1` rewrites the recorded wire corpus. Read the resulting
 diff before committing it — that diff is the only review gate on a

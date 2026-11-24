@@ -21,14 +21,19 @@
   - `test_wire_surface.py`: FEATURES §1.3.1 against the implemented
     message set. Direction is decided by handler subscriptions and real
     `bus.publish` call sites, resolved from the AST.
-- XSD validation of that corpus against the A-GRA catalog, in
-  `tests/test_wire_xsd.py` with the new `validate` extra. The catalog
-  is not vendored here — `oa-gateway` (`schema/a-gra`) and `open-ma`
-  (`third_party/a-gra/Schema`) already carry it, byte-identical — so
-  `UCI_XSD` points at an existing copy rather than adding a third. One
-  path is enough, following oa-gateway's convention: the processor
-  resolves `xs:include` itself from the entry document. The module
-  skips when unset, so the suite and CI stay green without a catalog.
+- XSD validation of that corpus against A-GRA 5.0a, in
+  `tests/test_wire_xsd.py` with the new `validate` extra and
+  `scripts/fetch-agra-schema.sh`. The standard is public
+  (Distribution Statement A) but is not redistributed here, matching
+  what `oa-gateway` and `open-ma` do: it is fetched into a gitignored
+  `schema/a-gra/` and verified against digests pinned in
+  `scripts/agra-schema.sha256` — the same source, `v5.0a` tag and
+  digests oa-gateway pins, so the two repositories' conformance
+  results are comparable. The tests find that directory automatically,
+  `UCI_XSD` overrides it, and they skip when no schema is present so
+  the suite is green before anyone fetches one.
+- A `conformance` CI job that fetches the schema and validates the
+  corpus on every push and pull request.
 - Measured against A-GRA v5.0a, **32 of 36 published message types
   validate**. The four that do not are recorded in
   `KNOWN_NON_CONFORMANT`, which fails if a new type breaks *or* if a

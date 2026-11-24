@@ -17,6 +17,20 @@ pytest
 
 That is what CI runs. A new vehicle is a `PlatformPort` implementation.
 
+Wire conformance against A-GRA 5.0a needs the standard, which is not
+redistributed here:
+
+```bash
+pip install -e ".[validate]"
+./scripts/fetch-agra-schema.sh
+pytest tests/test_wire_xsd.py
+```
+
+CI runs that as the `conformance` job. Without the schema those tests
+skip, so `pytest` alone stays green. If a change alters published XML,
+regenerate the golden corpus with `UPDATE_GOLDEN=1 pytest` and read the
+diff before committing it.
+
 Docs (Markdown + Google-style docstrings → MkDocs):
 
 ```bash
