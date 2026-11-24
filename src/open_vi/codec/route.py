@@ -586,12 +586,25 @@ def build_sample_route_plan(
     path.
     """
     path_points = (_SAMPLE_WAYPOINT,) if waypoints is None else waypoints
-    data_kids = [
-        id_type("RoutePlanID", route_plan_id),
-        el("ForPlanningUseOnly", text="false"),
+    # A-GRA nests the geometry: MessageData/Plan/Route/Path, with
+    # ForPlanningUseOnly *after* Plan. RouteType is the route's
+    # classification (PRIMARY, ALTERNATE, …) and is a different
+    # enumeration from PathType, which marks the path's role
+    # (PRIMARY, TAKEOFF, LANDING) — so path_type does not feed it.
+    plan_kids = [
+        el(
+            "Applicability",
+            el("ApplicableToIDs", system_id(identity)),
+        ),
+        el("Parts", el("RouteType", text="PRIMARY")),
+    ]
+    route_kids = [
+        el("Detailed", text="false"),
+        id_type("FirstInRoutePathID", UUID(int=1)),
+        el("RouteProjection", text="GREAT_CIRCLE"),
     ]
     if path_points:
-        data_kids.append(
+        route_kids.append(
             build_path_element(
                 path_points,
                 path_type=path_type,
@@ -599,6 +612,12 @@ def build_sample_route_plan(
                 runway_id=runway_id,
             )
         )
+    plan_kids.append(el("Route", *route_kids))
+    data_kids = [
+        id_type("RoutePlanID", route_plan_id),
+        el("Plan", *plan_kids),
+        el("ForPlanningUseOnly", text="false"),
+    ]
     data = el("MessageData", *data_kids)
     root = message_envelope(
         "MA_RoutePlan",

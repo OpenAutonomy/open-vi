@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `Path` is built as A-GRA models it: a linked list of `PathSegment`
+  elements headed by `FirstInPathSegmentID`, each carrying its position
+  under `EndPoint/WayPoint/PointChoice/Point2D` and pointing at its
+  successor through `NextPathSegment`. It previously emitted flat
+  `Segment` elements with a `Position` child and no head pointer, which
+  the schema does not accept. The parser already understood the linked
+  form, so it was the builder lagging behind. Segment ids stay
+  `UUID(int=index)`, 1-based, which `CurrentSegment` will need.
+- `MA_RoutePlan` nests its geometry under `Plan/Route/Path` with
+  `Applicability` and `Parts/RouteType`, and emits `ForPlanningUseOnly`
+  after `Plan` rather than before. `RouteType` is the route's
+  classification and a different enumeration from `PathType`, so the
+  path's role no longer leaks into it.
+- `MA_Response`'s `DO_NOTHING` option emits the required `Trigger` and
+  `Response`; `DoNothing` is a presence marker the schema pins to
+  length 0.
+- **33 of 36** published message types now validate against A-GRA
+  5.0a, up from 32, and the `MA_FlightCommand` waypoint sample
+  validates too.
+
+### Changed
+
+- FEATURES §1.2.2.3 records a deviation shared with `open-ma`:
+  in-flight replan uses the `Activity` choice carrying `Ranking` and
+  `FlightControlMode`, which A-GRA's `Activity` does not permit — it
+  allows only `ChangeActivityRank` / `ChangeActivityState` /
+  `DeleteActivity` / `UnassignActivity`. Both repositories emit the
+  identical shape, so conforming means moving replan onto the
+  `Capability` choice on both sides, not a unilateral change here.
+
 ### Added
 
 - Wire conformance harness. One deterministic corpus of every message

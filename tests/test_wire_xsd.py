@@ -36,14 +36,19 @@ DEFAULT_XSD = (
 )
 
 # Builders that do not yet match A-GRA v5.0a. Measured against the
-# fetched catalog, not assumed. Each is a real wire-format defect:
+# fetched catalog, not assumed.
 #
-#   the plan-execution family emits flat fields where the schema has a
-#   PlanExecutionStatus composite, and ExecutingSystemID where the
-#   schema says SystemID;
+# What remains is the plan-execution family: it emits flat
+# ExecutionState / RoutePlanID / MissionPlanID / ActivityID where the
+# schema has a repeating PlanExecutionStatus composite, and
+# ExecutingSystemID where the schema says SystemID.
+# RoutePlanExecutionStatus additionally requires CurrentSegment, which
+# needs the vehicle's current path segment — PX4 receives it as
+# MISSION_ITEM_REACHED.seq and currently discards it, so that one needs
+# a PlatformPort addition rather than a reshape.
 #
-#   MA_RoutePlan puts Path directly under MessageData with no Plan
-#   wrapper, and orders ForPlanningUseOnly before it rather than after.
+# §1.2.6.6 and §1.2.5.6 both require these messages from the VI, so
+# they cannot be dropped; see docs/FEATURES.md.
 #
 # This registry exists so the gate is usable while those builders are
 # fixed, not to excuse them. The assertions below are strict in both
@@ -51,7 +56,6 @@ DEFAULT_XSD = (
 # starts validating while still listed here.
 KNOWN_NON_CONFORMANT = {
     "MA_MissionPlanExecutionStatus",
-    "MA_RoutePlan",
     "ResponsePlanExecutionStatus",
     "RoutePlanExecutionStatus",
 }
