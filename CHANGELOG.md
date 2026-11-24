@@ -34,6 +34,15 @@
   the suite is green before anyone fetches one.
 - A `conformance` CI job that fetches the schema and validates the
   corpus on every push and pull request.
+- `scripts/fetch-agra-spec.sh` fetches the ASK 5.0a Vehicle Interface
+  Volume, pinned in `scripts/agra-spec.sha256`, and
+  `tests/test_wire_surface.py` now reads **Table 1-38 (VI MMS)** out of
+  it. MA-L1-015 makes that table the compliance requirement and the
+  volume states its Direction column is "relative to the VI interface",
+  so direction is dictated by the standard. The test asserts FEATURES
+  §1.3.1 *and* the implementation against it; without the volume those
+  checks skip. The CI `conformance` job runs both.
+
 - Measured against A-GRA v5.0a, **32 of 36 published message types
   validate**. The four that do not are recorded in
   `KNOWN_NON_CONFORMANT`, which fails if a new type breaks *or* if a
@@ -46,12 +55,19 @@
 
 ### Fixed
 
-- FEATURES §1.3.1 listed `MA_MissionPlanActivationCommand` as `inout`.
-  It has no publish site anywhere in `src/` — VI only ever receives it
-  and replies with `MA_MissionPlanActivationCommandStatus`. Found by
-  `test_wire_surface.py`; the earlier audit missed it because checking
-  whether the type name appears in the tree cannot distinguish a
-  subscription from a publication.
+- FEATURES §1.3.1 had two directions wrong, both introduced by
+  inferring direction from this codebase instead of reading Table 1-38.
+  `SubsystemStatus` and `MA_MissionPlanActivationCommand` are both
+  `inout` in the standard. Restored, and each now records the
+  implementation gap it exposes:
+  - `MA_MissionPlanActivationCommand` outbound is §1.2.5.6 VI
+    Deactivate Route, where Table 1-24 requires VI to send one with
+    `DEACTIVATED` on abort. open-vi emits `MissionPlanActivationStatus`
+    only, so §1.2.5.6 drops to Partial Sequence and the §1.2 tally is
+    33 Supported / 1 Partial / 2 Not supported.
+  - `SubsystemStatus` inbound is the Flight Autonomy component
+    heartbeat per §1.2.6.1, which open-vi takes over `PlatformPort`
+    (PX4 `SYS_STATUS`) rather than as inbound UCI.
 
 ### Added
 

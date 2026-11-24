@@ -33,9 +33,11 @@ jobs:
         run: pytest -q
 
   conformance:
-    # Validates the published wire corpus against A-GRA 5.0a. The
-    # standard is fetched, not vendored, and pinned by digest to the
-    # same revision oa-gateway checks against.
+    # Validates the published wire corpus against A-GRA 5.0a, and the
+    # documented and implemented message sets against Table 1-38 of the
+    # Vehicle Interface Volume. Both standards are fetched, not
+    # vendored, and pinned by digest -- the schema to the same revision
+    # oa-gateway checks against.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,8 +50,12 @@ jobs:
           pip install -e ".[dev,validate]"
       - name: Fetch A-GRA schema
         run: ./scripts/fetch-agra-schema.sh
+      - name: Fetch A-GRA spec
+        run: ./scripts/fetch-agra-spec.sh
       - name: Validate wire corpus
         run: pytest tests/test_wire_xsd.py -q
+      - name: Check the message set against Table 1-38
+        run: pytest tests/test_wire_surface.py -q
 
   docs:
     runs-on: ubuntu-latest

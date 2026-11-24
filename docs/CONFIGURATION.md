@@ -60,6 +60,10 @@ Read by the test suite only; these have no effect on a running VI.
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `UCI_XSD` | unset | Entry document of the UCI / A-GRA XSD catalog. Unset skips `tests/test_wire_xsd.py` entirely |
+| `AGRA_SPEC_URL` | upstream `v5.0a` | Source for `scripts/fetch-agra-spec.sh` |
+| `AGRA_SPEC_DIR` | `schema/a-gra` | Destination for the fetched Vehicle Interface Volume |
+| `AGRA_SCHEMA_URL` | upstream `v5.0a` | Source for `scripts/fetch-agra-schema.sh` |
+| `AGRA_SCHEMA_DIR` | `schema/a-gra` | Destination for the fetched XSD catalog |
 | `UPDATE_GOLDEN` | unset | Regenerates `tests/golden/` from the current build output instead of asserting against it |
 
 The A-GRA standard is public — Distribution Statement A, approved for
@@ -87,6 +91,19 @@ offline mirror. One path is enough: the processor resolves
 A-GRA 5.0a declares the OAM target namespace this codec emits, so it
 is the right entry document for open-vi; the UCI 2.5 catalog
 oa-gateway also fetches is a different message set.
+
+The Vehicle Interface Volume is fetched the same way, by
+`scripts/fetch-agra-spec.sh`, pinned in `scripts/agra-spec.sha256`.
+`tests/test_wire_surface.py` reads **Table 1-38 (VI MMS)** out of it and
+asserts both `docs/FEATURES.md` §1.3.1 and the implementation against
+it. MA-L1-015 makes that table the compliance requirement, and the
+volume states its Direction column is "relative to the VI interface" —
+so direction is dictated by the standard, never inferred from this
+codebase. Without the volume those tests skip and the
+internal-consistency ones still run.
+
+It is a separate script from the schema fetch on purpose: XSD
+validation should not break because a PDF moved.
 
 CI runs this as the `conformance` job. Four message types are known
 not to validate; `KNOWN_NON_CONFORMANT` in that module records them
