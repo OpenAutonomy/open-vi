@@ -28,9 +28,15 @@ Stub is the default test backend. It accepts or injects; it does not
 fly. Stub rows live in [platforms/stub](platforms/stub/FEATURES.md).
 PX4 rows live in [platforms/px4](platforms/px4/FEATURES.md).
 
-§1.2 Core (36 numbered rows): Sequence 33 Supported, 1 Partial, 2 Not
+§1.2 Core (36 numbered rows): Sequence 31 Supported, 3 Partial, 2 Not
 supported (terrain, weapons). Execution 16 Supported, 5 Partial, 13
-n/a, 2 Not supported. Backend is not 33/36. `Launch` under §1.2.2 is
+n/a, 2 Not supported. Backend is not 31/36.
+
+The three Partial Sequence rows are §1.2.5.4, §1.2.5.6 and §1.2.6.6 —
+each names a field or reply the interaction requires and open-vi does
+not yet produce. They were Supported until the volume's per-interaction
+tables were read against the code; the count went down because the
+reading got stricter, not because anything regressed. `Launch` under §1.2.2 is
 listed Not supported without a § and is not in these counts; see that
 row.
 
@@ -68,7 +74,7 @@ here.
 | 1.2.2.7 | Receive Control Request | Supported | Supported | n/a | ACQUIRE / STEAL / RELEASE with status ladder and `MA_ControlAssignment`. |
 | 1.2.2.8 | Unpair Control Assignment | Supported | Supported | n/a | When availability is not `AVAILABLE`, `CANCELED` status, `REMOVED` assignment, then clear. |
 | 1.2.2.9 | Update C2 Control Designations | Supported | Supported | n/a | Inbound `MA_FlightCapability` from another SystemID redacts the offer. Isolator readvertises. Commands for a redacted mode are `REJECTED`. |
-| — | Launch | Not supported | Not supported | none | A-GRA `LAUNCH` is structurally independent from the control modes and the schema prescribes no message sequence for it. No handler, no capability offer, no adapter work. Launch is an external step (QGroundControl, or a boot script driving PX4's `commander`). This gates every PX4 flight row: `snapshot()` withholds `AVAILABLE` until the vehicle is already armed and airborne. `MavlinkLink.arm` / `wait_airborne` are unreferenced primitives kept for a future implementation. **§ unconfirmed** — not yet matched to a numbered §1.2 interaction, so it is excluded from the row counts below. |
+| — | Launch | Not supported | Not supported | none | A-GRA commands launch through `MA_FlightCommand/Command/Capability/Launch` (`[0..1]`), a choice of `CarrierLaunch` or `AirfieldTakeoff{AirfieldID, RunwayID}` — so the schema prescribes launch *parameters* on a command the VI already handles, even though no §1.2 interaction covers the sequence. The codec does not parse the element and `open-ma` does not send it. `MavlinkLink.arm` / `wait_airborne` are unreferenced primitives kept for it; implementing it would let the VI arm, which is the boundary `REQ-SYS-0004` draws. **§ unconfirmed** — not matched to a numbered §1.2 interaction, so excluded from the row counts |
 
 ### 1.2.3 COP
 
@@ -97,9 +103,9 @@ when the platform accepts.
 | 1.2.5.1 | Activate Route | Supported | Supported | PX4 | Parses the stored path; submits NEW or UPDATE. Publishes `MA_FlightActivity`. No taxi, ATC hold, or payload actions. |
 | 1.2.5.2 | Convert and Upload Route | Supported | Partial | none | Stores `MA_RoutePlan`, notifies, and emits File*. No native VMS conversion. |
 | 1.2.5.3 | Prepare for Route Activation | Supported | Supported | n/a | Isolator state `READY_FOR_ACTIVATION`. |
-| 1.2.5.4 | Receive Deactivate Route | Supported | Supported | PX4 | From ready: store-only. From ACTIVATED: Capability CANCEL and `FAILED` execution status. Both publish `MissionPlanActivationStatus` `DEACTIVATED`. |
+| 1.2.5.4 | Receive Deactivate Route | Partial | Supported | PX4 | From ready: store-only. From ACTIVATED: Capability CANCEL and `CANCELED` execution status. Both publish `MissionPlanActivationStatus` `DEACTIVATED`. §1.2.5.4 also requires the `MA_MissionPlanActivationCommandStatus` reply to be `COMPLETED` only when the route was **not** yet EXECUTING, and `FAILED` when it was; open-vi replies `COMPLETED` in both cases. |
 | 1.2.5.5 | Validate Route Plan | Supported | Partial | n/a | VALID if stored XML parses to a finite non-empty path and `WeatherAreaData` is not SEVERE/EXTREME icing or turbulence. Envelope rejects stay on ACTIVATE (adapter). |
-| 1.2.5.6 | VI Deactivate Route | Partial | Supported | PX4 | Route-sourced `FAILED` / `CANCELED` from the platform: `DEACTIVATED`, `FAILED` execution, clear sessions. Direct flight commands do not abort a route. Table 1-24 also requires outbound `MA_MissionPlanActivationCommand` (`DEACTIVATED`) and `RoutePlanExecutionStatus` (`CANCELED`); neither is emitted. |
+| 1.2.5.6 | VI Deactivate Route | Partial | Supported | PX4 | Route-sourced stop from the platform: `DEACTIVATED`, `CANCELED` execution status per Table 1-24, clear sessions. Direct flight commands do not abort a route. Table 1-24's other row names `MA_MissionPlanActivationStatusMT` typed as `MA_MissionPlanActivationCommandMT`; the schema defines both `MissionPlanActivationStatus` and `MA_MissionPlanActivationStatus` as distinct messages and Table 1-38 lists only the former, which open-vi publishes. Whether that satisfies the row is unresolved in the volume. |
 
 ### 1.2.6 Status
 
@@ -110,7 +116,7 @@ when the platform accepts.
 | 1.2.6.3 | Query Airfield Update | Supported | Partial | n/a | `AirfieldReport` runway geometry and linked TO/L `MA_RoutePlan`. The field is synthesized from first TSPI (1,500 m, heading 90°), not a surveyed airfield. |
 | 1.2.6.4 | Query Route Plan | Supported | Supported | n/a | Preloaded TO/L set plus peer-uploaded plans and File*. |
 | 1.2.6.5 | Receive Barometric Pressure | Supported | Supported | PX4 | `MA_SystemManagementRequest` QNH → `apply_system_management`. PX4 writes `SENS_BARO_QNH`. |
-| 1.2.6.6 | Receive Execution Status | Partial | n/a | PX4 | Live plan-execution outs on ACTIVATE, tick, COMPLETE, DEACTIVATE-as-FAILED, and VI abort, each carrying the required `PlanExecutionStatus.PlanExecutionState`. `RoutePlanExecutionStatus` carries `CurrentSegment` from the backend's route progress. Idle activity / route-activity / task plan status is SystemID + Source only. Still Partial: `MA_ActionStatus` is not published. |
+| 1.2.6.6 | Receive Execution Status | Partial | n/a | PX4 | Live plan-execution outs on ACTIVATE, tick, COMPLETE, DEACTIVATE-as-CANCELED, and VI abort, each carrying the required `PlanExecutionStatus.PlanExecutionState`. `RoutePlanExecutionStatus` carries `CurrentSegment` from the backend's route progress. Idle activity / route-activity / task plan status is SystemID + Source only. Still Partial: `MA_ActionStatus` is not published. |
 | 1.2.6.7 | Receive Vehicle Performance Values | Supported | n/a | PX4 partial | Isolator publishes `snapshot()`. PX4 fills waypoint / HSA / curve altitude min/max. Airspeed, acceleration, and rates come from optional vehicle TOML. |
 | 1.2.6.8 | Receive Vehicle State Data | Supported | n/a | PX4 partial | Activity, position, weather, navigation, component status from `get_vehicle_state()`. PX4 omits fuel mass (no sensor). Duration when the port has it. |
 | 1.2.6.9 | Request Terrain Data | Not supported | Not supported | none | MUC **MA Terrain Data**. No `ElevationRequest*`. |
@@ -146,7 +152,7 @@ Direction is relative to VI. Core unless noted. This table is
 | ElevationRequestStatus | out | Not supported | MUC MA Terrain Data |
 | FileLocation | out | Supported | Stored routes |
 | FileMetadata | out | Supported | SHA-256 of stored XML |
-| MA_ActionStatus | out | Not supported | Schema requires ActionID Isolator does not have |
+| MA_ActionStatus | out | Not supported | `ActionID` comes from `MA_FlightCommand/Command/Capability/Traceability/Requirement/ActionID` (`[1..1]` within `Requirement`). The codec does not parse `Traceability`, so the id is dropped on ingest. `open-ma` does not populate it either, so the path would never fire today. §1.2.6.6 requires this message, so it is an open Core gap, not a scoping choice |
 | MA_ControlAssignment | out | Supported | On control request and VI unpair |
 | MA_ControlRequest | in | Supported | ACQUIRE / STEAL / RELEASE |
 | MA_ControlRequestStatus | out | Supported | |

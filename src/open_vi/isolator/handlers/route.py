@@ -214,7 +214,11 @@ class RouteHandler:
         req: RouteActivationRequest,
         pending: RouteActivationResult,
     ) -> RouteActivationResult:
-        """CANCEL a route-sourced command, then commit DEACTIVATED."""
+        """CANCEL a route-sourced command, then commit DEACTIVATED.
+
+        MA asked for the stop, so the execution state is
+        ``CANCELED`` rather than ``FAILED`` — nothing failed.
+        """
         command_id = ctx.execution.command_id
         if command_id is not None:
             cancel = ctx.platform.submit_flight_command(
@@ -234,7 +238,7 @@ class RouteHandler:
                     reason=cancel.reason,
                     reason_description=cancel.reason_description,
                 )
-            ctx.execution.mark_failed()
+            ctx.execution.mark_canceled()
             publishers.publish_plan_execution(ctx)
         ctx.routes.commit(req.route_plan_id, "DEACTIVATED")
         ctx.execution.clear()

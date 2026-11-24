@@ -569,9 +569,13 @@ def test_deactivate_after_activate_clears_activity() -> None:
     assert iso.ctx.execution.command_id is None
     assert iso.ctx.execution.plan_id is None
     assert iso.ctx.execution.state is None
-    failed = bus.published[MT_ROUTE_PLAN_EXECUTION_STATUS][-1]
-    assert "FAILED" in failed
-    assert route_id.hex in failed.replace("-", "")
+    # A commanded stop is CANCELED, not FAILED: §1.2.5.6 Table 1-24
+    # names CANCELED for a VI-initiated abort, and nothing failed on
+    # an inbound DEACTIVATE either. A genuine execution failure is
+    # reported on MA_FlightCommandStatus.
+    stopped = bus.published[MT_ROUTE_PLAN_EXECUTION_STATUS][-1]
+    assert "<PlanExecutionState>CANCELED</PlanExecutionState>" in stopped
+    assert route_id.hex in stopped.replace("-", "")
     activation = bus.published[MT_MISSION_PLAN_ACTIVATION_STATUS][-1]
     assert "DEACTIVATED" in activation
     assert mission_id.hex in activation.replace("-", "")
@@ -784,9 +788,13 @@ def test_vi_deactivate_on_route_sourced_terminal(terminal: str) -> None:
     assert iso.ctx.execution.plan_id is None
     assert iso.ctx.flight.activity_id is None
     assert platform.active_flight_activity() is None
-    failed = bus.published[MT_ROUTE_PLAN_EXECUTION_STATUS][-1]
-    assert "FAILED" in failed
-    assert route_id.hex in failed.replace("-", "")
+    # A commanded stop is CANCELED, not FAILED: §1.2.5.6 Table 1-24
+    # names CANCELED for a VI-initiated abort, and nothing failed on
+    # an inbound DEACTIVATE either. A genuine execution failure is
+    # reported on MA_FlightCommandStatus.
+    stopped = bus.published[MT_ROUTE_PLAN_EXECUTION_STATUS][-1]
+    assert "<PlanExecutionState>CANCELED</PlanExecutionState>" in stopped
+    assert route_id.hex in stopped.replace("-", "")
     activation = bus.published[MT_MISSION_PLAN_ACTIVATION_STATUS][-1]
     assert local_name(parse_xml(activation)) == "MissionPlanActivationStatus"
     assert "DEACTIVATED" in activation
