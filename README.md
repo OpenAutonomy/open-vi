@@ -66,9 +66,36 @@ pytest
 
 ## Standards
 
-UCI and A-GRA XSD documents are not in the tree. The codec builds
-CAL-friendly XML and does not validate against the catalog. Namespace and
-schema version are in `src/open_vi/codec/ns.py`.
+UCI and A-GRA XSD documents are not in the tree and are not
+redistributed here. The codec is not an XSD binding; it builds
+CAL-friendly XML. Namespace and schema version are in
+`src/open_vi/codec/ns.py`.
+
+Conformance is checked in two layers. The schema-independent layer runs
+on every `pytest`: a byte-exact golden corpus of every message the VI
+publishes, build/parse round-trips, structural invariants on the
+envelope and header, and a check that FEATURES §1.3.1 matches the
+implemented message set. The XSD layer validates that same corpus against A-GRA 5.0a. The
+standard is public — Distribution Statement A — but it is not
+redistributed here, the same stance `oa-gateway` and `open-ma` take.
+Fetch it, pinned by digest to the revision oa-gateway also checks
+against:
+
+```bash
+pip install -e ".[validate]"
+./scripts/fetch-agra-schema.sh
+pytest tests/test_wire_xsd.py
+```
+
+It lands in `schema/a-gra/` (gitignored) and is found there
+automatically; `UCI_XSD` overrides the path. CI runs this as the
+`conformance` job.
+
+**32 of the 36 published message types validate against A-GRA 5.0a
+today.** The four that do not are recorded in that module and fixed
+separately. Without a schema the tests skip, so the suite is green
+before anyone fetches one. See the
+[configuration reference](docs/CONFIGURATION.md).
 
 ## Documentation
 

@@ -4,6 +4,73 @@
 
 ### Added
 
+- Wire conformance harness. One deterministic corpus of every message
+  Isolator publishes — captured from the real publish path with the
+  in-process bus and Stub backend, covering 36 of 36 publishable
+  message types — then four layers over it:
+  - `tests/golden/`: byte-exact snapshots, so any change to the wire
+    format shows up as a reviewable diff. `UPDATE_GOLDEN=1 pytest`
+    regenerates.
+  - `test_wire_invariants.py`: envelope child order, `MessageHeader`
+    shape, undashed 32-hex UUIDs, UCI timestamp format, and the
+    concrete `SchemaVersion` on the wire. Nothing previously asserted
+    that value, so a wrong one shipped in every message with the suite
+    green.
+  - `test_wire_roundtrip.py`: build/parse fidelity for all 14 codec
+    pairs that have both sides.
+  - `test_wire_surface.py`: FEATURES §1.3.1 against the implemented
+    message set. Direction is decided by handler subscriptions and real
+    `bus.publish` call sites, resolved from the AST.
+- XSD validation of that corpus against A-GRA 5.0a, in
+  `tests/test_wire_xsd.py` with the new `validate` extra and
+  `scripts/fetch-agra-schema.sh`. The standard is public
+  (Distribution Statement A) but is not redistributed here, matching
+  what `oa-gateway` and `open-ma` do: it is fetched into a gitignored
+  `schema/a-gra/` and verified against digests pinned in
+  `scripts/agra-schema.sha256` — the same source, `v5.0a` tag and
+  digests oa-gateway pins, so the two repositories' conformance
+  results are comparable. The tests find that directory automatically,
+  `UCI_XSD` overrides it, and they skip when no schema is present so
+  the suite is green before anyone fetches one.
+- A `conformance` CI job that fetches the schema and validates the
+  corpus on every push and pull request.
+- `scripts/fetch-agra-spec.sh` fetches the ASK 5.0a Vehicle Interface
+  Volume, pinned in `scripts/agra-spec.sha256`, and
+  `tests/test_wire_surface.py` now reads **Table 1-38 (VI MMS)** out of
+  it. MA-L1-015 makes that table the compliance requirement and the
+  volume states its Direction column is "relative to the VI interface",
+  so direction is dictated by the standard. The test asserts FEATURES
+  §1.3.1 *and* the implementation against it; without the volume those
+  checks skip. The CI `conformance` job runs both.
+
+- Measured against A-GRA v5.0a, **32 of 36 published message types
+  validate**. The four that do not are recorded in
+  `KNOWN_NON_CONFORMANT`, which fails if a new type breaks *or* if a
+  listed one starts passing: the plan-execution family
+  (`RoutePlanExecutionStatus`, `MA_MissionPlanExecutionStatus`,
+  `ResponsePlanExecutionStatus`) emits flat fields where the schema has
+  a `PlanExecutionStatus` composite and `ExecutingSystemID` where it
+  says `SystemID`; `MA_RoutePlan` omits the `Plan` wrapper and orders
+  `ForPlanningUseOnly` before `Path` instead of after.
+
+### Fixed
+
+- FEATURES §1.3.1 had two directions wrong, both introduced by
+  inferring direction from this codebase instead of reading Table 1-38.
+  `SubsystemStatus` and `MA_MissionPlanActivationCommand` are both
+  `inout` in the standard. Restored, and each now records the
+  implementation gap it exposes:
+  - `MA_MissionPlanActivationCommand` outbound is §1.2.5.6 VI
+    Deactivate Route, where Table 1-24 requires VI to send one with
+    `DEACTIVATED` on abort. open-vi emits `MissionPlanActivationStatus`
+    only, so §1.2.5.6 drops to Partial Sequence and the §1.2 tally is
+    33 Supported / 1 Partial / 2 Not supported.
+  - `SubsystemStatus` inbound is the Flight Autonomy component
+    heartbeat per §1.2.6.1, which open-vi takes over `PlatformPort`
+    (PX4 `SYS_STATUS`) rather than as inbound UCI.
+
+### Added
+
 - `docs/CONFIGURATION.md`: every environment variable open-vi reads,
   with defaults and effect. 14 of the 25 had been undocumented,
   including `AGRA_SCHEMA_VERSION` and `AGRA_MESSAGE_MODE`, which are

@@ -28,11 +28,16 @@ Stub is the default test backend. It accepts or injects; it does not
 fly. Stub rows live in [platforms/stub](platforms/stub/FEATURES.md).
 PX4 rows live in [platforms/px4](platforms/px4/FEATURES.md).
 
-§1.2 Core (36 numbered rows): Sequence 34 Supported, 2 Not
+§1.2 Core (36 numbered rows): Sequence 33 Supported, 1 Partial, 2 Not
 supported (terrain, weapons). Execution 16 Supported, 5 Partial, 13
-n/a, 2 Not supported. Backend is not 34/36. `Launch` under §1.2.2 is
+n/a, 2 Not supported. Backend is not 33/36. `Launch` under §1.2.2 is
 listed Not supported without a § and is not in these counts; see that
 row.
+
+Message directions in §1.3.1 are Table 1-38 of the volume, not
+inferred from this implementation. `tests/test_wire_surface.py`
+asserts both this file and the code against that table when the
+volume is present.
 
 Volume §1.4 (Mission and Flight Autonomy Capabilities) allocates work
 to MA or FA. It is not a VI interface checklist, so it is not repeated
@@ -94,7 +99,7 @@ when the platform accepts.
 | 1.2.5.3 | Prepare for Route Activation | Supported | Supported | n/a | Isolator state `READY_FOR_ACTIVATION`. |
 | 1.2.5.4 | Receive Deactivate Route | Supported | Supported | PX4 | From ready: store-only. From ACTIVATED: Capability CANCEL and `FAILED` execution status. Both publish `MissionPlanActivationStatus` `DEACTIVATED`. |
 | 1.2.5.5 | Validate Route Plan | Supported | Partial | n/a | VALID if stored XML parses to a finite non-empty path and `WeatherAreaData` is not SEVERE/EXTREME icing or turbulence. Envelope rejects stay on ACTIVATE (adapter). |
-| 1.2.5.6 | VI Deactivate Route | Supported | Supported | PX4 | Route-sourced `FAILED` / `CANCELED` from the platform: `DEACTIVATED`, `FAILED` execution, clear sessions. Direct flight commands do not abort a route. |
+| 1.2.5.6 | VI Deactivate Route | Partial | Supported | PX4 | Route-sourced `FAILED` / `CANCELED` from the platform: `DEACTIVATED`, `FAILED` execution, clear sessions. Direct flight commands do not abort a route. Table 1-24 also requires outbound `MA_MissionPlanActivationCommand` (`DEACTIVATED`) and `RoutePlanExecutionStatus` (`CANCELED`); neither is emitted. |
 
 ### 1.2.6 Status
 
@@ -151,7 +156,7 @@ Direction is relative to VI. Core unless noted. This table is
 | MA_FlightCapabilityStatus | out | Supported | |
 | MA_FlightCommand | in | Supported | Three Core modes parsed; submit is Execution / Backend |
 | MA_FlightCommandStatus | out | Supported | Rejects may include `CannotComplyDetails` |
-| MA_MissionPlanActivationCommand | inout | Supported | Inbound ladder; ACTIVATE submits waypoints |
+| MA_MissionPlanActivationCommand | inout | Supported | Inbound ladder; ACTIVATE submits waypoints. Direction per Table 1-38: the outbound leg is §1.2.5.6 VI Deactivate Route. **Not implemented** — on VI abort open-vi emits `MissionPlanActivationStatus` only, so the outbound half of this row is a gap |
 | MA_MissionPlanActivationCommandStatus | out | Supported | |
 | MA_MissionPlanExecutionStatus | out | Supported | When MissionPlanID is known |
 | MA_PositionReportDetailed | out | Supported | |
@@ -176,7 +181,7 @@ Direction is relative to VI. Core unless noted. This table is
 | ServiceStatus | inout | Supported | |
 | ServiceStatusDataRequest | in | Supported | |
 | ServiceStatusDataRequestStatus | out | Supported | |
-| SubsystemStatus | out | Supported | Published. The peer heartbeat arrives as inbound `ServiceStatus`, not this type |
+| SubsystemStatus | inout | Supported | Published on the status tick and for `SubsystemStatusDataRequest`. Direction per Table 1-38. §1.2.6.1 makes the inbound leg the Flight Autonomy component heartbeat; open-vi takes that over `PlatformPort` (PX4 `SYS_STATUS`), not as inbound UCI, so there is no bus subscription |
 | SubsystemStatusDataRequest | in | Supported | |
 | SubsystemStatusDataRequestStatus | out | Supported | |
 | TaskPlanExecutionStatus | out | Supported | Idle Source; no TaskPlanID |

@@ -53,6 +53,66 @@ Read by `IsolatorConfig.from_env`.
 Boolean variables accept `1`, `true`, or `yes` (case-insensitive);
 anything else is false.
 
+## Conformance testing
+
+Read by the test suite only; these have no effect on a running VI.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `UCI_XSD` | unset | Entry document of the UCI / A-GRA XSD catalog. Unset skips `tests/test_wire_xsd.py` entirely |
+| `AGRA_SPEC_URL` | upstream `v5.0a` | Source for `scripts/fetch-agra-spec.sh` |
+| `AGRA_SPEC_DIR` | `schema/a-gra` | Destination for the fetched Vehicle Interface Volume |
+| `AGRA_SCHEMA_URL` | upstream `v5.0a` | Source for `scripts/fetch-agra-schema.sh` |
+| `AGRA_SCHEMA_DIR` | `schema/a-gra` | Destination for the fetched XSD catalog |
+| `UPDATE_GOLDEN` | unset | Regenerates `tests/golden/` from the current build output instead of asserting against it |
+
+The A-GRA standard is public — Distribution Statement A, approved for
+public release — but it is not redistributed in this repository, the
+same stance [oa-gateway](https://github.com/OpenAutonomy/oa-gateway)
+and `open-ma` take. Fetch it:
+
+```bash
+./scripts/fetch-agra-schema.sh
+```
+
+Files land in `schema/a-gra/`, which is gitignored, and are checked
+against the digests pinned in `scripts/agra-schema.sha256` — the same
+source, tag and digests as oa-gateway's `scripts/fetch-agra-schema.sh`.
+The two repositories have to agree on what "A-GRA 5.0a" means or their
+conformance results are not comparable. Upstream is pinned at the
+`v5.0a` tag, not `main`, which has since moved to A-GRA 6.0a.
+
+`tests/test_wire_xsd.py` finds that directory automatically, so
+`UCI_XSD` is only needed for a program-specific Message Set or an
+offline mirror. One path is enough: the processor resolves
+`xs:include` / `xs:import` itself relative to the entry document, so
+`A-GRA_MessageDefinitions_v5_0_a.xsd` spans the catalog.
+
+A-GRA 5.0a declares the OAM target namespace this codec emits, so it
+is the right entry document for open-vi; the UCI 2.5 catalog
+oa-gateway also fetches is a different message set.
+
+The Vehicle Interface Volume is fetched the same way, by
+`scripts/fetch-agra-spec.sh`, pinned in `scripts/agra-spec.sha256`.
+`tests/test_wire_surface.py` reads **Table 1-38 (VI MMS)** out of it and
+asserts both `docs/FEATURES.md` §1.3.1 and the implementation against
+it. MA-L1-015 makes that table the compliance requirement, and the
+volume states its Direction column is "relative to the VI interface" —
+so direction is dictated by the standard, never inferred from this
+codebase. Without the volume those tests skip and the
+internal-consistency ones still run.
+
+It is a separate script from the schema fetch on purpose: XSD
+validation should not break because a PDF moved.
+
+CI runs this as the `conformance` job. Four message types are known
+not to validate; `KNOWN_NON_CONFORMANT` in that module records them
+and fails if the list goes stale in either direction.
+
+`UPDATE_GOLDEN=1` rewrites the recorded wire corpus. Read the resulting
+diff before committing it — that diff is the only review gate on a
+change to the wire format.
+
 ## Backend selection
 
 | Variable | Default | Effect |

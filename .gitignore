@@ -9,3 +9,6 @@ build/
 site/
 .DS_Store
 .env
+
+# Standards fetched by scripts/fetch-agra-schema.sh, not redistributed here.
+/schema/
