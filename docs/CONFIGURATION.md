@@ -102,12 +102,26 @@ so direction is dictated by the standard, never inferred from this
 codebase. Without the volume those tests skip and the
 internal-consistency ones still run.
 
+`tests/spec_interactions.py` reads the **per-interaction tables**
+(`Table 1-1` through `Table 1-36`) out of the same volume. Each lists,
+per message, the fields that interaction requires — the obligation
+behind FEATURES' Execution column, which Table 1-38 and the XSD
+between them cannot express: Table 1-38 says which messages cross the
+interface, the XSD says each is well formed, and neither says a
+message carried the substance its use case needed. Almost every A-GRA
+element is `[0..1]`, so `MA_FlightCapabilityStatus` without
+`AvailabilityReason` satisfies both and tells MA nothing.
+`tests/test_spec_interactions.py` pins that parse: the row counts, the
+two label/type typos the volume contains, and a bijection onto the 36
+interactions FEATURES §1.2 documents.
+
 It is a separate script from the schema fetch on purpose: XSD
 validation should not break because a PDF moved.
 
-CI runs this as the `conformance` job. Four message types are known
-not to validate; `KNOWN_NON_CONFORMANT` in that module records them
-and fails if the list goes stale in either direction.
+CI runs this as the `conformance` job. Every published message type
+validates, so `KNOWN_NON_CONFORMANT` in that module is empty; it is
+kept, and asserted empty in both directions, so a regression has to be
+recorded rather than absorbed.
 
 `UPDATE_GOLDEN=1` rewrites the recorded wire corpus. Read the resulting
 diff before committing it — that diff is the only review gate on a
