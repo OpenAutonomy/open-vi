@@ -1431,3 +1431,81 @@ def test_px4_start_mission_survives_missing_mode_ack() -> None:
     start_mission(link, wait_ack=wait_ack)
 
     assert mavutil.mavlink.MAV_CMD_MISSION_START in sent
+
+
+def test_px4_route_progress_offsets_the_skipped_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A mission sequence maps back onto the submitted waypoint list.
+
+    ``advance_mission_waypoints`` drops leading waypoints the vehicle
+    has already captured or is past, so PX4 numbers its items from the
+    trimmed list. Reporting the raw sequence would name the wrong
+    waypoint — and a confidently wrong segment is worse than none, so
+    the offset is what this pins.
+    """
+    pytest.importorskip("pymavlink")
+    conn = _FakeConn()
+    plat = Px4MavlinkAdapter(connection=conn, autoconnect=False)
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg("HEARTBEAT", base_mode=128)
+    )
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg(
+            "GLOBAL_POSITION_INT",
+            lat=int(10.0 * 1e7),
+            lon=int(20.0 * 1e7),
+            alt=500000,
+            relative_alt=30000,
+            vx=0,
+            vy=0,
+            vz=0,
+            hdg=0,
+        )
+    )
+
+    def fake_recv_match(**kwargs: object) -> object | None:
+        types = kwargs.get("type")
+        if types == "MISSION_ACK":
+            return _FakeMsg("MISSION_ACK", type=0)
+        if isinstance(types, list) and "MISSION_REQUEST" in types:
+            return _FakeMsg("MISSION_REQUEST", seq=0)
+        return None
+
+    conn.recv_match = fake_recv_match  # type: ignore[method-assign]
+    monkeypatch.setattr(plat, "_wait_command_ack_locked", lambda *a, **k: None)
+
+    assert plat.active_route_progress() is None
+
+    # The first waypoint sits on the vehicle, so the prefix trim drops
+    # it and PX4's seq 0 is submitted index 1.
+    here = _IN_BAND
+    submitted = (here, _IN_BAND_2, Waypoint(12.0, 22.0, 540.0))
+    result = plat.submit_flight_command(
+        FlightCommandRequest(
+            command_id=uuid4(),
+            capability_id=uuid4(),
+            command_state="NEW",
+            mode="WAYPOINT_FOLLOWING",
+            waypoints=submitted,
+        )
+    )
+    assert result.processing_state == "ACCEPTED"
+    plat._wait_exec_idle()  # pylint: disable=protected-access
+
+    skipped = plat._route_skipped  # pylint: disable=protected-access
+    assert skipped >= 1, "expected the prefix trim to drop the first WP"
+
+    # No MISSION_ITEM_REACHED yet: en route to the first uploaded item,
+    # nothing captured, so nothing to report.
+    assert plat.active_route_progress() is None
+
+    plat._ingest(  # pylint: disable=protected-access
+        _FakeMsg("MISSION_ITEM_REACHED", seq=0)
+    )
+    progress = plat.active_route_progress()
+    assert progress is not None
+    assert progress.total_waypoints == len(submitted)
+    assert progress.waypoint_index == skipped
+    assert progress.captured is True
+    plat.close()

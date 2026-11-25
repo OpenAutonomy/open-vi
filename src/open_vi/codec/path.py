@@ -27,6 +27,17 @@ def parse_path_waypoints(node) -> tuple[Waypoint, ...]:
     return _waypoints_document_order(node)
 
 
+def segment_id_for_index(index: int) -> UUID:
+    """The ``PathSegmentID`` :func:`build_path_element` gives *index*.
+
+    One home for the rule so a status message naming a segment and the
+    path that defined it cannot disagree. *index* is 0-based, matching
+    :class:`~open_vi.domain.RouteProgress`; the ids themselves are
+    1-based.
+    """
+    return UUID(int=index + 1)
+
+
 def build_path_element(
     waypoints: tuple[Waypoint, ...],
     *,

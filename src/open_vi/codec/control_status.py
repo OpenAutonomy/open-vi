@@ -5,6 +5,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from open_vi.codec.ns import SCHEMA_VERSION
+from open_vi.codec.path import segment_id_for_index
 from open_vi.codec.status import service_id_element
 from open_vi.codec.xmlutil import (
     el,
@@ -19,6 +20,9 @@ from open_vi.domain import (
     ServiceStatusSnapshot,
 )
 from open_vi.identity import SystemIdentity
+
+# build_path_element names the single path UUID(int=1).
+_PATH_ID = UUID(int=1)
 
 
 def build_control_status(
@@ -209,17 +213,18 @@ def build_route_plan_execution_status(
 ) -> bytes:
     """RoutePlanExecutionStatus for an activated route.
 
-    Still incomplete against A-GRA: the schema requires
-    ``CurrentSegment`` (the path and segment being navigated), which
-    needs the vehicle's current segment surfaced through
-    ``PlatformPort``. Recorded in ``KNOWN_NON_CONFORMANT``.
+    ``CurrentSegment`` is required by the schema and comes from
+    ``snapshot.progress``; without it the message cannot be made
+    valid, so a backend that cannot report progress yields no segment
+    elements and the message stays incomplete.
     """
-    data = el(
-        "MessageData",
+    children = [
         system_id(identity),
         el("Source", text=snapshot.source),
         _plan_execution_status(snapshot, plan_id_tag="PlanID"),
-    )
+    ]
+    children.extend(_segments(snapshot))
+    data = el("MessageData", *children)
     root = message_envelope(
         "RoutePlanExecutionStatus",
         identity,
@@ -305,3 +310,43 @@ def _plan_execution_status(
             text=plan_execution_state(snapshot.execution_state),
         ),
     )
+
+
+def _segment(tag: str, plan_id, index: int):
+    """A ``SegmentEstimateType`` element naming one path segment.
+
+    Only the mandatory trio is emitted. ``EstimatedCaptureTime``,
+    ``EstimatedCaptureDistance``, ``LoiterProgress`` and
+    ``SegmentKinematics`` are all optional and would be dead
+    reckoning the VI does not currently compute.
+    """
+    return el(
+        tag,
+        id_type("PlanID", plan_id),
+        id_type("PathID", _PATH_ID),
+        id_type("SegmentID", segment_id_for_index(index)),
+    )
+
+
+def _segments(snapshot: PlanExecutionSnapshot) -> list:
+    """Previous / Current / Next segment elements, in schema order.
+
+    Empty when the backend reports no progress: ``CurrentSegment`` is
+    mandatory, so there is no partial form of this to emit.
+
+    ``PreviousSegment`` is deliberately never emitted. The schema
+    makes ``ActualCaptureTime`` mandatory inside it and the VI does
+    not record when a segment was captured, so the only way to
+    include it would be to invent the timestamp. PX4 could supply one
+    from when ``MISSION_ITEM_REACHED`` arrived; until
+    :class:`~open_vi.domain.RouteProgress` carries it, the element
+    stays off.
+    """
+    progress = snapshot.progress
+    if progress is None:
+        return []
+    index = progress.waypoint_index
+    out = [_segment("CurrentSegment", snapshot.route_plan_id, index)]
+    if index + 1 < progress.total_waypoints:
+        out.append(_segment("NextSegment", snapshot.route_plan_id, index + 1))
+    return out

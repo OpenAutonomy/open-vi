@@ -34,6 +34,7 @@ from open_vi.domain.route import (
     PlanExecutionSnapshot,
     RouteActivationRequest,
     RouteActivationResult,
+    RouteProgress,
     StoredRoutePlan,
 )
 from open_vi.domain.status import (
@@ -60,6 +61,7 @@ __all__ = [
     "PlanExecutionSnapshot",
     "PlatformSnapshot",
     "RouteActivationRequest",
+    "RouteProgress",
     "RouteActivationResult",
     "ServiceStatusSnapshot",
     "StoredRoutePlan",

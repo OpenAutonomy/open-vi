@@ -141,6 +141,7 @@ def plan_execution_for_publish(
         route_plan_id=route_id,
         mission_plan_id=mission_id,
         activity_id=ctx.flight.activity_id,
+        progress=ctx.platform.active_route_progress(),
     )
 
 

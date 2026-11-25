@@ -42,6 +42,27 @@ class StoredRoutePlan:
 
 
 @dataclass(frozen=True)
+class RouteProgress:
+    """Position along the waypoint list as submitted to the backend.
+
+    ``waypoint_index`` is 0-based into the tuple the Isolator passed to
+    ``submit_flight_command``, not into whatever the backend actually
+    uploaded. A backend that trims or reorders waypoints owns the
+    mapping back — PX4 drops a leading prefix, so its mission item
+    sequence is not this index.
+
+    ``captured`` distinguishes "heading for this waypoint" from
+    "reached it". A-GRA's PreviousSegment carries a mandatory
+    ActualCaptureTime, so a segment can only be reported as previous
+    once it has actually been captured.
+    """
+
+    waypoint_index: int
+    total_waypoints: int
+    captured: bool = False
+
+
+@dataclass(frozen=True)
 class PlanExecutionSnapshot:
     """Live route/mission execution for Isolator outs (not UCI)."""
 
@@ -50,3 +71,4 @@ class PlanExecutionSnapshot:
     mission_plan_id: UUID | None = None
     activity_id: UUID | None = None
     source: str = "ACTUAL"
+    progress: RouteProgress | None = None

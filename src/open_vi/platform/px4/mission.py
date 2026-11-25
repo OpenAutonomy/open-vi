@@ -250,8 +250,15 @@ def execute_waypoint_following(
     relative_alt_m: Callable[[], float],
     path_clearance_m: float,
     wait_ack: Callable[[int, float], None],
-) -> int:
-    """Upload mission and start MISSION mode. Returns last seq.
+) -> tuple[int, int]:
+    """Upload mission, start MISSION mode, return (last seq, skipped).
+
+    *skipped* is how many leading waypoints were trimmed before
+    upload. The caller needs it to map a MAVLink mission sequence back
+    onto the waypoint list it submitted: PX4 numbers items from the
+    trimmed list, so sequence ``k`` is submitted index
+    ``skipped + k``. Without it, reported progress names the wrong
+    waypoint.
 
     The vehicle must already be armed and airborne -- VI no longer
     arms or launches PX4 (see ``docs/platforms/px4/README.md``); a
@@ -298,4 +305,4 @@ def execute_waypoint_following(
         len(remaining),
         last_seq,
     )
-    return last_seq
+    return last_seq, len(waypoints) - len(remaining)

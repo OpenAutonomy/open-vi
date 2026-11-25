@@ -11,6 +11,7 @@ from open_vi.domain import (
     FlightActivitySnapshot,
     FlightCommandRequest,
     PlatformSnapshot,
+    RouteProgress,
     ServiceStatusSnapshot,
     SubsystemStatusSnapshot,
     TspiSnapshot,
@@ -51,6 +52,18 @@ class PlatformPort(ABC):
     @abstractmethod
     def active_flight_activity(self) -> FlightActivitySnapshot | None:
         """Return the current flight activity, if any."""
+
+    @abstractmethod
+    def active_route_progress(self) -> RouteProgress | None:
+        """Progress along the executing route, or ``None``.
+
+        ``None`` means the backend cannot report it — nothing
+        executing, or a backend with no notion of position along a
+        route. It is not a default of index zero: A-GRA requires
+        ``CurrentSegment`` on ``RoutePlanExecutionStatus``, and
+        reporting a segment the vehicle is not at would be a
+        navigational claim the VI has not observed.
+        """
 
     @abstractmethod
     def get_vehicle_state(self) -> TspiSnapshot:
