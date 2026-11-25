@@ -73,6 +73,8 @@ jobs:
         run: pytest tests/test_spec_interactions.py -q
       - name: Resolve interaction obligations against the schema
         run: pytest tests/test_spec_schema_paths.py -q
+      - name: Check emitted fields against the interaction tables
+        run: pytest tests/test_wire_required_fields.py -q
 
   docs:
     runs-on: ubuntu-latest
