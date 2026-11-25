@@ -68,16 +68,44 @@ _CAPTION = re.compile(r"^Table (1-\d+): (.+?)\s*$", re.M)
 # A cell anchor: "FieldName:" or "MessageLabelMT_2:".
 _ANCHOR = re.compile(r"(?<![\w:])([A-Za-z_][A-Za-z0-9_]*):")
 _IS_MESSAGE = re.compile(r"MT(_\d+)?$")
-_IS_ENUM = re.compile(r"[A-Z][A-Z0-9_]*")
 _INSTANCE_SUFFIX = re.compile(r"_\d+$")
+
+# Every A-GRA type the Required Fields column names ends in Type, Enum
+# or PET; the only exception across all 36 tables is the xs:int on
+# MA_Fault's FaultCodeCount. Discriminating on the *type* token is what
+# separates a field from a bare required value: "HSA_CSA:
+# MA_HSA_CSA_Type" is a field whose name is upper case, and classifying
+# on the name's case instead dropped it.
+_IS_TYPE = re.compile(r"(Type|Enum|PET)$")
+_XSD_PRIMITIVES = frozenset(
+    {
+        "int",
+        "integer",
+        "long",
+        "short",
+        "string",
+        "boolean",
+        "float",
+        "double",
+        "decimal",
+        "dateTime",
+        "date",
+        "time",
+        "duration",
+        "anyURI",
+        "base64Binary",
+        "hexBinary",
+    }
+)
+_IS_VALUE = re.compile(r"[A-Z][A-Z0-9_]*")
 
 # Counts for v5.0a. A parse that lands anywhere else means the text
 # layer changed, and checking a subset of the obligations while
 # reporting success is worse than failing.
 EXPECTED_TABLES = 36
 EXPECTED_MESSAGES = 146
-EXPECTED_FIELDS = 119
-EXPECTED_ENUMS = 12
+EXPECTED_FIELDS = 120
+EXPECTED_ENUMS = 11
 
 # Rows whose Required Fields column is the string "None" carry no
 # obligation; they are kept as messages so the message count is the
@@ -106,6 +134,17 @@ FIELDS_NOT_IN_TYPE = frozenset(
 )
 
 EMPTY_TABLES = frozenset({"1-18"})
+
+# Table 1-24 prints "MA_MissionPlanActivationStatusMT". Table 1-38 --
+# the Minimum Message Set, which MA-L1-015 makes the compliance
+# requirement -- lists "MissionPlanActivationStatus" out/Core and no
+# MA_-prefixed variant. A-GRA declares both types, with identical
+# paths for the two fields Table 1-24 requires, so the prefix is a
+# third typo in a row that already pairs its label with the wrong
+# type. Table 1-38 wins: it is what the VI is obliged to speak.
+MMS_TYPE_OVERRIDES = {
+    "MA_MissionPlanActivationStatusMT": "MissionPlanActivationStatusMT",
+}
 
 
 class SpecUnavailableError(RuntimeError):
@@ -138,9 +177,18 @@ class SpecMessage:
     """Enum tokens the row requires, per message. See the module note."""
 
     @property
+    def mms_type(self) -> str:
+        """*message_type*, corrected against Table 1-38.
+
+        See :data:`MMS_TYPE_OVERRIDES`. Equal to *message_type* for
+        every row but one.
+        """
+        return MMS_TYPE_OVERRIDES.get(self.message_type, self.message_type)
+
+    @property
     def element_name(self) -> str:
-        """The global element name: the MT type without its suffix."""
-        return re.sub(r"MT$", "", self.message_type)
+        """The global element name: :attr:`mms_type` without its suffix."""
+        return re.sub(r"MT$", "", self.mms_type)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -234,13 +282,20 @@ def _parse_rows(flat: str) -> tuple[SpecMessage, ...]:
             continue
         if not rows:  # pragma: no cover - a field before any message row
             continue
-        if _IS_ENUM.fullmatch(name):
-            # A required value. Its cell text may run into a neighbouring
-            # one (Table 1-33 absorbs a diagram participant label), so
-            # only the token itself is kept.
-            rows[-1]["values"].append(name)
-        elif tokens and tokens[0] != "None":
+        typed = bool(
+            tokens
+            and (_IS_TYPE.search(tokens[0]) or tokens[0] in _XSD_PRIMITIVES)
+        )
+        if typed:
             rows[-1]["fields"].append(RequiredField(name, tokens[0]))
+        elif _IS_VALUE.fullmatch(name):
+            # A bare "CANCELED:" cell: the value the field above must
+            # carry. Its text may run into a neighbouring cell (Table
+            # 1-33 absorbs a diagram participant label), so only the
+            # token itself is kept.
+            rows[-1]["values"].append(name)
+        # Anything else is neither: Table 1-33 prints the lifeline
+        # label "Internal Terrain Request:" inside the table body.
     return tuple(
         SpecMessage(
             label=row["label"],

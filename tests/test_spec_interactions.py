@@ -117,6 +117,23 @@ def test_required_fields_are_name_and_type_pairs(interactions) -> None:
         assert not field.name.endswith(":"), where
 
 
+def test_an_upper_case_field_name_is_still_a_field(interactions) -> None:
+    """Table 1-7 requires ``HSA_CSA: MA_HSA_CSA_Type`` of MA_FlightCommand.
+
+    The name is upper case and underscored, so it looks exactly like a
+    required *value* cell (``CANCELED:``). Classifying on the name's
+    case dropped it; the type token is what separates the two. This
+    pins that, because losing a field is silent.
+    """
+    table = spec_interactions.by_table()["1-7"]
+    command = next(
+        m for m in table.messages if m.message_type == "MA_FlightCommandMT"
+    )
+    assert [f.name for f in command.required_fields] == ["HSA_CSA"]
+    assert command.required_fields[0].type_name == "MA_HSA_CSA_Type"
+    assert not command.required_values
+
+
 def test_required_values_are_enum_tokens(interactions) -> None:
     """A required value is an A-GRA enum token: upper case and bare."""
     for message in (m for i in interactions for m in i.messages):
