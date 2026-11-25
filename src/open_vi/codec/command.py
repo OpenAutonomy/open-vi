@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from uuid import UUID
+from xml.etree import ElementTree as ET
 
 from open_vi.codec.geo import deg_to_rad, format_uci_angle, rad_to_deg
 from open_vi.codec.ns import SCHEMA_VERSION
@@ -113,7 +114,7 @@ def parse_flight_commands(xml: str | bytes) -> list[FlightCommandRequest]:
     return requests
 
 
-def parse_hsa_csa(node) -> HsaCsaSetpoint:
+def parse_hsa_csa(node: ET.Element) -> HsaCsaSetpoint:
     """Parse ``HSA_CSA`` altitude / speed / direction under *node*.
 
     Degrees in the returned setpoint. ``MachValue`` is stored on
@@ -179,7 +180,7 @@ def parse_hsa_csa(node) -> HsaCsaSetpoint:
     )
 
 
-def parse_curve_following(node) -> CurveFollowingSetpoint | None:
+def parse_curve_following(node: ET.Element) -> CurveFollowingSetpoint | None:
     """Parse the first ``CurveSegments`` NURBS spine under *node*.
 
     Degrees in the returned setpoint. Offsets stay metres (AEP).
@@ -315,7 +316,7 @@ def build_flight_activity(
     return tostring(root)
 
 
-def _ranking():
+def _ranking() -> ET.Element:
     return el(
         "Ranking",
         el(
@@ -329,10 +330,10 @@ def _ranking():
 def _capability_shell(
     command_id: UUID,
     capability_id: UUID,
-    flight_control_mode,
+    flight_control_mode: ET.Element,
     *,
     command_state: str = "NEW",
-):
+) -> ET.Element:
     return el(
         "Capability",
         id_type("CommandID", command_id),
@@ -346,11 +347,11 @@ def _capability_shell(
 def _activity_shell(
     command_id: UUID,
     activity_id: UUID,
-    flight_control_mode,
+    flight_control_mode: ET.Element,
     *,
     command_state: str = "UPDATE",
     capability_id: UUID | None = None,
-):
+) -> ET.Element:
     children = [
         id_type("CommandID", command_id),
         el("CommandState", text=command_state),
@@ -375,7 +376,7 @@ def _hsa_csa_mode(
     direction_kind: str = "HEADING",
     include_mach: bool = False,
     include_speed_optimization: bool = False,
-):
+) -> ET.Element:
     """Build an ``HSA_CSA`` FlightControlMode element."""
     kids = []
     if altitude_m is not None:
@@ -422,7 +423,7 @@ def _hsa_csa_mode(
     return el("HSA_CSA", *kids)
 
 
-def _waypoint_following_mode(waypoints: tuple[Waypoint, ...]):
+def _waypoint_following_mode(waypoints: tuple[Waypoint, ...]) -> ET.Element:
     path = build_path_element(waypoints)
     path_id = UUID(int=1)
     route = el(
@@ -437,7 +438,7 @@ def _waypoint_following_mode(waypoints: tuple[Waypoint, ...]):
 
 def _flight_command_bytes(
     identity: SystemIdentity,
-    capability,
+    capability: ET.Element,
     *,
     schema_version: str,
     mode: str,

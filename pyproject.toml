@@ -34,7 +34,9 @@ dev = [
     "pytest-timeout>=2.3",
     "xmlschema>=3",
     "pypdf>=5",
+    "mypy>=1.13",
     "ruff>=0.9",
+    "types-defusedxml",
     "pylint>=3.3",
     "pymavlink>=2.4.41",
 ]
@@ -55,6 +57,8 @@ open-vi = "open_vi.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/open_vi"]
+# PEP 561: the package is annotated, so consumers get the hints.
+artifacts = ["src/open_vi/py.typed"]
 
 [tool.hatch.build.targets.sdist]
 include = ["/src", "/README.md", "/LICENSE", "/docs", "/compose", "/examples"]
@@ -63,6 +67,30 @@ include = ["/src", "/README.md", "/LICENSE", "/docs", "/compose", "/examples"]
 testpaths = ["tests"]
 pythonpath = ["src", "tests"]
 timeout = 30
+
+# Type checking. Not --strict: that adds ~40 errors that are almost all
+# "untyped decorator" and "Any return from an untyped library", which say
+# more about pymavlink and stomp.py having no stubs than about this code.
+# These settings catch the things that bite — missing annotations on new
+# code, unreachable branches, and None flowing where it should not.
+[tool.mypy]
+python_version = "3.11"
+files = ["src/open_vi"]
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unreachable = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+no_implicit_optional = true
+strict_equality = true
+extra_checks = true
+
+# No stubs published, and neither ships py.typed. The adapter boundary is
+# where their types stop; Isolator and the codec never import them.
+[[tool.mypy.overrides]]
+module = ["pymavlink.*", "stomp.*"]
+ignore_missing_imports = true
 
 # Formatter / fast checks aligned with Google Python Style (80 cols).
 # Authoritative style lint: pylint + .pylintrc (Google styleguide).

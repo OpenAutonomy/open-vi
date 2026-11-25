@@ -18,7 +18,7 @@ LOGGER = logging.getLogger(__name__)
 class FailsafeHandler:
     """Ack MA_Response; fly ActivatePlan when that route is stored."""
 
-    inbound_mts = (MT_MA_RESPONSE,)
+    inbound_mts: tuple[str, ...] = (MT_MA_RESPONSE,)
 
     def handles(self, message_type: str) -> bool:
         return message_type == MT_MA_RESPONSE

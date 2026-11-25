@@ -21,7 +21,7 @@ class CapabilityHandler:
     clears the overlay.
     """
 
-    inbound_mts = (MT_FLIGHT_CAPABILITY,)
+    inbound_mts: tuple[str, ...] = (MT_FLIGHT_CAPABILITY,)
 
     def handles(self, message_type: str) -> bool:
         return message_type == MT_FLIGHT_CAPABILITY

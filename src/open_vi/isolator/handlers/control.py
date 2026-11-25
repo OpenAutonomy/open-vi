@@ -104,7 +104,7 @@ def unpair_assignment(
 class ControlHandler:
     """Acquire / steal / release control; publish assignment."""
 
-    inbound_mts = (MT_CONTROL_REQUEST,)
+    inbound_mts: tuple[str, ...] = (MT_CONTROL_REQUEST,)
 
     def handles(self, message_type: str) -> bool:
         return message_type == MT_CONTROL_REQUEST
@@ -141,6 +141,16 @@ class ControlHandler:
         )
 
     def _acquire(self, ctx: IsolatorContext, req: ControlRequest) -> None:
+        """Assign control. *req* must carry a controller SystemID.
+
+        ``handle`` rejects a request without one as
+        ``INVALID_INPUT_PARAMETER`` before reaching here, so the
+        narrowing below restates an invariant the dispatch already
+        enforces rather than adding a new check.
+        """
+        controller_system_id = req.controller_system_id
+        if controller_system_id is None:  # pragma: no cover - see handle()
+            return
         current = ctx.state.controller_system_id
         steal = req.request_type.upper() in {"STEAL", "ASSIGN_STEAL"}
         if current is not None and current != req.controller_system_id:
@@ -166,7 +176,7 @@ class ControlHandler:
                 ctx.identity,
                 control_type=req.control_type,
                 control_choice=req.control_choice,
-                controller_system_id=req.controller_system_id,
+                controller_system_id=controller_system_id,
                 controller_service_id=req.controller_service_id,
                 controllee_system_id=controllee,
                 capability_id=capability_id,
@@ -178,7 +188,7 @@ class ControlHandler:
         LOGGER.info(
             "%s ACQUIRE controller=%s → assignment",
             MT_CONTROL_REQUEST,
-            req.controller_system_id.hex,
+            controller_system_id.hex,
         )
 
     def _release(self, ctx: IsolatorContext, req: ControlRequest) -> None:

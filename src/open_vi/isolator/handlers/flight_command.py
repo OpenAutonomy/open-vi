@@ -26,7 +26,7 @@ LOGGER = logging.getLogger(__name__)
 class FlightCommandHandler:
     """Handle Capability NEW/CANCEL and Activity UPDATE FlightCommands."""
 
-    inbound_mts = (MT_FLIGHT_COMMAND,)
+    inbound_mts: tuple[str, ...] = (MT_FLIGHT_COMMAND,)
 
     def handles(self, message_type: str) -> bool:
         return message_type == MT_FLIGHT_COMMAND

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from uuid import UUID
+from xml.etree import ElementTree as ET
 
 from open_vi.codec.ns import SCHEMA_VERSION
 from open_vi.codec.xmlutil import (
@@ -103,7 +104,7 @@ def _assignment_element(
     controller_service_id: UUID | None,
     controllee_system_id: UUID,
     capability_id: UUID | None,
-):
+) -> ET.Element:
     choice = el("ControlChoiceType", el(control_choice, text=control_type))
     controller_kids = [id_type("SystemID", controller_system_id)]
     if controller_service_id is not None:

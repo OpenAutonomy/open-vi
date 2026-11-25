@@ -137,7 +137,7 @@ def activate_stored_route(
 class RouteHandler:
     """Loose/Strict route prepare/activate/deactivate + RoutePlan upload."""
 
-    inbound_mts = (
+    inbound_mts: tuple[str, ...] = (
         MT_ACTIVATION_COMMAND,
         MT_ROUTE_PLAN,
         MT_ROUTE_VALIDATION_COMMAND,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from uuid import UUID, uuid4
+from xml.etree import ElementTree as ET
 
 from open_vi.codec.geo import deg_to_rad, format_uci_angle
 from open_vi.codec.ns import SCHEMA_VERSION
@@ -176,7 +177,7 @@ def build_airfield_report(
     return tostring(root)
 
 
-def _airfield_information(airfield: HomeAirfield):
+def _airfield_information(airfield: HomeAirfield) -> ET.Element:
     """Information/Runway geometry for a home field."""
     return el(
         "Information",
@@ -205,7 +206,9 @@ def _airfield_information(airfield: HomeAirfield):
     )
 
 
-def _runway_coordinates(start: Waypoint, limit: Waypoint):
+def _runway_coordinates(
+    start: Waypoint, limit: Waypoint
+) -> tuple[ET.Element, ET.Element]:
     """RunwayCoordinatesType Start + Limit as Point3D."""
     return (
         el("Start", *_point3d(start)),
@@ -213,7 +216,7 @@ def _runway_coordinates(start: Waypoint, limit: Waypoint):
     )
 
 
-def _point3d(waypoint: Waypoint):
+def _point3d(waypoint: Waypoint) -> tuple[ET.Element, ET.Element, ET.Element]:
     """Latitude, Longitude, Altitude children for Point3D."""
     altitude = waypoint.altitude_m if waypoint.altitude_m is not None else 0.0
     return (

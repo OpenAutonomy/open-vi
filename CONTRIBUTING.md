@@ -15,7 +15,8 @@ pip install -e ".[dev]"
 pytest
 ```
 
-That is what CI runs. A new vehicle is a `PlatformPort` implementation.
+That is what CI runs — `./scripts/lint.sh` covers ruff, pylint and
+mypy. A new vehicle is a `PlatformPort` implementation.
 
 Wire conformance against A-GRA 5.0a needs the standard, which is not
 redistributed here:

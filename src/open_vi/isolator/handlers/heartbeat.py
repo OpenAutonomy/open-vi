@@ -38,7 +38,7 @@ _HANDLED = {
 class HeartbeatHandler:
     """Reply to ServiceStatus and Service/Subsystem status data requests."""
 
-    inbound_mts = (
+    inbound_mts: tuple[str, ...] = (
         MT_SERVICE_STATUS,
         MT_SERVICE_STATUS_DATA_REQUEST,
         MT_SUBSYSTEM_STATUS_DATA_REQUEST,

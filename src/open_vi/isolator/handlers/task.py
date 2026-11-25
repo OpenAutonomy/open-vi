@@ -33,7 +33,7 @@ _EXECUTION_FOR_COMMAND = {
 class TaskHandler:
     """Ingest MA_Task, then accept or cancel Task Capability commands."""
 
-    inbound_mts = (MT_TASK_COMMAND, MT_MA_TASK)
+    inbound_mts: tuple[str, ...] = (MT_TASK_COMMAND, MT_MA_TASK)
 
     def handles(self, message_type: str) -> bool:
         return message_type in self.inbound_mts

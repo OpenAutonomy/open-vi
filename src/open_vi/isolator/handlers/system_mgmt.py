@@ -18,7 +18,7 @@ LOGGER = logging.getLogger(__name__)
 class SystemManagementHandler:
     """Apply QNH / vehicle settings and reply COMPLETED."""
 
-    inbound_mts = (MT_SYSTEM_MGMT_REQUEST,)
+    inbound_mts: tuple[str, ...] = (MT_SYSTEM_MGMT_REQUEST,)
 
     def handles(self, message_type: str) -> bool:
         return message_type == MT_SYSTEM_MGMT_REQUEST

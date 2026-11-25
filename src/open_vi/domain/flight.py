@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import TypeGuard
 from uuid import UUID
 
 
@@ -100,8 +101,16 @@ class FlightActivitySnapshot:
     interactive: bool = True
 
 
-def is_live_activity(activity: FlightActivitySnapshot | None) -> bool:
-    """True when a command may UPDATE this activity (not idle or COMPLETED)."""
+def is_live_activity(
+    activity: FlightActivitySnapshot | None,
+) -> TypeGuard[FlightActivitySnapshot]:
+    """True when a command may UPDATE this activity (not idle or COMPLETED).
+
+    A ``TypeGuard`` rather than ``bool`` so callers writing
+    ``not is_live_activity(a) or a.activity_id ...`` narrow correctly.
+    The short circuit was always safe; the annotation is what makes it
+    checkable instead of relying on the reader.
+    """
     return activity is not None and activity.activity_state != "COMPLETED"
 
 

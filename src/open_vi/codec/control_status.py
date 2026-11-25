@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from uuid import UUID
+from xml.etree import ElementTree as ET
 
 from open_vi.codec.ns import SCHEMA_VERSION
 from open_vi.codec.path import segment_id_for_index
@@ -286,7 +287,7 @@ def plan_execution_state(domain_state: str) -> str:
 
 def _plan_execution_status(
     snapshot: PlanExecutionSnapshot, *, plan_id_tag: str
-):
+) -> ET.Element:
     """One ``PlanExecutionStatus`` composite.
 
     A-GRA carries plan execution as a repeating composite of a plan id
@@ -312,7 +313,7 @@ def _plan_execution_status(
     )
 
 
-def _segment(tag: str, plan_id, index: int):
+def _segment(tag: str, plan_id: UUID, index: int) -> ET.Element:
     """A ``SegmentEstimateType`` element naming one path segment.
 
     Only the mandatory trio is emitted. ``EstimatedCaptureTime``,
