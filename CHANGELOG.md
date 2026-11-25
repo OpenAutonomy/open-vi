@@ -2,6 +2,40 @@
 
 ## [Unreleased]
 
+### Security
+
+- Every GitHub Action is pinned to a commit SHA rather than a tag, with
+  the release recorded in a trailing comment. A tag is mutable: whoever
+  controls the action repository can point `v4` at different code, and
+  every workflow trusting that tag runs it. 14 references across 9
+  actions.
+- The container base image is pinned by digest. `python:3.12-slim-bookworm`
+  is rebuilt on every upstream patch, so a tag-only `FROM` means two
+  builds of the same commit can differ.
+
+### Added
+
+- `.github/dependabot.yml` for actions, pip and docker. Pinning by SHA
+  trades a mutable-tag risk for a staleness risk — nothing moves until
+  someone moves it — so dependabot is the other half of that trade: it
+  raises the SHA and the version comment together.
+  - `upload-pages-artifact` and `deploy-pages` are excluded from the
+    grouped actions PR and get their own. Their interaction caused the
+    artifact race fixed earlier, so they are worth judging on their own
+    CI run.
+  - The docker entry is best-effort: dependabot detects `Dockerfile`
+    and this repo uses the OCI name `Containerfile`. The config records
+    how to bump the digest by hand if no PR appears.
+
+### Changed
+
+- Seven actions bumped to current majors, which clears the Node 20
+  deprecation warnings on `checkout`, `setup-python` and
+  `upload-artifact`. `upload-pages-artifact` and `deploy-pages` are
+  held at their current majors and only SHA-pinned: the pages job is
+  failing on a GitHub-side 500 at the time of writing, so a bump there
+  could not be distinguished from the ongoing outage.
+
 ## [0.6.0] - 2026-11-25
 
 Conformance to A-GRA 5.0a is now measured rather than asserted: every

@@ -1,0 +1,52 @@
+# Pinning actions by SHA trades a mutable-tag risk for a staleness risk:
+# nothing moves until someone moves it. Dependabot is the other half of
+# that trade — it raises the SHA *and* the version comment together, so
+# the pin stays current without anyone watching release feeds.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    groups:
+      # One PR for the routine bumps. The pages pair is deliberately
+      # excluded: their interaction caused an artifact race once, so they
+      # get their own PR and their own CI run to be judged on.
+      actions:
+        patterns: ["*"]
+        exclude-patterns:
+          - "actions/upload-pages-artifact"
+          - "actions/deploy-pages"
+
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      dev:
+        dependency-type: development
+
+  # The base image is pinned by digest in Containerfile. This entry is
+  # here so that pin gets raised rather than rotting, but be aware:
+  # Dependabot's docker ecosystem detects `Dockerfile`, and this repo
+  # uses the OCI name `Containerfile`. If no base-image PR ever appears,
+  # that is why, and the digest needs bumping by hand:
+  #
+  #   curl -sS -H "Authorization: Bearer $(curl -sS \
+  #     'https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/python:pull' \
+  #     | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')" \
+  #     -H 'Accept: application/vnd.oci.image.index.v1+json' -D- -o /dev/null \
+  #     https://registry-1.docker.io/v2/library/python/manifests/3.12-slim-bookworm \
+  #     | grep -i docker-content-digest
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
