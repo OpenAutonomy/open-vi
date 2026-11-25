@@ -169,9 +169,7 @@ def build_control_request_status(
     if reason and approval_state.upper() in _UNSUCCESSFUL_STATES:
         # Declared after ApprovalRequestProcessingState; the MDT is an
         # xs:sequence, so position matters.
-        children.append(
-            _reason_element("ApprovalRequestProcessingStateReason")
-        )
+        children.append(_reason_element("ApprovalRequestProcessingStateReason"))
     data = el("MessageData", *children)
     root = message_envelope(
         "MA_ControlRequestStatus",
