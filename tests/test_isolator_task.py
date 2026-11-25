@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from uuid import uuid4
 
 from open_vi.asb import InMemoryAsb
@@ -155,6 +156,66 @@ def test_inbound_task_notifies() -> None:
     note = bus.published[MT_SYSTEM_NOTIFICATION][-1]
     assert "MA_TASK" in note
     assert task_id.hex in note.replace("-", "")
+
+
+def test_acknowledged_task_carries_no_notification_detail() -> None:
+    """A success has no truthful CannotComplyEnum value to report.
+
+    Table 1-10 requires ``NotificationDetail`` of
+    ``MA_SystemNotification``, but every one of that enum's values
+    states why something could not be done. The VI gives it on the leg
+    where it could not use the task, not on the acknowledgement.
+    """
+    bus = InMemoryAsb()
+    iso = _iso(bus)
+    iso.attach()
+    bus.publish(
+        MT_MA_TASK,
+        build_ma_task(SystemIdentity.named("ma-tasker"), task_id=uuid4()),
+    )
+    note = bus.published[MT_SYSTEM_NOTIFICATION][-1]
+    assert "NotificationDetail" not in note
+
+
+def test_task_without_a_task_id_is_answered_not_dropped() -> None:
+    """§1.2.2.5 has the VI answer an inbound MA_Task.
+
+    It used to log and return, leaving MA waiting for a response the
+    interaction says it gets.
+    """
+    bus = InMemoryAsb()
+    iso = _iso(bus)
+    iso.attach()
+    body = build_ma_task(
+        SystemIdentity.named("ma-tasker"), task_id=uuid4()
+    ).decode()
+    stripped = re.sub(r"<TaskID>.*?</TaskID>", "", body, count=1)
+    assert stripped != body
+    bus.publish(MT_MA_TASK, stripped.encode())
+
+    assert not iso.ctx.state.ingested_task_ids
+    note = bus.published[MT_SYSTEM_NOTIFICATION][-1]
+    root = parse_xml(note)
+    detail = next(
+        (n for n in root.iter() if local_name(n) == "NotificationDetail"),
+        None,
+    )
+    assert detail is not None, "no NotificationDetail on the unusable leg"
+    reasons = [local_name(k) for k in detail]
+    assert "Reason" in reasons
+    assert "INVALID_INPUT_PARAMETER" in note
+    assert "CAUTION" in note
+
+
+def test_unparseable_task_is_answered_not_dropped() -> None:
+    """The other silent-drop path: the body does not parse at all."""
+    bus = InMemoryAsb()
+    iso = _iso(bus)
+    iso.attach()
+    bus.publish(MT_MA_TASK, b"<MA_Task><MessageData>")
+    notes = bus.published.get(MT_SYSTEM_NOTIFICATION, [])
+    assert notes, "an unparseable MA_Task got no answer"
+    assert "NotificationDetail" in notes[-1]
 
 
 def test_inbound_task_duplicate_does_not_renotify() -> None:

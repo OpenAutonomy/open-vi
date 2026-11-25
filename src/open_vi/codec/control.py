@@ -122,6 +122,12 @@ def _assignment_element(
     )
 
 
+# States that a reason explains. A reason element annotates the state
+# beside it, so each is emitted only when its own state is one of
+# these -- not whenever the caller supplies a reason.
+_UNSUCCESSFUL_STATES = frozenset({"REJECTED", "CANCELED", "FAILED"})
+
+
 def build_control_request_status(
     identity: SystemIdentity,
     *,
@@ -133,17 +139,37 @@ def build_control_request_status(
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
 ) -> bytes:
-    """Build MA_ControlRequestStatus (request + approval states)."""
+    """Build MA_ControlRequestStatus (request + approval states).
+
+    ``MA_ControlRequestStatusMDT`` extends ``RequestStatusBaseType``,
+    so there are two optional reason elements: the inherited
+    ``RequestProcessingStateReason`` for the request, and
+    ``ApprovalRequestProcessingStateReason`` for the approval
+    decision. Tables 1-12 and 1-13 require the approval one on a
+    rejected or ``CANCELED`` status, and both being ``[0..1]`` means
+    neither the XSD nor Table 1-38 notices if only the other is sent.
+
+    *reason* annotates whichever of the two states is unsuccessful.
+    ``_reject`` and ``unpair_assignment`` set both, so both carry it.
+    """
     children = [
         id_type("RequestID", request_id),
         el("RequestProcessingState", text=processing_state),
     ]
-    if reason:
+
+    def _reason_element(name: str) -> ET.Element:
         reason_kids = [el("Reason", text=reason)]
         if reason_description:
             reason_kids.append(el("Description", text=reason_description))
-        children.append(el("RequestProcessingStateReason", *reason_kids))
+        return el(name, *reason_kids)
+
+    if reason and processing_state.upper() in _UNSUCCESSFUL_STATES:
+        children.append(_reason_element("RequestProcessingStateReason"))
     children.append(el("ApprovalRequestProcessingState", text=approval_state))
+    if reason and approval_state.upper() in _UNSUCCESSFUL_STATES:
+        # Declared after ApprovalRequestProcessingState; the MDT is an
+        # xs:sequence, so position matters.
+        children.append(_reason_element("ApprovalRequestProcessingStateReason"))
     data = el("MessageData", *children)
     root = message_envelope(
         "MA_ControlRequestStatus",
