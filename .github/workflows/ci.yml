@@ -71,6 +71,8 @@ jobs:
         run: pytest tests/test_wire_surface.py -q
       - name: Check the interaction tables parse
         run: pytest tests/test_spec_interactions.py -q
+      - name: Resolve interaction obligations against the schema
+        run: pytest tests/test_spec_schema_paths.py -q
 
   docs:
     runs-on: ubuntu-latest
