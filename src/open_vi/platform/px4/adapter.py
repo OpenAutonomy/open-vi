@@ -84,7 +84,7 @@ def _load_vehicle(
     return Px4VehicleConfig()
 
 
-def _first_present(*values: object) -> float:
+def _first_present(*values: float | str | None) -> float:
     """First non-None value as float (env strings included)."""
     for value in values:
         if value is not None:

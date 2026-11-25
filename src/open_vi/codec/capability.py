@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from uuid import UUID
+from xml.etree import ElementTree as ET
 
 from open_vi.codec.ns import SCHEMA_VERSION
 from open_vi.codec.xmlutil import (
@@ -93,9 +94,9 @@ def build_flight_capability(
     return tostring(root)
 
 
-def _performance_profile_block(offer: ControlOffer):
+def _performance_profile_block(offer: ControlOffer) -> ET.Element | None:
     """HSA, waypoint, and curve envelopes, or None when all are unset."""
-    kids = []
+    kids: list[ET.Element] = []
     hsa = _mode_limits(offer.hsa_profile)
     if hsa is not None:
         kids.append(el("HSA_CSA_PerformanceProfile", *hsa))
@@ -110,11 +111,13 @@ def _performance_profile_block(offer: ControlOffer):
     return el("FlightCapabilityPerformanceProfile", *kids)
 
 
-def _mode_limits(profile: FlightModeProfile | None):
+def _mode_limits(
+    profile: FlightModeProfile | None,
+) -> list[ET.Element] | None:
     """UCI mode-profile children in schema order, or None when empty."""
     if profile is None:
         return None
-    kids = []
+    kids: list[ET.Element] = []
     kids.extend(
         _airspeed_limit("MinAirspeed", sample)
         for sample in profile.min_airspeed
@@ -166,7 +169,7 @@ def _mode_limits(profile: FlightModeProfile | None):
     return kids or None
 
 
-def _airspeed_limit(tag: str, sample: AirspeedLimit):
+def _airspeed_limit(tag: str, sample: AirspeedLimit) -> ET.Element:
     """Min/Max/Best*Airspeed with altitude (optional weight)."""
     kids = [
         el(
@@ -185,7 +188,7 @@ def _airspeed_limit(tag: str, sample: AirspeedLimit):
     return el(tag, *kids)
 
 
-def _acceleration_limit(tag: str, sample: AccelerationLimit):
+def _acceleration_limit(tag: str, sample: AccelerationLimit) -> ET.Element:
     """Min/MaxAccelerationLimits with the required pair choice."""
     if sample.mach is not None:
         pair = el(
@@ -214,7 +217,9 @@ def _acceleration_limit(tag: str, sample: AccelerationLimit):
     )
 
 
-def _altitude_limit(tag: str, altitude_m: float, altitude_ref: str):
+def _altitude_limit(
+    tag: str, altitude_m: float, altitude_ref: str
+) -> ET.Element:
     """MinAltitude / MaxAltitude with AltitudeReferenceType children."""
     return el(
         tag,

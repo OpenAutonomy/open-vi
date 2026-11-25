@@ -44,7 +44,7 @@ class QueryHandler:
     plans plus any peer-uploaded store entries.
     """
 
-    inbound_mts = (MT_QUERY_DATA_REQUEST,)
+    inbound_mts: tuple[str, ...] = (MT_QUERY_DATA_REQUEST,)
 
     def handles(self, message_type: str) -> bool:
         return message_type == MT_QUERY_DATA_REQUEST

@@ -7,13 +7,14 @@ uses degrees. FlightCommand and MA_RoutePlan share this walker.
 from __future__ import annotations
 
 from uuid import UUID
+from xml.etree import ElementTree as ET
 
 from open_vi.codec.geo import deg_to_rad, format_uci_angle, rad_to_deg
 from open_vi.codec.xmlutil import el, find_one, find_text, id_type, local_name
 from open_vi.domain import Waypoint
 
 
-def parse_path_waypoints(node) -> tuple[Waypoint, ...]:
+def parse_path_waypoints(node: ET.Element) -> tuple[Waypoint, ...]:
     """Extract waypoints from Path / Position / Point2D under *node*.
 
     A-GRA PathSegment lists are not necessarily in flight order. Walk
@@ -44,7 +45,7 @@ def build_path_element(
     path_type: str = "PRIMARY",
     airfield_id: UUID | None = None,
     runway_id: UUID | None = None,
-):
+) -> ET.Element:
     """Build an A-GRA ``Path``: PathID, PathType, then linked PathSegments.
 
     A-GRA models a path as a linked list: ``FirstInPathSegmentID``
@@ -114,23 +115,23 @@ def _hex_id(text: str | None) -> str | None:
     return text.replace("-", "").strip().lower()
 
 
-def _direct_named(node, *names):
+def _direct_named(node: ET.Element, *names: str) -> list[ET.Element]:
     wanted = set(names)
     return [child for child in list(node) if local_name(child) in wanted]
 
 
-def _waypoints_from_path_links(node) -> tuple[Waypoint, ...]:
+def _waypoints_from_path_links(node: ET.Element) -> tuple[Waypoint, ...]:
     points: list[Waypoint] = []
     for path in (child for child in node.iter() if local_name(child) == "Path"):
         points.extend(_path_segment_waypoints(path))
     return tuple(points)
 
 
-def _path_segment_waypoints(path) -> list[Waypoint]:
+def _path_segment_waypoints(path: ET.Element) -> list[Waypoint]:
     segs = _direct_named(path, "PathSegment", "Segment")
     if not segs:
         return []
-    by_id: dict[str, object] = {}
+    by_id: dict[str, ET.Element] = {}
     for seg in segs:
         sid_node = find_one(seg, "PathSegmentID")
         sid = _hex_id(
@@ -143,17 +144,19 @@ def _path_segment_waypoints(path) -> list[Waypoint]:
         if local_name(child) == "FirstInPathSegmentID":
             start = _hex_id(find_text(child, "UUID"))
             break
-    ordered: list = []
+    ordered: list[ET.Element] = []
     seen: set[str] = set()
     cur = start
     while cur and cur not in seen:
         seen.add(cur)
-        seg = by_id.get(cur)
-        if seg is None:
+        # Distinct name: `seg` above is the non-optional loop variable,
+        # and reusing it for this lookup hid that this can miss.
+        linked = by_id.get(cur)
+        if linked is None:
             break
-        ordered.append(seg)
+        ordered.append(linked)
         nxt = None
-        for child in list(seg):
+        for child in linked:
             if local_name(child) == "NextPathSegment":
                 nxt = child
                 break
@@ -172,7 +175,7 @@ def _path_segment_waypoints(path) -> list[Waypoint]:
     return points
 
 
-def _waypoint_from_segment(seg) -> Waypoint | None:
+def _waypoint_from_segment(seg: ET.Element) -> Waypoint | None:
     point = None
     for candidate in seg.iter():
         if local_name(candidate) in {"Point2D", "Position"}:
@@ -192,7 +195,7 @@ def _waypoint_from_segment(seg) -> Waypoint | None:
     )
 
 
-def _waypoints_document_order(node) -> tuple[Waypoint, ...]:
+def _waypoints_document_order(node: ET.Element) -> tuple[Waypoint, ...]:
     """Scan nested Position/Point2D when no PathSegment chain exists."""
     points: list[Waypoint] = []
     for candidate in node.iter():
