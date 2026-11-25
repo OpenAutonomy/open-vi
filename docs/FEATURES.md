@@ -28,17 +28,21 @@ Stub is the default test backend. It accepts or injects; it does not
 fly. Stub rows live in [platforms/stub](platforms/stub/FEATURES.md).
 PX4 rows live in [platforms/px4](platforms/px4/FEATURES.md).
 
-§1.2 Core (36 numbered rows): Sequence 31 Supported, 3 Partial, 2 Not
+§1.2 Core (36 numbered rows): Sequence 25 Supported, 9 Partial, 2 Not
 supported (terrain, weapons). Execution 16 Supported, 5 Partial, 13
-n/a, 2 Not supported. Backend is not 31/36.
+n/a, 2 Not supported. Backend is not 25/36.
 
-The three Partial Sequence rows are §1.2.5.4, §1.2.5.6 and §1.2.6.6 —
-each names a field or reply the interaction requires and open-vi does
-not yet produce. They were Supported until the volume's per-interaction
+The nine Partial Sequence rows are §1.2.1.4, §1.2.1.5, §1.2.2.5,
+§1.2.2.7, §1.2.2.8, §1.2.5.4, §1.2.5.6, §1.2.6.1 and §1.2.6.6 — each
+names a field or reply the interaction requires and open-vi does not
+yet produce. They were Supported until the volume's per-interaction
 tables were read against the code; the count went down because the
-reading got stricter, not because anything regressed. `Launch` under §1.2.2 is
-listed Not supported without a § and is not in these counts; see that
-row.
+reading got stricter, not because anything regressed. The first six
+came off Supported when that reading was mechanised —
+`tests/test_wire_required_fields.py` accounts for all 120 required
+fields the §1.2 tables name, and `GAPS` in that module is the registry
+each of these rows cites. `Launch` under §1.2.2 is listed Not supported
+without a § and is not in these counts; see that row.
 
 Message directions in §1.3.1 are Table 1-38 of the volume, not
 inferred from this implementation. `tests/test_wire_surface.py`
@@ -58,8 +62,8 @@ here.
 | 1.2.1.1 | Collision Avoidance | Supported | n/a | none | Republishes the capability pair when `snapshot()` readiness is `CONSTRAINT_COLLISION_AVOIDANCE`. Detect-and-avoid is vehicle-driven; no adapter has it. |
 | 1.2.1.2 | Intra-Vehicle Comms Failure | Supported | n/a | n/a | Periodic `SubsystemStatus`; answers `SubsystemStatusDataRequest`. Loss-of-comms plan is MA's. |
 | 1.2.1.3 | MA Failsafe | Supported | Partial | PX4 | Ingest `MA_Response` and notify. `ActivatePlan` of a stored route submits `WAYPOINT_FOLLOWING`. No trigger monitor. Missing plan: notify only. |
-| 1.2.1.4 | Mechanical Damage Reporting | Supported | n/a | PX4 | Publishes `MA_Fault` from `get_faults()` on the status-package tick and ServiceStatusDataRequest. PX4 BIT is `SYS_STATUS` sensor health. |
-| 1.2.1.5 | Sensor Failure | Supported | n/a | PX4 | Publishes `SubsystemStatus` then `MA_Fault` when the platform reports them. |
+| 1.2.1.4 | Mechanical Damage Reporting | Partial | n/a | PX4 | Publishes `MA_Fault` from `get_faults()` on the status-package tick and ServiceStatusDataRequest. PX4 BIT is `SYS_STATUS` sensor health. **Table 1-4 requires nine fields of `MA_Fault`; `build_ma_fault` emits four** — `FaultID`, `FaultState`, `FaultCode`, `FaultDescription`. Missing `Severity`, `DetectionTime`, `SubsystemID`, `FaultCodeCount`, `FaultData`, `AmbiguityGroup`, and `MessageHeader/ServiceID`. |
+| 1.2.1.5 | Sensor Failure | Partial | n/a | PX4 | Publishes `SubsystemStatus` then `MA_Fault` when the platform reports them. **Table 1-5 requires the same nine `MA_Fault` fields as Table 1-4**; see §1.2.1.4. |
 
 ### 1.2.2 Control and tasking
 
@@ -69,10 +73,10 @@ here.
 | 1.2.2.2 | Control by HSA/CSA Command | Supported | Supported | PX4 | Isolator parses and submits NEW / UPDATE / CANCEL. PX4 leftover refs convert onto the offboard hold. `SpeedOptimization` is `REJECTED`. |
 | 1.2.2.3 | Control by Waypoint Following | Supported | Supported | PX4 | NEW / UPDATE / CANCEL → status and `MA_FlightActivity`. Optional reject `MA_Task`. Rejects may include `CannotComplyDetails`. No taxi, ATC hold, or payload actions. **Deviation:** in-flight replan uses the `Activity` choice carrying `Ranking` and `FlightControlMode`, which A-GRA's `Activity` does not permit — it allows only `ChangeActivityRank` / `ChangeActivityState` / `DeleteActivity` / `UnassignActivity`. `open-ma` emits the identical shape, so this is a convention shared with the peer, not a one-sided bug; conforming would mean moving replan onto the `Capability` choice in both. |
 | 1.2.2.4 | Control Mode Authorization | Supported | n/a | PX4 | Publishes `MA_FlightCapability` then `MA_FlightCapabilityStatus` from `snapshot()`. Performance profile is the adapter. |
-| 1.2.2.5 | MA-VI Command Task | Supported | Partial | none | Ingest `MA_Task` and notify. `MA_TaskCommand` NEW / CANCEL → status and `TaskStatus`. No vehicle task. |
+| 1.2.2.5 | MA-VI Command Task | Partial | Partial | none | Ingest `MA_Task` and notify. `MA_TaskCommand` NEW / CANCEL → status and `TaskStatus`. No vehicle task. **Table 1-10 requires `NotificationDetail` on `MA_SystemNotification`**; no builder emits it. |
 | 1.2.2.6 | Modify Capabilities | Supported | n/a | PX4 | Republishes when `snapshot()` availability or the advertised offer changes. Mode reduction from another SystemID is §1.2.2.9. |
-| 1.2.2.7 | Receive Control Request | Supported | Supported | n/a | ACQUIRE / STEAL / RELEASE with status ladder and `MA_ControlAssignment`. |
-| 1.2.2.8 | Unpair Control Assignment | Supported | Supported | n/a | When availability is not `AVAILABLE`, `CANCELED` status, `REMOVED` assignment, then clear. |
+| 1.2.2.7 | Receive Control Request | Partial | Supported | n/a | ACQUIRE / STEAL / RELEASE with status ladder and `MA_ControlAssignment`. **Table 1-12 requires `ApprovalRequestProcessingStateReason` on the rejected `MA_ControlRequestStatus`.** `MA_ControlRequestStatusMDT` extends `RequestStatusBaseType`, so there are two optional reason elements; `build_control_request_status` fills the inherited `RequestProcessingStateReason` instead. Both are `[0..1]`, so the XSD and Table 1-38 both pass a rejection that says nothing about the approval decision. |
+| 1.2.2.8 | Unpair Control Assignment | Partial | Supported | n/a | When availability is not `AVAILABLE`, `CANCELED` status, `REMOVED` assignment, then clear. **Table 1-13 requires `ApprovalRequestProcessingStateReason` on the `CANCELED` status**; see §1.2.2.7. Table 1-13 also requires four fields of `MA_ControlAssignment` that the A-GRA content model does not give it — they belong to `ControlStatus`, where open-vi emits them; see `FIELDS_NOT_IN_TYPE`. |
 | 1.2.2.9 | Update C2 Control Designations | Supported | Supported | n/a | Inbound `MA_FlightCapability` from another SystemID redacts the offer. Isolator readvertises. Commands for a redacted mode are `REJECTED`. |
 | — | Launch | Not supported | Not supported | none | A-GRA commands launch through `MA_FlightCommand/Command/Capability/Launch` (`[0..1]`), a choice of `CarrierLaunch` or `AirfieldTakeoff{AirfieldID, RunwayID}` — so the schema prescribes launch *parameters* on a command the VI already handles, even though no §1.2 interaction covers the sequence. The codec does not parse the element and `open-ma` does not send it. `MavlinkLink.arm` / `wait_airborne` are unreferenced primitives kept for it; implementing it would let the VI arm, which is the boundary `REQ-SYS-0004` draws. **§ unconfirmed** — not matched to a numbered §1.2 interaction, so excluded from the row counts |
 
@@ -111,7 +115,7 @@ when the platform accepts.
 
 | § | Interaction | Seq | Exec | Back | Notes |
 | --- | --- | --- | --- | --- | --- |
-| 1.2.6.1 | Exchange Heartbeat — Subsystem Status Reports | Supported | n/a | n/a | Periodic `ServiceStatus` / `SubsystemStatus`; answers both data-request MTs. |
+| 1.2.6.1 | Exchange Heartbeat — Subsystem Status Reports | Partial | n/a | n/a | Periodic `ServiceStatus` / `SubsystemStatus`; answers both data-request MTs. **Table 1-25 requires `Severity` on `MA_Fault`**; see §1.2.1.4. |
 | 1.2.6.2 | Publish Control Status | Supported | n/a | n/a | Isolator is `PrimaryController` and `MissionControl`. Acquired controller is `SecondaryController` when both IDs are stored. `InMission` when a flight, route, or task is live. No `CapabilityManager` or `TransferInfo`. |
 | 1.2.6.3 | Query Airfield Update | Supported | Partial | n/a | `AirfieldReport` runway geometry and linked TO/L `MA_RoutePlan`. The field is synthesized from first TSPI (1,500 m, heading 90°), not a surveyed airfield. |
 | 1.2.6.4 | Query Route Plan | Supported | Supported | n/a | Preloaded TO/L set plus peer-uploaded plans and File*. |

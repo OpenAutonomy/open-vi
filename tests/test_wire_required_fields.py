@@ -38,6 +38,7 @@ calls, so a field appears here only if the publish path produced it.
 from __future__ import annotations
 
 import pathlib
+import re
 import uuid
 from xml.etree import ElementTree as ET
 
@@ -54,6 +55,13 @@ from open_vi.domain.control import ControlOffer, ControlReadiness
 from open_vi.domain.status import ServiceStatusSnapshot
 from open_vi.domain.tspi import TspiSnapshot
 from open_vi.identity import SystemIdentity
+
+_FEATURES = pathlib.Path(__file__).resolve().parents[1] / "docs" / "FEATURES.md"
+_FEATURES_ROW = re.compile(
+    r"^\| (1\.2\.\d+\.\d+) \| [^|]+ \| ([^|]+?) \| ([^|]+?) \|", re.M
+)
+# Every § in a GAPS note is a FEATURES citation; see the registry.
+_FEATURES_SECTION = re.compile(r"§(1\.2\.\d+\.\d+)")
 
 _GOLDEN = pathlib.Path(__file__).parent / "golden"
 _SEPARATOR = "\n<!--+-->\n"
@@ -148,6 +156,16 @@ INBOUND = {
     ("QueryDataRequestMT", "Query"),
     ("RoutePlanValidationCommandMT", "WeatherAreaData"),
 }
+
+
+def _features_rows() -> dict[str, tuple[str, str]]:
+    """``{section: (sequence status, execution status)}`` from §1.2."""
+    return {
+        section: (sequence.strip(), execution.strip())
+        for section, sequence, execution in _FEATURES_ROW.findall(
+            _FEATURES.read_text()
+        )
+    }
 
 
 def _corpus(element_name: str) -> set[str] | None:
@@ -276,6 +294,56 @@ def test_every_gap_cites_a_features_row() -> None:
     """A gap with no row to correct is unactionable."""
     for pair, note in sorted(GAPS.items()):
         assert "FEATURES §" in note, f"{pair} has no FEATURES citation"
+
+
+def test_rows_with_recorded_gaps_are_not_claimed_supported() -> None:
+    """A FEATURES row a gap cites cannot still claim Sequence Supported.
+
+    This is the tie the Execution work exists to make. FEATURES' own
+    convention, stated in its preamble, is that a Partial Sequence row
+    "names a field or reply the interaction requires and open-vi does
+    not yet produce" — so a row cited by :data:`GAPS` is Partial by
+    that rule, and nothing but a test keeps the two in step.
+    """
+    rows = _features_rows()
+    cited = sorted(
+        {
+            section
+            for note in GAPS.values()
+            for section in _FEATURES_SECTION.findall(note)
+        }
+    )
+    assert cited, "no FEATURES sections cited by GAPS"
+    wrong = [
+        f"§{section} claims Sequence {rows[section][0]}"
+        for section in cited
+        if section in rows and rows[section][0] == "Supported"
+    ]
+    assert not wrong, (
+        "rows with a recorded required-field gap still claim Sequence "
+        "Supported:\n" + "\n".join(wrong)
+    )
+    missing = [s for s in cited if s not in rows]
+    assert not missing, f"GAPS cites no such FEATURES row: {missing}"
+
+
+def test_the_headline_counts_match_the_rows() -> None:
+    """The §1.2 summary is counted, not remembered."""
+    rows = _features_rows()
+    sequence = [status for status, _ in rows.values()]
+    stated = _FEATURES.read_text()
+    tallies = {
+        status: sequence.count(status)
+        for status in ("Supported", "Partial", "Not supported")
+    }
+    claim = (
+        f"Sequence {tallies['Supported']} Supported, "
+        f"{tallies['Partial']} Partial, {tallies['Not supported']} Not"
+    )
+    assert claim in stated, (
+        f"§1.2 preamble disagrees with the rows; they tally to: {claim}"
+    )
+    assert len(rows) == 36, f"expected 36 numbered §1.2 rows, found {len(rows)}"
 
 
 # --- the conditional fields, proven by driving the state ---------------
