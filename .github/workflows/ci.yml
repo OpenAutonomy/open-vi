@@ -47,9 +47,10 @@ jobs:
   conformance:
     # Validates the published wire corpus against A-GRA 5.0a, and the
     # documented and implemented message sets against Table 1-38 of the
-    # Vehicle Interface Volume. Both standards are fetched, not
-    # vendored, and pinned by digest -- the schema to the same revision
-    # oa-gateway checks against.
+    # Vehicle Interface Volume, plus the per-interaction required-field
+    # tables behind FEATURES' Execution column. Both standards are
+    # fetched, not vendored, and pinned by digest -- the schema to the
+    # same revision oa-gateway checks against.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -68,6 +69,12 @@ jobs:
         run: pytest tests/test_wire_xsd.py -q
       - name: Check the message set against Table 1-38
         run: pytest tests/test_wire_surface.py -q
+      - name: Check the interaction tables parse
+        run: pytest tests/test_spec_interactions.py -q
+      - name: Resolve interaction obligations against the schema
+        run: pytest tests/test_spec_schema_paths.py -q
+      - name: Check emitted fields against the interaction tables
+        run: pytest tests/test_wire_required_fields.py -q
 
   docs:
     runs-on: ubuntu-latest
