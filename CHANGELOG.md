@@ -2,119 +2,40 @@
 
 ## [Unreleased]
 
-### Fixed
+## [0.6.0] - 2026-11-25
 
-- A stopped route reports `CANCELED`, not `FAILED`. §1.2.5.6 Table
-  1-24 names `CANCELED` as the `RoutePlanExecutionStatus` state for a
-  VI-initiated abort, whichever way the platform reported the stop; an
-  inbound DEACTIVATE is likewise a commanded stop with nothing having
-  failed. `RouteExecution.mark_canceled` carries that, and
-  `mark_failed` stays for a genuine execution failure, which is
-  reported on `MA_FlightCommandStatus`.
+Conformance to A-GRA 5.0a is now measured rather than asserted: every
+message the VI publishes is validated against the standard in CI, and
+all 36 of them pass. Getting there changed the wire format in seven
+ways, so **this release is not compatible with a 0.5.0 peer** — see
+Breaking below. Inbound XML is also no longer a resource-exhaustion
+vector.
 
-### Changed
+### Breaking
 
-- FEATURES corrections, all claims about the standard that were wrong:
-  - `MA_ActionStatus` said the schema requires an `ActionID` the
-    Isolator does not have. It is not unobtainable — it arrives at
-    `MA_FlightCommand/Command/Capability/Traceability/Requirement/ActionID`
-    and the codec drops `Traceability` on ingest. `open-ma` does not
-    populate it either, so the path would not fire today, but the
-    reason recorded was not the real one.
-  - The `Launch` row said the schema prescribes no launch sequence.
-    A-GRA prescribes launch *parameters*:
-    `Capability/Launch [0..1]`, a choice of `CarrierLaunch` or
-    `AirfieldTakeoff{AirfieldID, RunwayID}`, on a command the VI
-    already handles. Neither side implements it.
-  - §1.2.5.4 drops to Partial. The interaction requires the
-    `MA_MissionPlanActivationCommandStatus` reply to be `COMPLETED`
-    only when the route was not yet EXECUTING and `FAILED` when it
-    was; open-vi replies `COMPLETED` in both cases.
-  - §1.2.5.6 records an unresolved reading: Table 1-24 names
-    `MA_MissionPlanActivationStatusMT` typed as
-    `MA_MissionPlanActivationCommandMT`, the schema defines
-    `MissionPlanActivationStatus` and `MA_MissionPlanActivationStatus`
-    as distinct messages, and Table 1-38 lists only the former —
-    which open-vi publishes. Reported rather than resolved.
-- §1.2 Sequence is 31 Supported / 3 Partial / 2 Not supported, down
-  from 33/1/2. The count fell because the volume's per-interaction
-  tables were read against the code, not because anything regressed.
+A peer parsing open-vi's output against 0.5.0 shapes will fail. The
+wire changes, each made to match the standard:
 
-### Added
+- `Path` is a linked list of `PathSegment` elements headed by
+  `FirstInPathSegmentID`, with positions under
+  `EndPoint/WayPoint/PointChoice/Point2D`. It was flat `Segment`
+  elements with a `Position` child.
+- `MA_RoutePlan` nests geometry under `Plan/Route/Path`, and
+  `ForPlanningUseOnly` moves after `Plan`.
+- The plan-execution family carries a `PlanExecutionStatus` composite
+  instead of flat sibling fields, and emits `Source`.
+- `ExecutingSystemID` is now `SystemID` on
+  `RoutePlanExecutionStatus` and `MA_MissionPlanExecutionStatus`.
+- `PlanExecutionState` uses `COMPLETE`, not `COMPLETED`; a stopped
+  route reports `CANCELED`, not `FAILED`.
+- `ActivityID` is no longer emitted on the three plan-execution
+  messages.
+- `MA_Response`'s `DO_NOTHING` option now carries `Trigger` and
+  `Response`.
 
-- `PlatformPort.active_route_progress()` and
-  `open_vi.domain.RouteProgress`, reporting where the vehicle is along
-  the waypoint list as submitted. `RoutePlanExecutionStatus` now
-  carries the `CurrentSegment` the schema requires, plus `NextSegment`
-  when there is one.
-  - The index is into the *submitted* list, not the uploaded one. PX4
-    trims a leading prefix, so its mission sequence `k` is submitted
-    index `skipped + k`; `execute_waypoint_following` returns the
-    skipped count for exactly that mapping. Reporting the raw
-    sequence would name the wrong waypoint, and a confidently wrong
-    segment is worse than none.
-  - `None` means the backend cannot report progress. It is not a
-    default of zero: naming a segment the vehicle is not at would be
-    a navigational claim the VI has not observed.
-  - Progress outlives the live activity, because §1.2.5.6 requires a
-    `CANCELED` `RoutePlanExecutionStatus` on VI abort and
-    `CurrentSegment` is mandatory on it — an aborted route still has
-    to say where it stopped.
-  - `PreviousSegment` is deliberately never emitted: its
-    `ActualCaptureTime` is mandatory and the VI does not record
-    capture times. PX4 could supply one later from when
-    `MISSION_ITEM_REACHED` arrived.
-  - `codec.path.segment_id_for_index` is the one home for the
-    index-to-id rule, so a status message cannot name a segment the
-    route it refers to does not contain.
-  - Stub reports only what a stationary vehicle can truthfully claim:
-    holding a waypoint list, at its first segment, nothing captured.
-    `advance_route_progress()` is a harness hook for walking it.
-
-### Changed
-
-- **All 36 published message types validate against A-GRA 5.0a.**
-  `KNOWN_NON_CONFORMANT` is now empty, and kept rather than deleted
-  because it is asserted in both directions — a newly non-conformant
-  type fails, and so does a listed type that starts passing.
-- FEATURES §1.2.6.6 stays Partial, now only because `MA_ActionStatus`
-  is unpublished.
-
-### Fixed
-
-- Plan-execution status carries A-GRA's `PlanExecutionStatus`
-  composite — a plan id and a state — instead of flat
-  `ExecutionState` / `RoutePlanID` / `MissionPlanID` / `ActivityID`
-  siblings, and names the system `SystemID` rather than
-  `ExecutingSystemID`. `Source` is emitted on all three. §1.2.6.6
-  names `PlanExecutionStatus.PlanExecutionState` as the required
-  field, so this is the shape the standard asks for.
-  `MA_MissionPlanExecutionStatus` keys its composite on
-  `MissionPlanID`; the other two use `PlanID`.
-- A route reaching completion published `COMPLETED`, which is not a
-  `PlanExecutionStateEnum` member — the token is `COMPLETE`. The codec
-  now maps domain states to wire tokens, leaving the domain
-  vocabulary (and the internal comparison in `isolator/publishers.py`)
-  untouched. An unmapped state passes through rather than being
-  rewritten, so a new one fails conformance instead of going out as a
-  plausible wrong value.
-  `tests/test_codec_plan_execution.py` drives `RouteExecution`'s own
-  setters to assert every state it can reach has a wire token.
-- `ActivityID` is no longer emitted on these three messages. A-GRA has
-  no place for it in any of their content models, so it was a field
-  the VI was adding that the standard does not carry here.
-- **35 of 36** published message types now validate, up from 33.
-  `RoutePlanExecutionStatus` is the only one left: it needs
-  `CurrentSegment`, which requires the vehicle's current path segment
-  through `PlatformPort`.
-
-### Changed
-
-- FEATURES §1.2.6.6 drops to Partial Sequence. The interaction's
-  message set is incomplete while `RoutePlanExecutionStatus` omits
-  `CurrentSegment` and `MA_ActionStatus` is unpublished — the previous
-  Supported reading counted the messages present rather than the
-  fields §1.2.6.6 requires of them.
+For implementors: `PlatformPort` gains an abstract
+`active_route_progress()`. Any out-of-tree backend must implement it;
+returning `None` is valid and means "cannot report".
 
 ### Security
 
@@ -126,152 +47,145 @@
   the stdlib parser first: a ~310 byte document declaring nested
   entities expanded to ~3 MB with no error, because expat's
   amplification guard does not arm until a document is already large.
-  `defusedxml` is now a runtime dependency, not an extra.
+  `defusedxml` is a runtime dependency, not an extra.
   `tests/test_codec_xml_hardening.py` holds the boundary and fails
   without the change.
-
-### Fixed
-
-- The `pages` job no longer races the artifact API. It uploaded the
-  Pages artifact and deployed it back to back in one job, and
-  `deploy-pages` queried metadata 1.2s after the upload began — it
-  failed the merges of #4, #6 and #9, each time leaving the published
-  docs stale, including for the 0.5.0 release. The upload now happens
-  in `docs`, where the HTML is built, so a job boundary separates it
-  from the deployment, and both sides use the default artifact name so
-  there is nothing to keep in sync. This is the layout GitHub's own
-  Pages example uses.
-
-### Fixed
-
-- `Path` is built as A-GRA models it: a linked list of `PathSegment`
-  elements headed by `FirstInPathSegmentID`, each carrying its position
-  under `EndPoint/WayPoint/PointChoice/Point2D` and pointing at its
-  successor through `NextPathSegment`. It previously emitted flat
-  `Segment` elements with a `Position` child and no head pointer, which
-  the schema does not accept. The parser already understood the linked
-  form, so it was the builder lagging behind. Segment ids stay
-  `UUID(int=index)`, 1-based, which `CurrentSegment` will need.
-- `MA_RoutePlan` nests its geometry under `Plan/Route/Path` with
-  `Applicability` and `Parts/RouteType`, and emits `ForPlanningUseOnly`
-  after `Plan` rather than before. `RouteType` is the route's
-  classification and a different enumeration from `PathType`, so the
-  path's role no longer leaks into it.
-- `MA_Response`'s `DO_NOTHING` option emits the required `Trigger` and
-  `Response`; `DoNothing` is a presence marker the schema pins to
-  length 0.
-- **33 of 36** published message types now validate against A-GRA
-  5.0a, up from 32, and the `MA_FlightCommand` waypoint sample
-  validates too.
-
-### Changed
-
-- FEATURES §1.2.2.3 records a deviation shared with `open-ma`:
-  in-flight replan uses the `Activity` choice carrying `Ranking` and
-  `FlightControlMode`, which A-GRA's `Activity` does not permit — it
-  allows only `ChangeActivityRank` / `ChangeActivityState` /
-  `DeleteActivity` / `UnassignActivity`. Both repositories emit the
-  identical shape, so conforming means moving replan onto the
-  `Capability` choice on both sides, not a unilateral change here.
 
 ### Added
 
 - Wire conformance harness. One deterministic corpus of every message
   Isolator publishes — captured from the real publish path with the
-  in-process bus and Stub backend, covering 36 of 36 publishable
-  message types — then four layers over it:
+  in-process bus and Stub backend, covering all 36 publishable message
+  types — then four layers over it:
   - `tests/golden/`: byte-exact snapshots, so any change to the wire
     format shows up as a reviewable diff. `UPDATE_GOLDEN=1 pytest`
     regenerates.
   - `test_wire_invariants.py`: envelope child order, `MessageHeader`
     shape, undashed 32-hex UUIDs, UCI timestamp format, and the
-    concrete `SchemaVersion` on the wire. Nothing previously asserted
-    that value, so a wrong one shipped in every message with the suite
-    green.
+    concrete `SchemaVersion`. Nothing previously asserted that value,
+    so a wrong one would ship in every message with the suite green.
   - `test_wire_roundtrip.py`: build/parse fidelity for all 14 codec
     pairs that have both sides.
-  - `test_wire_surface.py`: FEATURES §1.3.1 against the implemented
-    message set. Direction is decided by handler subscriptions and real
-    `bus.publish` call sites, resolved from the AST.
-- XSD validation of that corpus against A-GRA 5.0a, in
-  `tests/test_wire_xsd.py` with the new `validate` extra and
-  `scripts/fetch-agra-schema.sh`. The standard is public
-  (Distribution Statement A) but is not redistributed here, matching
-  what `oa-gateway` and `open-ma` do: it is fetched into a gitignored
-  `schema/a-gra/` and verified against digests pinned in
+  - `test_wire_surface.py`: FEATURES §1.3.1 and the implementation,
+    both against Table 1-38 of the volume.
+- XSD validation of that corpus against A-GRA 5.0a, with the
+  `validate` extra and `scripts/fetch-agra-schema.sh`. The standard is
+  public (Distribution Statement A) but is not redistributed here,
+  matching what `oa-gateway` and `open-ma` do: it is fetched into a
+  gitignored `schema/a-gra/` and verified against digests pinned in
   `scripts/agra-schema.sha256` — the same source, `v5.0a` tag and
-  digests oa-gateway pins, so the two repositories' conformance
-  results are comparable. The tests find that directory automatically,
-  `UCI_XSD` overrides it, and they skip when no schema is present so
-  the suite is green before anyone fetches one.
-- A `conformance` CI job that fetches the schema and validates the
-  corpus on every push and pull request.
-- `scripts/fetch-agra-spec.sh` fetches the ASK 5.0a Vehicle Interface
-  Volume, pinned in `scripts/agra-spec.sha256`, and
-  `tests/test_wire_surface.py` now reads **Table 1-38 (VI MMS)** out of
-  it. MA-L1-015 makes that table the compliance requirement and the
-  volume states its Direction column is "relative to the VI interface",
-  so direction is dictated by the standard. The test asserts FEATURES
-  §1.3.1 *and* the implementation against it; without the volume those
-  checks skip. The CI `conformance` job runs both.
-
-- Measured against A-GRA v5.0a, **32 of 36 published message types
-  validate**. The four that do not are recorded in
-  `KNOWN_NON_CONFORMANT`, which fails if a new type breaks *or* if a
-  listed one starts passing: the plan-execution family
-  (`RoutePlanExecutionStatus`, `MA_MissionPlanExecutionStatus`,
-  `ResponsePlanExecutionStatus`) emits flat fields where the schema has
-  a `PlanExecutionStatus` composite and `ExecutingSystemID` where it
-  says `SystemID`; `MA_RoutePlan` omits the `Plan` wrapper and orders
-  `ForPlanningUseOnly` before `Path` instead of after.
-
-### Fixed
-
-- FEATURES §1.3.1 had two directions wrong, both introduced by
-  inferring direction from this codebase instead of reading Table 1-38.
-  `SubsystemStatus` and `MA_MissionPlanActivationCommand` are both
-  `inout` in the standard. Restored, and each now records the
-  implementation gap it exposes:
-  - `MA_MissionPlanActivationCommand` outbound is §1.2.5.6 VI
-    Deactivate Route, where Table 1-24 requires VI to send one with
-    `DEACTIVATED` on abort. open-vi emits `MissionPlanActivationStatus`
-    only, so §1.2.5.6 drops to Partial Sequence and the §1.2 tally is
-    33 Supported / 1 Partial / 2 Not supported.
-  - `SubsystemStatus` inbound is the Flight Autonomy component
-    heartbeat per §1.2.6.1, which open-vi takes over `PlatformPort`
-    (PX4 `SYS_STATUS`) rather than as inbound UCI.
-
-### Added
-
+  digests oa-gateway pins, so the two repositories' results are
+  comparable. `UCI_XSD` overrides the path, and the tests skip when no
+  schema is present.
+- `scripts/fetch-agra-spec.sh` fetches the Vehicle Interface Volume,
+  pinned in `scripts/agra-spec.sha256`. MA-L1-015 makes Table 1-38 the
+  compliance requirement and the volume states its Direction column is
+  "relative to the VI interface", so message direction is dictated by
+  the standard rather than inferred from this codebase.
+- A `conformance` CI job that fetches both standards and runs the XSD
+  and Table 1-38 checks on every push and pull request.
+- `PlatformPort.active_route_progress()` and
+  `open_vi.domain.RouteProgress`, reporting where the vehicle is along
+  the waypoint list as submitted. `RoutePlanExecutionStatus` carries
+  the `CurrentSegment` the schema requires, plus `NextSegment`.
+  - The index is into the *submitted* list, not the uploaded one. PX4
+    trims a leading prefix, so its mission sequence `k` is submitted
+    index `skipped + k`. Reporting the raw sequence would name the
+    wrong waypoint, and a confidently wrong segment is worse than none.
+  - `None` means the backend cannot report progress, not index zero.
+  - Progress outlives the live activity, because §1.2.5.6 requires a
+    `CANCELED` status on VI abort and `CurrentSegment` is mandatory on
+    it — an aborted route still has to say where it stopped.
+  - `PreviousSegment` is never emitted: its `ActualCaptureTime` is
+    mandatory and the VI does not record capture times.
+  - `codec.path.segment_id_for_index` is the one home for the
+    index-to-id rule, so a status message cannot name a segment the
+    route it refers to does not contain.
 - `docs/CONFIGURATION.md`: every environment variable open-vi reads,
   with defaults and effect. 14 of the 25 had been undocumented,
   including `AGRA_SCHEMA_VERSION` and `AGRA_MESSAGE_MODE`, which are
   written into `MessageHeader` on every outbound message.
-- FEATURES §1.2.2 lists `Launch` as Not supported. A-GRA `LAUNCH` is
-  structurally independent from the control modes and the schema
-  prescribes no message sequence for it, so VI does not implement it —
-  but it gates every PX4 flight row, and the matrix had been silent on
-  it. Listed without a § until it is matched to a numbered §1.2
-  interaction, so the row counts are unchanged.
 
 ### Changed
 
+- **All 36 published message types validate against A-GRA 5.0a.**
+  `KNOWN_NON_CONFORMANT` is empty, and kept rather than deleted
+  because it is asserted in both directions — a newly non-conformant
+  type fails, and so does a listed type that starts passing.
 - `MessageHeader/SchemaVersion` has one source. `config.py` had its
   own literal for both the dataclass default and the
   `AGRA_SCHEMA_VERSION` fallback, and `IsolatorContext` prefers the
   config value, so a future bump of `open_vi.codec.ns.SCHEMA_VERSION`
-  would have left messages tagged with the stale copy. No wire change
-  today; both literals were `005.0a`.
+  would have left messages tagged with the stale copy.
 - `SECURITY.md` and `README.md` said the bus has no authentication.
   That is the deployment posture, not a client limitation: open-vi
   sends STOMP credentials when configured. Reworded, and the
-  credential variables are now documented and covered by tests
+  credential variables are documented and covered by tests
   (`config.py` 78% to 100%, `asb/stomp_amq.py` 24% to 65%).
+- §1.2 Sequence is 31 Supported / 3 Partial / 2 Not supported, down
+  from 34/0/2 at 0.5.0. The count fell because the volume's
+  per-interaction tables were read against the code, not because
+  anything regressed. §1.2.5.4, §1.2.5.6 and §1.2.6.6 each name a
+  field or reply the interaction requires and open-vi does not yet
+  produce.
+- FEATURES corrections, all claims about the standard that were wrong:
+  - `MA_ActionStatus` said the schema requires an `ActionID` the
+    Isolator does not have. It arrives at
+    `Capability/Traceability/Requirement/ActionID`; the codec drops
+    `Traceability` on ingest. `open-ma` does not populate it either,
+    so the path would not fire today — but that is a different reason
+    from the one recorded.
+  - The `Launch` row said the schema prescribes no launch sequence.
+    A-GRA prescribes launch *parameters*: `Capability/Launch`, a
+    choice of `CarrierLaunch` or
+    `AirfieldTakeoff{AirfieldID, RunwayID}`, on a command the VI
+    already handles. Neither side implements it.
+  - §1.2.5.4 drops to Partial: the
+    `MA_MissionPlanActivationCommandStatus` reply must be `COMPLETED`
+    only when the route was not yet EXECUTING and `FAILED` when it
+    was; open-vi replies `COMPLETED` in both cases.
+  - §1.2.5.6 records an unresolved reading rather than a resolution.
+    Table 1-24 names `MA_MissionPlanActivationStatusMT` typed as
+    `MA_MissionPlanActivationCommandMT`; the schema defines
+    `MissionPlanActivationStatus` and `MA_MissionPlanActivationStatus`
+    as distinct messages and Table 1-38 lists only the former, which
+    open-vi publishes.
+- FEATURES §1.2.2.3 records a deviation shared with `open-ma`:
+  in-flight replan uses the `Activity` choice carrying `Ranking` and
+  `FlightControlMode`, which A-GRA's `Activity` does not permit. Both
+  repositories emit the identical shape, so conforming means moving
+  replan onto the `Capability` choice on both sides.
 
 ### Fixed
 
-- FEATURES §1.3.1 listed `SubsystemStatus` as `inout`. It is published
-  only; the peer heartbeat arrives as inbound `ServiceStatus`.
+- `Path`, `MA_RoutePlan` and `MA_Response` are built as A-GRA defines
+  them; see Breaking. The `Path` parser already understood the linked
+  form, so it was the builder lagging the reader.
+- Plan-execution status carries the `PlanExecutionStatus` composite
+  and names the system `SystemID`; §1.2.6.6 names
+  `PlanExecutionStatus.PlanExecutionState` as the required field.
+- A route reaching completion published `COMPLETED`, which is not a
+  `PlanExecutionStateEnum` member. The codec maps domain states to
+  wire tokens, leaving the domain vocabulary untouched. An unmapped
+  state passes through rather than being rewritten, so a new one fails
+  conformance instead of going out as a plausible wrong value, and
+  `tests/test_codec_plan_execution.py` drives `RouteExecution`'s own
+  setters to assert every reachable state has a token.
+- A stopped route reports `CANCELED`. §1.2.5.6 Table 1-24 names it for
+  a VI-initiated abort, and an inbound DEACTIVATE is likewise a
+  commanded stop. `mark_failed` stays for a genuine execution failure,
+  reported on `MA_FlightCommandStatus`.
+- FEATURES §1.3.1 directions are Table 1-38's, not this codebase's.
+  `SubsystemStatus` and `MA_MissionPlanActivationCommand` are both
+  `inout` in the standard; each row now records the implementation gap
+  that direction exposes.
+- The `pages` job no longer races the artifact API. It uploaded the
+  Pages artifact and deployed it back to back in one job, and
+  `deploy-pages` queried metadata 1.2s after the upload began — it
+  failed three merges, each time leaving the published docs stale,
+  including for the 0.5.0 release. The upload now happens in `docs`
+  where the HTML is built, so a job boundary separates it from the
+  deployment, and both sides use the default artifact name.
 
 ## [0.5.0] - 2026-11-22
 
