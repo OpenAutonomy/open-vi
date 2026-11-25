@@ -1,5 +1,17 @@
 name: ci
 
+# Actions are pinned to commit SHAs, not tags. A tag is mutable: whoever
+# controls the action repo can move v4 to different code, and every workflow
+# that trusts the tag runs it. The trailing comment records which release the
+# SHA is, and dependabot keeps both in step.
+#
+# upload-pages-artifact and deploy-pages are held at their current majors
+# rather than bumped with the rest. They are the pair whose interaction caused
+# the artifact race fixed earlier, the pages job is currently failing on a
+# GitHub-side 500, and bumping them now would make "my change broke it"
+# indistinguishable from "the outage is ongoing". Dependabot will raise them
+# when they can be validated.
+
 on:
   push:
     branches: [main, master]
@@ -19,8 +31,8 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install
@@ -40,8 +52,8 @@ jobs:
     # oa-gateway checks against.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Install
@@ -60,8 +72,8 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Install
@@ -71,7 +83,7 @@ jobs:
       - name: Build docs
         run: mkdocs build --strict
       # Browsable copy, for the runs that never deploy.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: docs
           path: site
@@ -82,7 +94,7 @@ jobs:
       # deploy-pages queried metadata 1.2s after the upload began and
       # reported "No artifacts named github-pages-1", which failed the
       # merges of #4, #6 and #9 and left the published docs stale.
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: site
 
@@ -110,7 +122,7 @@ jobs:
       # Both sides use the default artifact name, so there is nothing
       # to keep in sync between the upload and the deployment.
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
 
   image:
     # Build on every run. Push to GHCR only from a public default branch
@@ -123,10 +135,10 @@ jobs:
     env:
       IMAGE: ghcr.io/${{ github.repository }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
           tags: |
@@ -134,7 +146,7 @@ jobs:
             type=sha
             type=semver,pattern={{version}}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         if: >-
           github.event_name == 'push'
           && !github.event.repository.private
@@ -142,7 +154,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Containerfile
