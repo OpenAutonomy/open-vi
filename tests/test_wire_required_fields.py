@@ -70,7 +70,7 @@ _NS = "{https://www.vdl.afrl.af.mil/programs/oam}"
 IDENTITY = SystemIdentity.named("open-vi", "open-vi")
 _CAPABILITY_ID = uuid.UUID(int=7)
 
-EXPECTED = {"EMITTED": 64, "CONDITIONAL": 9, "GAPS": 18, "INBOUND": 21}
+EXPECTED = {"EMITTED": 67, "CONDITIONAL": 9, "GAPS": 15, "INBOUND": 21}
 EXPECTED_TOTAL = 120
 
 # (message type, field): the state that makes the codec emit it. Each
@@ -102,15 +102,6 @@ CONDITIONAL = {
 # have to change, so the row is actionable rather than just recorded.
 GAPS = {
     (
-        "MA_ControlRequestStatusMT",
-        "ApprovalRequestProcessingStateReason",
-    ): "MA_ControlRequestStatusMDT extends RequestStatusBaseType, so it "
-    "has two optional reason elements. build_control_request_status "
-    "fills the inherited RequestProcessingStateReason; Tables 1-12 "
-    "and 1-13 require the derived ApprovalRequestProcessingStateReason. "
-    "Both are [0..1], so the XSD and Table 1-38 both pass. "
-    "FEATURES §1.2.2.7, §1.2.2.8",
-    (
         "MA_FaultMT",
         "Severity",
     ): "build_ma_fault emits FaultID, FaultState, FaultCode and "
@@ -128,10 +119,6 @@ GAPS = {
         "ServiceID",
     ): "the MA_Fault envelope carries no MessageHeader/ServiceID, though "
     "other messages do. FEATURES §1.2.1.4, §1.2.1.5",
-    (
-        "MA_SystemNotificationMT",
-        "NotificationDetail",
-    ): "no builder emits it. FEATURES §1.2.2.5",
 }
 
 # Required of messages open-vi receives. Satisfying these means the
@@ -325,6 +312,55 @@ def test_rows_with_recorded_gaps_are_not_claimed_supported() -> None:
     )
     missing = [s for s in cited if s not in rows]
     assert not missing, f"GAPS cites no such FEATURES row: {missing}"
+
+
+# The §1.2 rows whose Sequence is Partial, and why. Asserted both
+# ways: a row cannot drift onto or off Supported without this moving.
+# Four of these are the one MA_Fault content gap, counted once per
+# interaction that requires it; the other two predate the registry and
+# name a reply rather than a field, so they carry their reason here.
+PARTIAL_SEQUENCE_ROWS = {
+    "1.2.1.4": "MA_Fault carries four of the nine fields Table 1-4 requires",
+    "1.2.1.5": "MA_Fault, as §1.2.1.4",
+    "1.2.5.4": "the COMPLETED-vs-FAILED reply rule while EXECUTING",
+    "1.2.5.6": "the ambiguous inout leg",
+    "1.2.6.1": "MA_Fault Severity, required again by Table 1-25",
+    "1.2.6.6": "the required PlanExecutionStatus/PlanExecutionState",
+}
+
+
+def test_partial_sequence_rows_are_exactly_as_recorded() -> None:
+    """Pins which interactions admit an incomplete Sequence.
+
+    ``test_rows_with_recorded_gaps_are_not_claimed_supported`` only
+    pushes a row off Supported. This is the other direction: fixing a
+    gap has to bring its row back, and a row cannot quietly go Partial
+    without a recorded reason.
+    """
+    partial = {
+        section
+        for section, (sequence, _) in _features_rows().items()
+        if sequence == "Partial"
+    }
+    assert partial == set(PARTIAL_SEQUENCE_ROWS), (
+        "Partial Sequence rows drifted:\n"
+        f"  newly Partial: {sorted(partial - set(PARTIAL_SEQUENCE_ROWS))}\n"
+        f"  no longer Partial: "
+        f"{sorted(set(PARTIAL_SEQUENCE_ROWS) - partial)}"
+    )
+
+
+def test_every_gap_citation_names_a_partial_row() -> None:
+    """A gap must land on a row that admits it."""
+    cited = {
+        section
+        for note in GAPS.values()
+        for section in _FEATURES_SECTION.findall(note)
+    }
+    assert cited <= set(PARTIAL_SEQUENCE_ROWS), (
+        "GAPS cites rows that claim a complete Sequence: "
+        f"{sorted(cited - set(PARTIAL_SEQUENCE_ROWS))}"
+    )
 
 
 def test_the_headline_counts_match_the_rows() -> None:

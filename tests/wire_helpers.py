@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib
 import itertools
 import pkgutil
+import re
 import uuid
 from uuid import UUID
 
@@ -53,6 +54,7 @@ from open_vi.codec.status import (
 from open_vi.codec.system_mgmt import build_sample_system_management_request
 from open_vi.codec.task import build_ma_task, build_sample_task_command
 from open_vi.config import IsolatorConfig
+from open_vi.identity import SystemIdentity
 from open_vi.isolator import Isolator
 from open_vi.platform import StubPlatform
 
@@ -73,6 +75,34 @@ SUBSYSTEM_ID = UUID(int=0x52)
 # ServiceStatus carries its own, to avoid answering its own heartbeat.
 PEER_SERVICE_ID = UUID(int=0x5F)
 IDLE_ACTIVITY_ID = UUID(int=0xE0)
+# A peer controller, for the leg where control is already assigned and
+# a second ACQUIRE is rejected.
+PEER_CONTROLLER_ID = UUID(int=0x6F)
+
+
+def peer_identity() -> SystemIdentity:
+    """A publisher that is not Isolator.
+
+    ``_ingest_task`` drops an ``MA_Task`` whose MessageHeader carries
+    Isolator's own SystemID, so an MA_Task built from ``iso.identity``
+    is suppressed as loopback and drives nothing. §1.2.2.5 has MA send
+    it, so the corpus must too.
+    """
+    return SystemIdentity.named("open-ma", "open-ma")
+
+
+def task_without_task_id(identity: SystemIdentity) -> bytes:
+    """A well-formed MA_Task with its TaskID removed.
+
+    Drives the leg §1.2.2.5 requires and the VI used to drop in
+    silence: the reply carries ``NotificationDetail``, which Table
+    1-10 requires and which an acknowledgement cannot truthfully give
+    -- every ``CannotComplyEnum`` value says why something failed.
+    """
+    body = build_ma_task(identity, task_id=TASK_ID)
+    stripped = re.sub(rb"<TaskID>.*?</TaskID>", b"", body, count=1)
+    assert stripped != body, "MA_Task layout changed; TaskID not removed"
+    return stripped
 
 
 def _codec_modules() -> list[object]:
@@ -185,7 +215,8 @@ def _inbound(identity: object) -> list[tuple[str, bytes]]:
                 capability_id=CAPABILITY_ID,
             ),
         ),
-        (MT_MA_TASK, build_ma_task(identity, task_id=TASK_ID)),
+        # From a peer: Isolator drops its own MA_Task as loopback.
+        (MT_MA_TASK, build_ma_task(peer_identity(), task_id=TASK_ID)),
         (
             MT_MA_RESPONSE,
             build_sample_ma_response(identity, response_id=RESPONSE_ID),
@@ -268,6 +299,25 @@ def capture_corpus(
             route_plan_id=ROUTE_PLAN_ID,
             command_type="DEACTIVATE",
         ).decode("utf-8"),
+    )
+
+    # Unsuccessful legs last, so they cannot perturb the frozen UUID
+    # sequence of anything above. Both carry a reason element that no
+    # successful reply does, and neither the XSD nor Table 1-38 can
+    # tell whether it is present.
+    #
+    # A second ACQUIRE from another controller is rejected, because the
+    # first one in _inbound already holds the capability.
+    iso.dispatch(
+        MT_CONTROL_REQUEST,
+        build_sample_control_request(
+            iso.identity,
+            request_id=REQUEST_ID,
+            controller_system_id=PEER_CONTROLLER_ID,
+        ).decode("utf-8"),
+    )
+    iso.dispatch(
+        MT_MA_TASK, task_without_task_id(peer_identity()).decode("utf-8")
     )
 
     return {mt: list(bodies) for mt, bodies in sorted(bus.published.items())}

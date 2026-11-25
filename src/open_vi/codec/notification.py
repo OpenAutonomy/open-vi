@@ -87,10 +87,21 @@ def build_system_notification(
     notification_state: str = "CONFIRMED",
     severity: str = "INFORMATIONAL",
     perspective: str = "SOURCE",
+    detail_reason: str | None = None,
+    detail_description: str | None = None,
     schema_version: str = SCHEMA_VERSION,
     mode: str = "SIMULATION",
 ) -> bytes:
-    """Build MA_SystemNotification with an AssociatedMessage."""
+    """Build MA_SystemNotification with an AssociatedMessage.
+
+    *detail_reason* is a ``CannotComplyEnum`` token and produces
+    ``NotificationDetail``, which Table 1-10 requires. Every one of
+    that enum's 46 values states why something could not be done, so
+    an acknowledgement that the VI now holds the subject message
+    carries no detail -- there is no truthful value for a success.
+    The caller supplies one when it is telling MA that it could not
+    use the message.
+    """
     source_children: list[ET.Element] = [
         system_id(identity),
         service_id_element(service),
@@ -112,6 +123,12 @@ def build_system_notification(
         el("SystemPerspective", text=perspective),
         associated,
     )
+    if detail_reason:
+        # Declared last in MA_SystemNotificationMDT's xs:sequence.
+        detail_kids = [el("Reason", text=detail_reason)]
+        if detail_description:
+            detail_kids.append(el("Description", text=detail_description))
+        data.append(el("NotificationDetail", *detail_kids))
     root = message_envelope(
         "MA_SystemNotification",
         identity,
