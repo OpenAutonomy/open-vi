@@ -16,7 +16,7 @@ class RouteExecution:
 
     :meth:`activate` starts EXECUTING. The tick calls :meth:`complete`
     when the platform finishes that command. Inbound DEACTIVATE and
-    a route-sourced ``FAILED`` / ``CANCELED`` call :meth:`mark_failed`
+    a route-sourced stop calls :meth:`mark_canceled`
     so publishers can emit FAILED, then :meth:`clear`.
     """
 
@@ -38,6 +38,17 @@ class RouteExecution:
     def mark_failed(self) -> None:
         """Mark FAILED. Keep ids so publishers can emit, then :meth:`clear`."""
         self.state = "FAILED"
+
+    def mark_canceled(self) -> None:
+        """Mark CANCELED: the route was stopped, not broken.
+
+        §1.2.5.6 Table 1-24 names ``CANCELED`` as the
+        ``RoutePlanExecutionStatus`` state for a VI-initiated abort,
+        and an inbound DEACTIVATE is likewise a commanded stop with
+        nothing having failed. ``FAILED`` stays for a genuine
+        execution failure.
+        """
+        self.state = "CANCELED"
 
     def clear(self) -> None:
         """Drop the live route. No plan-execution snapshot after this."""

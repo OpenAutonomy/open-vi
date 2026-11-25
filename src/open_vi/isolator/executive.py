@@ -310,7 +310,13 @@ class Isolator:
                 self.ctx.flight.clear()
 
     def _abort_executing_route(self) -> None:
-        """VI-initiated abort: FAILED execution, DEACTIVATED, then clear.
+        """VI-initiated abort: CANCELED execution, DEACTIVATED, clear.
+
+        This is §1.2.5.6 VI Deactivate Route. Table 1-24 names
+        ``CANCELED`` as the ``RoutePlanExecutionStatus`` state for it,
+        whichever way the platform reported the stop — the route was
+        cut short, and a genuine platform failure is reported
+        separately on ``MA_FlightCommandStatus``.
 
         Used when the platform reports the route-sourced command as
         ``FAILED`` or ``CANCELED``. Does not send CANCEL. There is no
@@ -322,7 +328,7 @@ class Isolator:
             return
         stored = ctx.routes.get(plan_id)
         mission_id = stored.mission_plan_id if stored is not None else None
-        ctx.execution.mark_failed()
+        ctx.execution.mark_canceled()
         publishers.publish_plan_execution(ctx)
         ctx.routes.commit(plan_id, "DEACTIVATED")
         if mission_id is not None:

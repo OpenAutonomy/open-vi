@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A stopped route reports `CANCELED`, not `FAILED`. §1.2.5.6 Table
+  1-24 names `CANCELED` as the `RoutePlanExecutionStatus` state for a
+  VI-initiated abort, whichever way the platform reported the stop; an
+  inbound DEACTIVATE is likewise a commanded stop with nothing having
+  failed. `RouteExecution.mark_canceled` carries that, and
+  `mark_failed` stays for a genuine execution failure, which is
+  reported on `MA_FlightCommandStatus`.
+
+### Changed
+
+- FEATURES corrections, all claims about the standard that were wrong:
+  - `MA_ActionStatus` said the schema requires an `ActionID` the
+    Isolator does not have. It is not unobtainable — it arrives at
+    `MA_FlightCommand/Command/Capability/Traceability/Requirement/ActionID`
+    and the codec drops `Traceability` on ingest. `open-ma` does not
+    populate it either, so the path would not fire today, but the
+    reason recorded was not the real one.
+  - The `Launch` row said the schema prescribes no launch sequence.
+    A-GRA prescribes launch *parameters*:
+    `Capability/Launch [0..1]`, a choice of `CarrierLaunch` or
+    `AirfieldTakeoff{AirfieldID, RunwayID}`, on a command the VI
+    already handles. Neither side implements it.
+  - §1.2.5.4 drops to Partial. The interaction requires the
+    `MA_MissionPlanActivationCommandStatus` reply to be `COMPLETED`
+    only when the route was not yet EXECUTING and `FAILED` when it
+    was; open-vi replies `COMPLETED` in both cases.
+  - §1.2.5.6 records an unresolved reading: Table 1-24 names
+    `MA_MissionPlanActivationStatusMT` typed as
+    `MA_MissionPlanActivationCommandMT`, the schema defines
+    `MissionPlanActivationStatus` and `MA_MissionPlanActivationStatus`
+    as distinct messages, and Table 1-38 lists only the former —
+    which open-vi publishes. Reported rather than resolved.
+- §1.2 Sequence is 31 Supported / 3 Partial / 2 Not supported, down
+  from 33/1/2. The count fell because the volume's per-interaction
+  tables were read against the code, not because anything regressed.
+
 ### Added
 
 - `PlatformPort.active_route_progress()` and
