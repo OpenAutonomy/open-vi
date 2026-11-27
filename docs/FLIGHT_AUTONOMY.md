@@ -200,6 +200,16 @@ Not a database. "Pre-loaded and pre-validated" means data files read
 at startup and shipped with the deployment, on the same shelf as
 `px4-vehicle.toml`.
 
+Validation is the supplier's responsibility: whoever puts a route in
+the store is the one who validated it. FA loads what it is given and
+checks nothing about provenance.
+
+Which means `fa/` must not *claim* the data is validated. "Pre-validated"
+in §1.2.6.3 describes the deployment process, not a property open-vi
+enforces, and the code should read that way -- the same reason the
+vetting seam says plainly that it approves everything. A store named
+`validated_routes` would be a lie; `configured_routes` would not.
+
 Scope now versus what the standard anticipates: one airfield, one
 runway, one takeoff route is a legitimate subset. The standard
 expects alternates -- other airfields for emergency landings, and
@@ -325,10 +335,9 @@ than an ordinary activation. That is one of the seven inbound gaps in
   distance, the honest answer depends on airframe and runway, and a
   configured tolerance's default is a real choice rather than a
   detail.
-- **Who validates the store's contents, and how that is recorded.**
-  §1.2.5.2 and §1.2.6.3 both say "pre-validated". Shipping data files
-  does not make them validated, and nothing yet says who signs them
-  off. This is the open question the whole design now rests on.
+- ~~Who validates the store's contents.~~ **Settled:** whoever
+  supplies the data is responsible for validating it. It is an
+  engineering-process responsibility, not something the code asserts.
 - **`AirfieldReport` is derived too.** `domain/airfield.py`
   synthesises a home field and runway from current position, with
   `_DIRECTION_DEG = 90.0` hardcoded, and publishes it for §1.2.6.3.
