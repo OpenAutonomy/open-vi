@@ -159,10 +159,32 @@ it. The split is the point.
 | Arming -- the mechanism | Deciding whether to arm, and when |
 | Unit and frame conversion | Sequencing: validate, arm, fly, confirm airborne |
 
-New facts the port must supply and does not today: the capability set
-above, envelope limits, and the airframe type as a reported fact.
-`ControlOffer` and `FlightModeProfile` already carry limits in a
-vehicle-neutral shape, so that channel exists.
+### Two capability sets, and only one is ours
+
+**Outward**, toward MA: `MA_FlightCapability` carries the control modes
+and their performance profiles, specified by §1.2.2.4. Mandatory, and
+open-vi already publishes it.
+
+**Inward**, what FA needs to decide: `can_hover`,
+`needs_ground_roll`, `can_start_mission_directly`. The schema has no
+representation for any of them -- there is no airframe type for the
+VI's own vehicle, and autopilot behaviour sits below the MA-VI
+boundary, which the volume leaves "a platform-specific
+consideration".
+
+They are coupled, and in the direction that constrains us: the inward
+set must be sufficient to produce the outward one. The standard fixes
+the output, so it bounds the input. If the port cannot supply enough
+to populate `MA_FlightCapability` and its profiles correctly, the
+facts are wrong no matter how well they serve FA's internal
+decisions. So the inward set is ours to name but not ours to choose
+freely.
+
+New facts the port must supply and does not today: the inward
+capability set, envelope limits, and the airframe type as a reported
+fact. `ControlOffer` and `FlightModeProfile` already carry the modes
+and limits in a vehicle-neutral shape, which is the outward set's
+channel and the floor the inward set has to clear.
 
 `domain/airfield.py`'s runway geometry stays where it is for now.
 With takeoff selecting pre-validated data, FA has no geometry to
@@ -358,10 +380,13 @@ than an ordinary activation. That is one of the seven inbound gaps in
 
 ## Open questions
 
-- **Where does the capability set come from?** PX4 can report
+- **Where does the inward capability set come from?** See below for
+  which parts are ours at all. For the parts that are: PX4 can report
   `MAV_TYPE`, but `can_start_mission_directly` is a property of the
   autopilot's behaviour that someone has to assert. Discovered,
-  configured, or hardcoded per adapter are all defensible.
+  configured, or hardcoded per adapter are all defensible, and a wrong
+  answer fails silently -- it looks like the vehicle just did not take
+  off.
 
 ## What this is not
 
