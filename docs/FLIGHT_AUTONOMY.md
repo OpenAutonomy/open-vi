@@ -98,7 +98,7 @@ the intent is flyable and how to express it to this airframe.
 ```
 src/open_vi/fa/
   envelope.py   # the command validator §1.4 requires
-  takeoff.py    # selects a pre-validated stored route
+  launch.py     # sequences: vet, arm, fly, confirm airborne
   port.py       # what FA needs of a platform
 ```
 
@@ -113,7 +113,7 @@ tidy.
 | Transport | autopilot | adapter |
 | Mission encoding, arming handshake, mode machine | autopilot | adapter |
 | Frame conventions (HAE to relative-to-home) | autopilot | adapter, as `architecture.md` already requires |
-| Which stored takeoff route applies, and whether this airframe may use it | airframe | `fa/` |
+| The takeoff route itself | this airframe | config, alongside `px4-vehicle.toml` |
 | Mass, thrust, stall speed, rate limits | this airframe | config, already `px4-vehicle.toml` |
 
 Two cost tests follow, and they are the acceptance criteria for this
@@ -153,7 +153,7 @@ it. The split is the point.
 | Stays a platform concern | Becomes an FA concern |
 | --- | --- |
 | Telemetry, faults, service and subsystem status | Whether a command is inside the envelope |
-| Submitting a mission to the autopilot | Selecting the takeoff route and vetting it |
+| Submitting a mission to the autopilot | Vetting the configured route before it flies |
 | Arming -- the mechanism | Deciding whether to arm, and when |
 | Unit and frame conversion | Sequencing: validate, arm, fly, confirm airborne |
 
@@ -207,23 +207,24 @@ specific about it. §1.2.5.1:
 So takeoff is an **activation of a route the VI already holds**, not a
 separate command. Four consequences:
 
-1. FA **selects** a stored takeoff route; it neither receives one by
-   upload nor computes one. §1.2.5.2 asks for "pre-planned,
-   safety-validated" routes "stored pre-flight", and a route composed
-   at runtime is validated by nobody -- which defeats the property
-   that clause exists to protect.
+1. The takeoff route is **configured, not computed and not uploaded**.
+   §1.2.5.2 asks for "pre-planned, safety-validated" routes "stored
+   pre-flight", and a route composed at runtime is validated by
+   nobody -- which defeats the property that clause exists to protect.
 
-   Two earlier drafts of this doc got this wrong in opposite
-   directions. The first reused `HomeAirfield`'s runway start-to-end
-   path, which silently assumes a fixed wing. The second kept runtime
-   derivation but made it capability-aware -- fixing the airframe
-   assumption and leaving the real problem untouched.
+   One configured route is the whole mechanism. There is no airfield
+   key and no selection: this vehicle has a takeoff route, the way it
+   already has a mass and a stall speed in `px4-vehicle.toml`.
+   Operating from a second airfield means a second config, which is a
+   deployment concern, not something to build now.
 
-   The answer to "pre-set routes make the system rigid to one area" is
-   that the routes are **data, not code**: a set of validated routes
-   keyed by airfield, extended by adding data. The vehicle selects the
-   one for where it is. Nothing is pinned to one airfield and nothing
-   is computed in flight.
+   Two earlier drafts of this doc overshot here. The first reused
+   `HomeAirfield`'s runway start-to-end path, which silently assumes a
+   fixed wing. The second kept runtime derivation but made it
+   capability-aware -- fixing the airframe assumption and leaving the
+   real problem untouched. A third sketch keyed validated routes by
+   airfield, which is an airfield database nobody asked for.
+
 2. It enters `RouteStore` already `READY_FOR_ACTIVATION` — there is no
    upload ladder to walk, because §1.2.5.2 forbids MA uploading it.
 3. `RouteStore` must mark it FA-owned so an MA upload cannot overwrite
@@ -240,12 +241,11 @@ than an ordinary activation. That is one of the seven inbound gaps in
 
 ## Open questions
 
-- **Where the route data lives, and who validates it.** Selection
-  needs a store of validated routes per airfield. Format, location and
-  the validation step itself are open. This replaces the
-  runway-heading and wind questions that runtime derivation raised:
-  with pre-set routes there is no heading to guess, which is the
-  point.
+- **Who validates the configured route, and how that is recorded.**
+  §1.2.5.2's word is "safety-validated". With the route in config
+  there is no heading to guess, which is the point -- but a config
+  file does not make a route validated, and nothing yet says who
+  signed it off.
 - **`AirfieldReport` is derived too.** `domain/airfield.py`
   synthesises a home field and runway from current position, with
   `_DIRECTION_DEG = 90.0` hardcoded, and publishes it for §1.2.6.3.
@@ -271,6 +271,7 @@ than an ordinary activation. That is one of the seven inbound gaps in
 ## What this is not
 
 Not a second process, not a bus participant, not a certification
-artifact, and not a terrain-aware validator. It is the place the
+artifact, not a terrain-aware validator, and not an airfield
+database. It is the place the
 aviate-adjacent decisions live so they are written once instead of
 once per autopilot.
