@@ -98,7 +98,7 @@ the intent is flyable and how to express it to this airframe.
 ```
 src/open_vi/fa/
   envelope.py   # the command validator §1.4 requires
-  takeoff.py    # composes a takeoff route from facts
+  takeoff.py    # selects a pre-validated stored route
   port.py       # what FA needs of a platform
 ```
 
@@ -113,7 +113,7 @@ tidy.
 | Transport | autopilot | adapter |
 | Mission encoding, arming handshake, mode machine | autopilot | adapter |
 | Frame conventions (HAE to relative-to-home) | autopilot | adapter, as `architecture.md` already requires |
-| Takeoff shape, whether hovering is possible | airframe | `fa/` |
+| Which stored takeoff route applies, and whether this airframe may use it | airframe | `fa/` |
 | Mass, thrust, stall speed, rate limits | this airframe | config, already `px4-vehicle.toml` |
 
 Two cost tests follow, and they are the acceptance criteria for this
@@ -153,7 +153,7 @@ it. The split is the point.
 | Stays a platform concern | Becomes an FA concern |
 | --- | --- |
 | Telemetry, faults, service and subsystem status | Whether a command is inside the envelope |
-| Submitting a mission to the autopilot | Composing the takeoff shape |
+| Submitting a mission to the autopilot | Selecting the takeoff route and vetting it |
 | Arming -- the mechanism | Deciding whether to arm, and when |
 | Unit and frame conversion | Sequencing: validate, arm, fly, confirm airborne |
 
@@ -162,9 +162,9 @@ above, envelope limits, and the airframe type as a reported fact.
 `ControlOffer` and `FlightModeProfile` already carry limits in a
 vehicle-neutral shape, so that channel exists.
 
-`domain/airfield.py`'s runway geometry moves behind `fa/`. Today only
-`AirfieldReport` uses it; once takeoff needs it, every adapter would
-otherwise re-derive it.
+`domain/airfield.py`'s runway geometry stays where it is for now.
+With takeoff selecting pre-validated data, FA has no geometry to
+compose and the only remaining caller is `AirfieldReport`.
 
 ## Three invariants
 
@@ -207,13 +207,23 @@ specific about it. §1.2.5.1:
 So takeoff is an **activation of a route the VI already holds**, not a
 separate command. Four consequences:
 
-1. FA offers the stored takeoff route; it does not arrive by upload.
-   It is composed from where the vehicle actually is, so nothing is
-   pinned to one airfield, and from the airframe's capability, so a
-   ground roll and a vertical climb are different *shapes* rather than
-   different numbers. The first draft of this doc got that wrong: it
-   reused `HomeAirfield`'s runway start-to-end path, which silently
-   assumes a fixed wing.
+1. FA **selects** a stored takeoff route; it neither receives one by
+   upload nor computes one. §1.2.5.2 asks for "pre-planned,
+   safety-validated" routes "stored pre-flight", and a route composed
+   at runtime is validated by nobody -- which defeats the property
+   that clause exists to protect.
+
+   Two earlier drafts of this doc got this wrong in opposite
+   directions. The first reused `HomeAirfield`'s runway start-to-end
+   path, which silently assumes a fixed wing. The second kept runtime
+   derivation but made it capability-aware -- fixing the airframe
+   assumption and leaving the real problem untouched.
+
+   The answer to "pre-set routes make the system rigid to one area" is
+   that the routes are **data, not code**: a set of validated routes
+   keyed by airfield, extended by adding data. The vehicle selects the
+   one for where it is. Nothing is pinned to one airfield and nothing
+   is computed in flight.
 2. It enters `RouteStore` already `READY_FOR_ACTIVATION` — there is no
    upload ladder to walk, because §1.2.5.2 forbids MA uploading it.
 3. `RouteStore` must mark it FA-owned so an MA upload cannot overwrite
@@ -230,12 +240,18 @@ than an ordinary activation. That is one of the seven inbound gaps in
 
 ## Open questions
 
-- **Runway heading.** `domain/airfield.py` hardcodes
-  `_DIRECTION_DEG = 90.0`. A derived takeoff route therefore departs
-  due east regardless of wind. The VI already publishes a wind
-  estimate in `WeatherObservation`; whether FA should use it is a
-  decision, not an oversight. Only affects airframes that need a
-  ground roll.
+- **Where the route data lives, and who validates it.** Selection
+  needs a store of validated routes per airfield. Format, location and
+  the validation step itself are open. This replaces the
+  runway-heading and wind questions that runtime derivation raised:
+  with pre-set routes there is no heading to guess, which is the
+  point.
+- **`AirfieldReport` is derived too.** `domain/airfield.py`
+  synthesises a home field and runway from current position, with
+  `_DIRECTION_DEG = 90.0` hardcoded, and publishes it for §1.2.6.3.
+  That is self-reporting rather than safety-critical, so it is not
+  wrong in the same way -- but once validated airfield data exists,
+  two sources for one runway is its own bug.
 - **Where the capability set comes from.** PX4 can report `MAV_TYPE`,
   but `can_start_mission_directly` is a property of the autopilot's
   behaviour that someone has to assert. Discovered, configured, or
