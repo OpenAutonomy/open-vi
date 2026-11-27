@@ -5,12 +5,16 @@ name: ci
 # that trusts the tag runs it. The trailing comment records which release the
 # SHA is, and dependabot keeps both in step.
 #
-# upload-pages-artifact and deploy-pages are held at their current majors
-# rather than bumped with the rest. They are the pair whose interaction caused
-# the artifact race fixed earlier, the pages job is currently failing on a
-# GitHub-side 500, and bumping them now would make "my change broke it"
-# indistinguishable from "the outage is ongoing". Dependabot will raise them
-# when they can be validated.
+# upload-pages-artifact and deploy-pages move as a pair, in their own
+# dependabot group, because it was their interaction that caused the artifact
+# race fixed earlier -- a half-bump pairs one major with the other's previous
+# one. They were held back while the pages job was failing on a GitHub-side
+# 500, which would have made "my change broke it" indistinguishable from "the
+# outage is ongoing"; that outage is over and the job is green on main again.
+#
+# Note that the pages job does not run on a pull request, so a bump of this
+# pair cannot be validated before it lands. It is judged on the pages job of
+# the merge commit, and reverted if that fails.
 
 on:
   push:
@@ -103,7 +107,7 @@ jobs:
       # deploy-pages queried metadata 1.2s after the upload began and
       # reported "No artifacts named github-pages-1", which failed the
       # merges of #4, #6 and #9 and left the published docs stale.
-      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
 
@@ -131,7 +135,7 @@ jobs:
       # Both sides use the default artifact name, so there is nothing
       # to keep in sync between the upload and the deployment.
       - id: deployment
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 
   image:
     # Build on every run. Push to GHCR only from a public default branch
