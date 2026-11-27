@@ -98,7 +98,7 @@ the intent is flyable and how to express it to this airframe.
 ```
 src/open_vi/fa/
   envelope.py   # the command validator §1.4 requires
-  vetting.py    # checks a route before it flies
+  vetting.py    # the check seam; approves everything for now
   launch.py     # sequences: vet, arm, fly, confirm airborne
   port.py       # what FA needs of a platform
 ```
@@ -169,12 +169,19 @@ compose and the only remaining caller is `AirfieldReport`.
 
 ## Vetting
 
-A configured route still has to be checked before it flies, and the
-first rule is the one that catches the failure mode configuration
-actually has: the right route in the wrong place. If the vehicle is
-not near the route's start, refuse. A config shipped for one airfield
-and run at another is otherwise indistinguishable from a correct
-setup, right up to the ground roll.
+**Vetting approves everything to begin with.** What is being built
+first is the space and the interface, not the rules. That is a
+deliberate choice and it carries one risk worth naming: a function
+called `vet` that returns approval is easy to read as evidence a route
+was validated. It is not. Until a rule exists, `vetting.py` is a seam
+with nothing in it, and the doc and the code should both say so rather
+than implying assurance by having the right-shaped module.
+
+The first rule intended for it is the one that catches the failure
+mode configuration actually has: the right route in the wrong place.
+If the vehicle is not near the route's start, refuse. A config shipped
+for one airfield and run at another is otherwise indistinguishable
+from a correct setup, right up to the ground roll.
 
 Shape, so that later rules cost nothing structural:
 
@@ -184,9 +191,10 @@ Check = Callable[[Route, Facts], Reject | None]
 
 Each check is pure, takes the route and the facts the port reported,
 and returns a reason or nothing. `vetting.py` runs them in order and
-stops at the first reason. One check today. The envelope limits §1.4
-asks for are another, terrain is another once there is a terrain
-source, and none of them changes the caller.
+stops at the first reason. Zero checks today, so the list is empty and
+every route passes. The location rule is the first to add, the
+envelope limits §1.4 asks for are next, terrain follows once there is
+a terrain source -- and none of them changes the caller.
 
 This is also the seam that grows into the command validator §1.4
 describes -- same signature, applied to an `MA_FlightCommand` instead
@@ -273,10 +281,11 @@ than an ordinary activation. That is one of the seven inbound gaps in
 
 ## Open questions
 
-- **How near is near enough.** The location check needs a distance,
-  and the honest answer depends on the airframe and the runway. A
-  configured tolerance is the obvious start; what it defaults to is a
-  real choice.
+- **How near is near enough.** Deferred with the location rule
+  itself, but it is the reason that rule is not free: it needs a
+  distance, the honest answer depends on airframe and runway, and a
+  configured tolerance's default is a real choice rather than a
+  detail.
 - **Who validates the configured route, and how that is recorded.**
   §1.2.5.2's word is "safety-validated". With the route in config
   there is no heading to guess, which is the point -- but a config
@@ -307,7 +316,8 @@ than an ordinary activation. That is one of the seven inbound gaps in
 ## What this is not
 
 Not a second process, not a bus participant, not a certification
-artifact, not a terrain-aware validator, and not an airfield
-database. It is the place the
+artifact, not a terrain-aware validator, not an airfield database,
+and -- until a rule is written -- not a validator at all, only the
+place one goes. It is the place the
 aviate-adjacent decisions live so they are written once instead of
 once per autopilot.
