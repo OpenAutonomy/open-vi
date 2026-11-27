@@ -12,12 +12,26 @@ updates:
     commit-message:
       prefix: "ci"
     groups:
-      # One PR for the routine bumps. The pages pair is deliberately
-      # excluded: their interaction caused an artifact race once, so they
-      # get their own PR and their own CI run to be judged on.
+      # One PR for the routine bumps, and one for the pages pair.
+      #
+      # The pair is grouped rather than excluded. Excluding them gave
+      # each its own PR, which is wrong twice over: they must move in
+      # lockstep, because it was their *interaction* that caused the
+      # artifact race, and a half-bump pairs one major with the other's
+      # previous one; and the reason given for separating them -- their
+      # own CI run to be judged on -- is unreachable, because the pages
+      # job only runs on a push to main and skips on pull requests.
+      #
+      # So a pages bump is validated after it merges, by watching the
+      # pages job on main, with revert as the rollback. Grouping at
+      # least makes that one decision instead of two.
       actions:
         patterns: ["*"]
         exclude-patterns:
+          - "actions/upload-pages-artifact"
+          - "actions/deploy-pages"
+      pages:
+        patterns:
           - "actions/upload-pages-artifact"
           - "actions/deploy-pages"
 
