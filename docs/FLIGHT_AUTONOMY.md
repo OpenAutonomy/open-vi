@@ -200,6 +200,23 @@ start, which puts that failure where it is loud rather than letting a
 defaulted `false` read in flight as "the vehicle just did not take
 off".
 
+### `can_start_mission_directly` is the wrong capability
+
+It was the example used above, and checking it against the code
+retires it. PX4 does deny `MISSION_START` when it arrives before the
+`AUTO.MISSION` transition completes -- `mission.py` says so, from a
+live observation. But the adapter already handles that: set mode,
+wait for the `DO_SET_MODE` ack, start, wait again. From FA's side a
+mission can always be started, so PX4 answers yes, and the capability
+earns nothing.
+
+That is the test for whether any capability belongs: if the adapter
+can absorb the quirk without FA changing its sequence, the capability
+should not exist. `can_hover` survives it -- a quadrotor and a fixed
+wing need different takeoff shapes and no adapter can hide that.
+`can_start_mission_directly` does not. The list should be derived this
+way rather than guessed, and it has not been yet.
+
 New facts the port must supply and does not today: the inward
 capability set, envelope limits, and the airframe type as a reported
 fact. `ControlOffer` and `FlightModeProfile` already carry the modes
@@ -419,8 +436,11 @@ than an ordinary activation. That is one of the seven inbound gaps in
 
 ## Open questions
 
-- ~~Where does the inward capability set come from?~~ **Settled:** the
-  adapter answers, and how it answers is its own business.
+- **What does the PX4 adapter answer for each capability, and how
+  does it know?** "The adapter answers" settles who owns it, not what
+  the values are, and we write the adapter. `can_hover` falls out of
+  `MAV_TYPE`. The rest is open per capability, and the list itself is
+  not settled -- see below.
 
 ## What this is not
 
