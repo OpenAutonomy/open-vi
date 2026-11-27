@@ -180,6 +180,26 @@ facts are wrong no matter how well they serve FA's internal
 decisions. So the inward set is ours to name but not ours to choose
 freely.
 
+**One call, a complete answer, the adapter's problem.** Discoverability
+is a property of the integration, not of the capability: PX4 reports
+`MAV_TYPE`, another autopilot may not but may expose an aircraft file
+that makes something else discoverable. So there is no design-time
+split between discovered and configured facts -- one method, and the
+adapter resolves telemetry, its own config and its own hardcoded
+knowledge into values.
+
+FA never learns which source answered, and must not care. Config for
+this belongs to the adapter, so `px4-vehicle.toml` is read by the PX4
+adapter rather than by `fa/` -- which also keeps config paths out of
+FA, consistent with FA importing no platform.
+
+And no third "unknown" state. The adapter is the thing that knows its
+own platform; it should never hand FA a shrug. An adapter that cannot
+determine a capability fails at construction and the VI does not
+start, which puts that failure where it is loud rather than letting a
+defaulted `false` read in flight as "the vehicle just did not take
+off".
+
 New facts the port must supply and does not today: the inward
 capability set, envelope limits, and the airframe type as a reported
 fact. `ControlOffer` and `FlightModeProfile` already carry the modes
@@ -306,6 +326,25 @@ carries a `CommandStatus` and a `CannotComplyType`, and
 among its 46 values. So vetting is not a dead end that can only log --
 MA is told why.
 
+## Keep FA small
+
+The standing preference, which the invariants exist to protect:
+
+- The less in `fa/`, the better.
+- Prefer asking the adapter at runtime over configuring FA.
+- Vehicle-specific complexity belongs in the adapter.
+
+The boundary that stops this eating FA entirely is the second cost
+test. Pushing *vehicle-specific* work into the adapter is the goal;
+pushing *shared* work there means every new autopilot reimplements it,
+and a new airframe starts requiring adapter edits. So FA keeps the
+things that are the same across vehicles -- the order of a launch
+sequence, the check seam, the airfield data -- and the adapter keeps
+everything about how this airframe and this autopilot actually behave.
+
+Said another way: FA holds the order and the policy, the adapter holds
+the doing.
+
 ## Three invariants
 
 1. The isolator imports no platform module.
@@ -380,13 +419,8 @@ than an ordinary activation. That is one of the seven inbound gaps in
 
 ## Open questions
 
-- **Where does the inward capability set come from?** See below for
-  which parts are ours at all. For the parts that are: PX4 can report
-  `MAV_TYPE`, but `can_start_mission_directly` is a property of the
-  autopilot's behaviour that someone has to assert. Discovered,
-  configured, or hardcoded per adapter are all defensible, and a wrong
-  answer fails silently -- it looks like the vehicle just did not take
-  off.
+- ~~Where does the inward capability set come from?~~ **Settled:** the
+  adapter answers, and how it answers is its own business.
 
 ## What this is not
 
