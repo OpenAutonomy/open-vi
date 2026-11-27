@@ -256,6 +256,28 @@ This is also the seam that grows into the command validator §1.4
 describes -- same signature, applied to an `MA_FlightCommand` instead
 of a stored route. Worth getting the shape right once.
 
+**Scaffolding now, rules later, and deliberately.** §1.4 row 29 is a
+`shall` -- "The FA shall protect the aircraft from unsafe commands",
+naming g, rate and speed limits and stall-level energy management --
+and row 30 adds geofences. That is a large piece of work and it is
+not deferred for lack of interest: the content is data this system
+does not have yet.
+
+Both kinds of rule are parameterised by data rather than written in
+code, which is why the seam is the useful part to build first:
+
+- **Envelope limits** are per-airframe. The data already has a home,
+  `px4-vehicle.toml`, and `MA_FlightCapability` already carries limits
+  on the wire.
+- **Terrain** is per-location, and there is no source for it. The
+  terrain interactions are Not supported, so a terrain-aware check has
+  nothing to read.
+
+So what gets built is the infrastructure -- the `Check` signature, the
+ordered list, the reason that reaches MA -- with every check approving.
+Adding a real rule later is adding a function and the data it reads,
+not restructuring anything.
+
 A refusal has somewhere to go on the wire: the activation reply
 carries a `CommandStatus` and a `CannotComplyType`, and
 `CannotComplyEnum` has `INFEASIBLE_ROUTE` and `CONSTRAINT_ROUTE`
@@ -340,12 +362,6 @@ than an ordinary activation. That is one of the seven inbound gaps in
   `MAV_TYPE`, but `can_start_mission_directly` is a property of the
   autopilot's behaviour that someone has to assert. Discovered,
   configured, or hardcoded per adapter are all defensible.
-- **How much validator?** §1.4 row 29 is a `shall` -- FA shall protect
-  the aircraft from unsafe commands, naming g, rate and speed limits
-  and stall-level energy management. Limits are reachable from
-  `MA_FlightCapability`. Terrain is not, since the terrain
-  interactions are Not supported. So: how far past limit checking do
-  we go, and when?
 
 ## What this is not
 
