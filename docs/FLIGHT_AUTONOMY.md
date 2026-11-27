@@ -258,12 +258,11 @@ separate command. Four consequences:
    Operating from a second airfield means a second config, which is a
    deployment concern, not something to build now.
 
-   Two earlier drafts of this doc overshot here. The first reused
-   `HomeAirfield`'s runway start-to-end path, which silently assumes a
-   fixed wing. The second kept runtime derivation but made it
-   capability-aware -- fixing the airframe assumption and leaving the
-   real problem untouched. A third sketch keyed validated routes by
-   airfield, which is an airfield database nobody asked for.
+   Rejected on the way here, so they do not get re-proposed:
+   deriving the route from `HomeAirfield`'s runway (assumes a fixed
+   wing), deriving it capability-aware (still validated by nobody),
+   and keying validated routes by airfield (an airfield database
+   nobody needs).
 
 2. It enters `RouteStore` already `READY_FOR_ACTIVATION` — there is no
    upload ladder to walk, because §1.2.5.2 forbids MA uploading it.
