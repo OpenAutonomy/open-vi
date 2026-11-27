@@ -29,8 +29,15 @@ fly. Stub rows live in [platforms/stub](platforms/stub/FEATURES.md).
 PX4 rows live in [platforms/px4](platforms/px4/FEATURES.md).
 
 §1.2 Core (36 numbered rows): Sequence 29 Supported, 5 Partial, 2 Not
-supported (terrain, weapons). Execution 16 Supported, 5 Partial, 13
+supported (terrain, weapons). Execution 15 Supported, 6 Partial, 13
 n/a, 2 Not supported. Backend is not 29/36.
+
+The required fields of *inbound* messages are verified separately, by
+`tests/test_wire_inbound_fields.py`: an inbound obligation is met when
+the field's content reaches an observable effect, not when a message
+carrying it is accepted. The 21 entries are 17 distinct message/field
+pairs — ten driven by a test there, seven recorded as not read, each
+citing the row it bears on.
 
 The five Partial Sequence rows are §1.2.1.4, §1.2.1.5, §1.2.5.4,
 §1.2.5.6 and §1.2.6.6 — each names a field or reply the interaction
@@ -94,7 +101,7 @@ here.
 | § | Interaction | Seq | Exec | Back | Notes |
 | --- | --- | --- | --- | --- | --- |
 | 1.2.4.1 | Checksum Validation | Supported | Supported | n/a | Stored routes emit `FileMetadata` with SHA-256. Query `FAILED` if stored XML no longer matches. |
-| 1.2.4.2 | Query for Missing Data | Supported | Supported | n/a | Native MTs by default. `QueryIdentifiersOnly` is IDs only. Empty match is `COMPLETED` with no `Result`. |
+| 1.2.4.2 | Query for Missing Data | Supported | Partial | n/a | Native MTs by default. `QueryIdentifiersOnly` is IDs only. Empty match is `COMPLETED` with no `Result`. **Table 1-17 requires `Query`, and open-vi does not read it.** `QueryMessageType` carries `MessageType` and `Query`; `parse_query_request` reads only the former, so a query returns every object of the requested types instead of the ones the predicate selects. Table 1-17 is Query for Missing Data, where MA asks for particular ids, so MA must filter what it receives. |
 | 1.2.4.3 | Route Plan Data Validation | Supported | Supported | n/a | Composition of the two rows above. |
 
 ### 1.2.5 Route plan behaviors

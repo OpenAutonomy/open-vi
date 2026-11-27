@@ -75,6 +75,8 @@ jobs:
         run: pytest tests/test_spec_schema_paths.py -q
       - name: Check emitted fields against the interaction tables
         run: pytest tests/test_wire_required_fields.py -q
+      - name: Check inbound required fields are read
+        run: pytest tests/test_wire_inbound_fields.py -q
 
   docs:
     runs-on: ubuntu-latest

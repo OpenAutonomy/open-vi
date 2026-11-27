@@ -369,22 +369,26 @@ def test_every_gap_citation_names_a_partial_row() -> None:
 
 
 def test_the_headline_counts_match_the_rows() -> None:
-    """The §1.2 summary is counted, not remembered."""
+    """The §1.2 summary is counted, not remembered.
+
+    Both tallies are quoted as compliance claims, and a hand-kept
+    count drifts. Compared with whitespace collapsed, so reflowing
+    the paragraph does not fail the test.
+    """
     rows = _features_rows()
-    sequence = [status for status, _ in rows.values()]
-    stated = _FEATURES.read_text()
-    tallies = {
-        status: sequence.count(status)
-        for status in ("Supported", "Partial", "Not supported")
-    }
-    claim = (
-        f"Sequence {tallies['Supported']} Supported, "
-        f"{tallies['Partial']} Partial, {tallies['Not supported']} Not"
-    )
-    assert claim in stated, (
-        f"§1.2 preamble disagrees with the rows; they tally to: {claim}"
-    )
-    assert len(rows) == 36, f"expected 36 numbered §1.2 rows, found {len(rows)}"
+    assert len(rows) == 36, f"expected 36 numbered §1.2 rows, got {len(rows)}"
+    stated = " ".join(_FEATURES.read_text().split())
+    for axis, index in (("Sequence", 0), ("Execution", 1)):
+        counts = [status[index] for status in rows.values()]
+        parts = [
+            f"{counts.count(name)} {name}"
+            for name in ("Supported", "Partial", "n/a", "Not supported")
+            if counts.count(name)
+        ]
+        claim = f"{axis} {', '.join(parts)}"
+        assert claim in stated, (
+            f"§1.2 preamble disagrees with the rows, which tally to: {claim}"
+        )
 
 
 # --- the conditional fields, proven by driving the state ---------------
