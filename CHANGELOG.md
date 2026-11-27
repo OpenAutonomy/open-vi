@@ -2,6 +2,71 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-27
+
+0.6.0 made conformance measured rather than asserted for one axis:
+every message the VI publishes is validated against A-GRA 5.0a in CI.
+That checks each message is well formed. It cannot check that a
+message carried what its interaction needed, because almost every
+A-GRA element is `[0..1]` — `MA_FlightCapabilityStatus` without
+`AvailabilityReason` is schema-valid, satisfies the Minimum Message
+Set, and tells Mission Autonomy nothing about why the capability went
+away.
+
+This release closes that. The Vehicle Interface Volume states the
+obligation per interaction, in `Table 1-1` through `Table 1-36`, and
+all 120 of those required fields are now accounted for by a check
+rather than by reading. Eleven defects surfaced that way; they are
+listed under Fixed, and three documented claims turned out to be
+overstated.
+
+### Added
+
+- `tests/spec_interactions.py` reads the per-interaction tables out of
+  the volume: 36 tables, 146 message rows, 120 required fields, 11
+  required enum values. It refuses any parse that does not match those
+  counts, as the Table 1-38 reader already did — a PDF parse can fail
+  by finding nothing or by inventing rows out of neighbouring prose,
+  and both are silent.
+- `tests/agra_schema.py` resolves each required field to an element
+  path in the A-GRA content model, crossing `xs:extension` bases,
+  named `xs:group` references and inline anonymous types. Counts prove
+  nothing was lost; this proves nothing was invented. 112 of the 120
+  resolve, and the 8 that do not are a defect in the volume.
+- `tests/test_wire_required_fields.py` puts all 120 obligations in
+  exactly one bucket and asserts each both ways: 78 emitted and
+  checked against the published corpus, 11 emitted only when the
+  domain supplies the data and each proven by driving its builder, 2
+  recorded gaps, 21 inbound, 8 that the referenced message cannot
+  carry.
+- `tests/test_wire_inbound_fields.py` covers the inbound ones, which
+  no published message can speak to. An inbound obligation is met when
+  the field's content reaches an observable effect, not when a message
+  carrying it is accepted. Ten are driven by a test; seven are
+  recorded as not read, each citing the row it bears on.
+- `MA_Fault` now reports `Severity`, `DetectionTime`, `FaultCodeCount`,
+  `SubsystemID`, `ServiceID` and `FaultData`, which Tables 1-4, 1-5
+  and 1-25 require. `DetectionTime` is stamped when a fault appears and
+  held until it clears, and `FaultCodeCount` counts clear-to-set
+  transitions, because A-GRA says the time is of detection and not of
+  transmission — a sensor that flaps is several occurrences, one that
+  stays unhealthy is one.
+- An `MA_Task` the VI cannot use is now answered with
+  `MA_SystemNotification` carrying `NotificationDetail`, which
+  §1.2.2.5 requires and which was previously dropped in silence.
+- `src/` is type-checked with mypy and the package ships `py.typed`.
+- `.github/dependabot.yml` for actions, pip and docker. Pinning by SHA
+  trades a mutable-tag risk for a staleness risk — nothing moves until
+  someone moves it — so dependabot is the other half of that trade: it
+  raises the SHA and the version comment together.
+  - `upload-pages-artifact` and `deploy-pages` share a group, so they
+    always arrive as one pull request. It was their *interaction* that
+    caused the artifact race, and a half-bump pairs one major with the
+    other's previous one.
+  - The docker entry is best-effort: dependabot detects `Dockerfile`
+    and this repo uses the OCI name `Containerfile`. The config records
+    how to bump the digest by hand if no PR appears.
+
 ### Security
 
 - Every GitHub Action is pinned to a commit SHA rather than a tag, with
@@ -13,28 +78,84 @@
   is rebuilt on every upstream patch, so a tag-only `FROM` means two
   builds of the same commit can differ.
 
-### Added
+### Fixed
 
-- `.github/dependabot.yml` for actions, pip and docker. Pinning by SHA
-  trades a mutable-tag risk for a staleness risk — nothing moves until
-  someone moves it — so dependabot is the other half of that trade: it
-  raises the SHA and the version comment together.
-  - `upload-pages-artifact` and `deploy-pages` are excluded from the
-    grouped actions PR and get their own. Their interaction caused the
-    artifact race fixed earlier, so they are worth judging on their own
-    CI run.
-  - The docker entry is best-effort: dependabot detects `Dockerfile`
-    and this repo uses the OCI name `Containerfile`. The config records
-    how to bump the digest by hand if no PR appears.
+- `MA_ControlRequestStatus` filled the wrong one of two reason
+  elements. Its data type extends `RequestStatusBaseType`, so there is
+  an inherited `RequestProcessingStateReason` and a derived
+  `ApprovalRequestProcessingStateReason`; Tables 1-12 and 1-13 require
+  the second on a rejected or `CANCELED` status. Both are `[0..1]`, so
+  a rejection that said nothing about the approval decision passed
+  both the schema and the Minimum Message Set.
+- `MA_SystemNotification` never emitted `NotificationDetail`.
+- `MA_Fault` carried four of the nine fields its interactions require.
+- A reentrant-lock deadlock in `Px4MavlinkAdapter.get_faults`, found by
+  the existing link-down test while the fault fields were being added.
+- `_bit_failed` asked whether built-in test had failed by calling the
+  reporting path, which records a detection time and counts an
+  occurrence. A predicate must not have those side effects.
+- `TaskHandler` guarded the wrong call for the wrong exception.
+  `parse_header_system_id` ran outside the `try`, and the parser raises
+  `ET.ParseError` — a `SyntaxError` — for malformed XML while the guard
+  caught `ValueError`, which covers only the entity and DTD rejections.
+  Malformed XML therefore reached the dispatch loop, which logged and
+  answered nothing. The process was never at risk; the dispatcher
+  catches `Exception`.
+- The wire corpus was dispatching dead traffic. Its `MA_Task` was built
+  with Isolator's own SystemID, which `_ingest_task` drops as loopback,
+  so the §1.2.2.5 acknowledgement leg was never exercised and every
+  `MA_SystemNotification` in the corpus came from other paths.
+- The version is single-sourced from `open_vi.__version__`. The
+  `ServiceStatus` and `SubsystemStatus` defaults repeated it as
+  literals, so a missed release step would have advertised a stale
+  `ServiceVersion` on the wire.
 
 ### Changed
 
-- Seven actions bumped to current majors, which clears the Node 20
+- `docs/FEATURES.md` §1.2 Sequence goes 31 Supported / 3 Partial to 29
+  / 5, and Execution 16 / 5 to 15 / 6. Nothing regressed: the reading
+  got stricter and is now mechanical. The document's own convention is
+  that a Partial Sequence row names a field or reply the interaction
+  requires and open-vi does not produce, so the rows moved by that
+  rule rather than a new one.
+  - §1.2.4.2 claimed Execution Supported while ignoring the query
+    predicate. `QueryMessageType` carries `MessageType` and `Query`;
+    only the first was read, so a query returned every object of the
+    requested types rather than the ones the predicate selects.
+  - §1.2.1.4 and §1.2.1.5 remain Partial on `AmbiguityGroup`, which is
+    a missing capability rather than a missing builder: it means a
+    fault narrowed to candidate components but not yet isolated, and
+    open-vi does no isolation.
+  - The Partial set and both headline tallies are asserted against the
+    rows, so a count cannot drift and a row cannot move without its
+    registry moving too.
+- Seven actions bumped to current majors, clearing the Node 20
   deprecation warnings on `checkout`, `setup-python` and
-  `upload-artifact`. `upload-pages-artifact` and `deploy-pages` are
-  held at their current majors and only SHA-pinned: the pages job is
-  failing on a GitHub-side 500 at the time of writing, so a bump there
-  could not be distinguished from the ongoing outage.
+  `upload-artifact`. `upload-pages-artifact` and `deploy-pages` were
+  held back while the pages job was failing on a GitHub-side 500, which
+  would have made "my change broke it" indistinguishable from "the
+  outage is ongoing"; that outage ended and both are now on 5.x.
+  Because the pages job runs only on a push to `main`, a bump of that
+  pair cannot be validated before it lands and is judged on the pages
+  job of its merge commit.
+- `utc_now` moved to `open_vi.domain.clock`, re-exported from
+  `open_vi.codec.xmlutil`. A platform adapter needs it to stamp a
+  detection time and may not import from the codec.
+
+### Notes
+
+- Three defects in the volume itself are recorded rather than worked
+  around, so that a later edition fixing them fails the check and the
+  exemption comes off. Tables 1-12 and 1-13 require four fields of
+  `MA_ControlAssignment` that its content model does not contain — they
+  belong to `ControlStatus`, as their own type column says, and
+  open-vi emits them there. Tables 1-15 and 1-24 pair a label with a
+  type that is not its own, and Table 1-24 adds a spurious `MA_`
+  prefix that Table 1-38 contradicts.
+- Wire compatibility with a 0.6.0 peer is unchanged in direction but
+  not in content: messages now carry fields they previously omitted.
+  All of them are optional in A-GRA, so a 0.6.0 reader ignores what it
+  does not know.
 
 ## [0.6.0] - 2026-11-25
 
