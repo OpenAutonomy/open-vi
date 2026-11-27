@@ -330,35 +330,19 @@ than an ordinary activation. That is one of the seven inbound gaps in
 
 ## Open questions
 
-- **How near is near enough.** Deferred with the location rule
-  itself, but it is the reason that rule is not free: it needs a
-  distance, the honest answer depends on airframe and runway, and a
-  configured tolerance's default is a real choice rather than a
-  detail.
-- ~~Who validates the store's contents.~~ **Settled:** whoever
-  supplies the data is responsible for validating it. It is an
-  engineering-process responsibility, not something the code asserts.
-- **`AirfieldReport` is derived too.** `domain/airfield.py`
-  synthesises a home field and runway from current position, with
-  `_DIRECTION_DEG = 90.0` hardcoded, and publishes it for §1.2.6.3.
-  That is self-reporting rather than safety-critical, so it is not
-  wrong in the same way -- but once validated airfield data exists,
-  two sources for one runway is its own bug.
-- **Where the capability set comes from.** PX4 can report `MAV_TYPE`,
-  but `can_start_mission_directly` is a property of the autopilot's
-  behaviour that someone has to assert. Discovered, configured, or
-  hardcoded per adapter are all defensible; it should be a deliberate
-  choice rather than whatever the first adapter happens to do.
-- **How much validator.** §1.4 asks it to shield the autopilot from
-  commands that "exceed operation limits or fly into terrain". Limits
-  are reachable from `MA_FlightCapability`. Terrain is not — the
-  terrain interactions are Not supported, so terrain-aware validation
-  is out of scope until there is a terrain source.
-- **Arming policy.** `REQ-SYS-0004` said the VI shall not command arm
-  or launch. It is a product rule that contradicts §1.2.5.1, and the
-  decision taken is that the standard wins, so it is withdrawn. Note
-  that `docs/architecture.md` in the demo already showed VI arming
-  while `README.md` said it never does; those need reconciling.
+- **Where does the capability set come from?** PX4 can report
+  `MAV_TYPE`, but `can_start_mission_directly` is a property of the
+  autopilot's behaviour that someone has to assert. Discovered,
+  configured, or hardcoded per adapter are all defensible.
+- **How much validator?** §1.4 row 29 is a `shall` -- FA shall protect
+  the aircraft from unsafe commands, naming g, rate and speed limits
+  and stall-level energy management. Limits are reachable from
+  `MA_FlightCapability`. Terrain is not, since the terrain
+  interactions are Not supported. So: how far past limit checking do
+  we go, and when?
+- **How near is near enough?** The location rule needs a distance. It
+  depends on airframe and runway, so a configured tolerance's default
+  is a real choice. Deferred with the rule itself.
 
 ## What this is not
 
