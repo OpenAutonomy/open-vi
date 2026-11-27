@@ -233,6 +233,12 @@ If the vehicle is not near the route's start, refuse. A config shipped
 for one airfield and run at another is otherwise indistinguishable
 from a correct setup, right up to the ground roll.
 
+Tolerance is **5 m**, configured rather than constant. Worth knowing
+why it is configurable: plain GNSS is 2-5 m CEP, so 5 m is near the
+noise floor and a vehicle sitting correctly on the numbers can read as
+out of position. If the rule starts refusing takeoffs that should pass,
+the tolerance is the first thing to raise, not the rule to remove.
+
 Shape, so that later rules cost nothing structural:
 
 ```python
@@ -340,9 +346,6 @@ than an ordinary activation. That is one of the seven inbound gaps in
   `MA_FlightCapability`. Terrain is not, since the terrain
   interactions are Not supported. So: how far past limit checking do
   we go, and when?
-- **How near is near enough?** The location rule needs a distance. It
-  depends on airframe and runway, so a configured tolerance's default
-  is a real choice. Deferred with the rule itself.
 
 ## What this is not
 
