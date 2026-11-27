@@ -140,11 +140,19 @@ def has_type(message_type: str) -> bool:
 def element_path(message_type: str, field: str) -> tuple[str, ...] | None:
     """Shortest element path from *message_type* down to *field*.
 
-    Breadth-first, so the result is the shallowest place the field
-    occurs. Returns ``None`` when the schema is absent, the type is
-    unknown, or the type's content model has no such element — the
-    last being a real answer, not a failure: Tables 1-12 and 1-13
-    require fields of ``MA_ControlAssignmentMT`` that it cannot carry.
+    The ``MessageData`` subtree is searched first. A name can occur in
+    both the payload and the envelope — ``MA_Fault`` has a
+    ``ServiceID`` under each — and the interaction tables describe
+    payload content, so the shallowest match overall can be the wrong
+    element. Table 1-4's nine required fields are exactly the members
+    of ``MA_SubsystemFaultType``, ``ServiceID`` among them, while
+    ``MessageHeader/ServiceID`` is a shorter path to a different
+    field.
+
+    Returns ``None`` when the schema is absent, the type is unknown,
+    or the content model has no such element — the last being a real
+    answer, not a failure: Tables 1-12 and 1-13 require fields of
+    ``MA_ControlAssignmentMT`` that it cannot carry.
     """
     index = load()
     if index is None:
@@ -152,10 +160,26 @@ def element_path(message_type: str, field: str) -> tuple[str, ...] | None:
     root = index.types.get(message_type)
     if root is None:
         return None
+    for decl in index.children(root):
+        if (decl.get("name") or "") != "MessageData":
+            continue
+        body = index.body(decl)
+        if body is not None:
+            under = _search(index, body, field, message_type)
+            if under is not None:
+                return ("MessageData", *under)
+        break
+    return _search(index, root, field, message_type)
+
+
+def _search(
+    index: _Index, root: ET.Element, field: str, type_name: str
+) -> tuple[str, ...] | None:
+    """Breadth-first walk for *field* beneath the *root* content model."""
     queue: collections.deque[tuple[ET.Element, tuple[str, ...]]] = (
         collections.deque([(root, ())])
     )
-    seen = {message_type}
+    seen = {type_name}
     while queue:
         node, path = queue.popleft()
         if len(path) >= MAX_DEPTH:

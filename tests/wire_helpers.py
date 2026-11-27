@@ -253,9 +253,10 @@ def capture_corpus(
     """Every XML body Isolator publishes, keyed by message type."""
     freeze_wire(monkeypatch)
     bus = InMemoryAsb()
+    platform = StubPlatform(service_id=SERVICE_ID, subsystem_id=SUBSYSTEM_ID)
     iso = Isolator(
         bus,
-        platform=StubPlatform(service_id=SERVICE_ID, subsystem_id=SUBSYSTEM_ID),
+        platform=platform,
         config=IsolatorConfig(
             tick_republish_status=False,
             publish_vehicle_state=False,
@@ -319,5 +320,14 @@ def capture_corpus(
     iso.dispatch(
         MT_MA_TASK, task_without_task_id(peer_identity()).decode("utf-8")
     )
+
+    # A real fault, last. Tables 1-4 and 1-5 require nine fields of
+    # MA_Fault, and six of them describe a fault that exists: a
+    # CLEARED / NO_FAULT sentinel has no detection time, no occurrence
+    # count, and no subsystem it occurred within. Publishing only the
+    # sentinel left the corpus unable to speak to the interaction the
+    # tables are about, which is reporting a fault.
+    platform.inject_contingency("MECHANICAL_DAMAGE")
+    iso.publish_faults_once()
 
     return {mt: list(bodies) for mt, bodies in sorted(bus.published.items())}

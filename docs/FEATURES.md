@@ -28,15 +28,16 @@ Stub is the default test backend. It accepts or injects; it does not
 fly. Stub rows live in [platforms/stub](platforms/stub/FEATURES.md).
 PX4 rows live in [platforms/px4](platforms/px4/FEATURES.md).
 
-§1.2 Core (36 numbered rows): Sequence 28 Supported, 6 Partial, 2 Not
+§1.2 Core (36 numbered rows): Sequence 29 Supported, 5 Partial, 2 Not
 supported (terrain, weapons). Execution 16 Supported, 5 Partial, 13
-n/a, 2 Not supported. Backend is not 28/36.
+n/a, 2 Not supported. Backend is not 29/36.
 
-The six Partial Sequence rows are §1.2.1.4, §1.2.1.5, §1.2.5.4,
-§1.2.5.6, §1.2.6.1 and §1.2.6.6 — each names a field or reply the
-interaction requires and open-vi does not yet produce. Four of the six
-are the `MA_Fault` content gap, counted once per interaction that
-requires it.
+The five Partial Sequence rows are §1.2.1.4, §1.2.1.5, §1.2.5.4,
+§1.2.5.6 and §1.2.6.6 — each names a field or reply the interaction
+requires and open-vi does not yet produce. Two of the five are the one
+remaining `MA_Fault` gap, `AmbiguityGroup`, counted once per
+interaction that requires it; it is not a missing builder but a
+missing capability, since open-vi does no fault isolation.
 
 That reading is now mechanical rather than manual:
 `tests/test_wire_required_fields.py` accounts for all 120 required
@@ -64,8 +65,8 @@ here.
 | 1.2.1.1 | Collision Avoidance | Supported | n/a | none | Republishes the capability pair when `snapshot()` readiness is `CONSTRAINT_COLLISION_AVOIDANCE`. Detect-and-avoid is vehicle-driven; no adapter has it. |
 | 1.2.1.2 | Intra-Vehicle Comms Failure | Supported | n/a | n/a | Periodic `SubsystemStatus`; answers `SubsystemStatusDataRequest`. Loss-of-comms plan is MA's. |
 | 1.2.1.3 | MA Failsafe | Supported | Partial | PX4 | Ingest `MA_Response` and notify. `ActivatePlan` of a stored route submits `WAYPOINT_FOLLOWING`. No trigger monitor. Missing plan: notify only. |
-| 1.2.1.4 | Mechanical Damage Reporting | Partial | n/a | PX4 | Publishes `MA_Fault` from `get_faults()` on the status-package tick and ServiceStatusDataRequest. PX4 BIT is `SYS_STATUS` sensor health. **Table 1-4 requires nine fields of `MA_Fault`; `build_ma_fault` emits four** — `FaultID`, `FaultState`, `FaultCode`, `FaultDescription`. Missing `Severity`, `DetectionTime`, `SubsystemID`, `FaultCodeCount`, `FaultData`, `AmbiguityGroup`, and `MessageHeader/ServiceID`. |
-| 1.2.1.5 | Sensor Failure | Partial | n/a | PX4 | Publishes `SubsystemStatus` then `MA_Fault` when the platform reports them. **Table 1-5 requires the same nine `MA_Fault` fields as Table 1-4**; see §1.2.1.4. |
+| 1.2.1.4 | Mechanical Damage Reporting | Partial | n/a | PX4 | Publishes `MA_Fault` from `get_faults()` on the status-package tick and ServiceStatusDataRequest. PX4 BIT is `SYS_STATUS` sensor health. Table 1-4 requires nine fields of `MA_Fault` — exactly the members of A-GRA's `MA_SubsystemFaultType`. Eight are emitted: `Severity`, `DetectionTime`, `FaultCodeCount`, `SubsystemID` and `ServiceID` alongside the original four, with `FaultData` carrying PX4's `SYS_STATUS` health bitfield. `DetectionTime` is stamped when the fault appears and held until it clears, and `FaultCodeCount` counts clear-to-set transitions, because A-GRA says the time is of detection and not of transmission. **Still missing `AmbiguityGroup`:** it means a fault narrowed to a set of candidate components but not yet isolated, and open-vi does no isolation — PX4's health bits name the unhealthy sensor outright. There is no candidate set to report. |
+| 1.2.1.5 | Sensor Failure | Partial | n/a | PX4 | Publishes `SubsystemStatus` then `MA_Fault` when the platform reports them. Table 1-5 requires the same nine `MA_Fault` fields as Table 1-4, and `AmbiguityGroup` is likewise the one not emitted; see §1.2.1.4. PX4 severities are this adapter's judgement: `WARNING` for what the airframe cannot fly without, `CAUTION` for degraded but survivable, `ADVISORY` for the RC receiver an autonomous VI is not using. |
 
 ### 1.2.2 Control and tasking
 
@@ -117,7 +118,7 @@ when the platform accepts.
 
 | § | Interaction | Seq | Exec | Back | Notes |
 | --- | --- | --- | --- | --- | --- |
-| 1.2.6.1 | Exchange Heartbeat — Subsystem Status Reports | Partial | n/a | n/a | Periodic `ServiceStatus` / `SubsystemStatus`; answers both data-request MTs. **Table 1-25 requires `Severity` on `MA_Fault`**; see §1.2.1.4. |
+| 1.2.6.1 | Exchange Heartbeat — Subsystem Status Reports | Supported | n/a | n/a | Periodic `ServiceStatus` / `SubsystemStatus`; answers both data-request MTs. `MA_Fault` carries `Severity`, which Table 1-25 requires. |
 | 1.2.6.2 | Publish Control Status | Supported | n/a | n/a | Isolator is `PrimaryController` and `MissionControl`. Acquired controller is `SecondaryController` when both IDs are stored. `InMission` when a flight, route, or task is live. No `CapabilityManager` or `TransferInfo`. |
 | 1.2.6.3 | Query Airfield Update | Supported | Partial | n/a | `AirfieldReport` runway geometry and linked TO/L `MA_RoutePlan`. The field is synthesized from first TSPI (1,500 m, heading 90°), not a surveyed airfield. |
 | 1.2.6.4 | Query Route Plan | Supported | Supported | n/a | Preloaded TO/L set plus peer-uploaded plans and File*. |

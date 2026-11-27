@@ -37,6 +37,7 @@ calls, so a field appears here only if the publish path produced it.
 
 from __future__ import annotations
 
+import itertools
 import pathlib
 import re
 import uuid
@@ -52,9 +53,15 @@ from open_vi.codec.query import build_query_data_request_status
 from open_vi.codec.task import build_task_command_status
 from open_vi.codec.vehicle_state import build_navigation_report
 from open_vi.domain.control import ControlOffer, ControlReadiness
-from open_vi.domain.status import ServiceStatusSnapshot
+from open_vi.domain.status import FaultSnapshot, ServiceStatusSnapshot
 from open_vi.domain.tspi import TspiSnapshot
 from open_vi.identity import SystemIdentity
+from open_vi.platform.px4 import telemetry
+from open_vi.platform.px4.telemetry import (
+    MavCache,
+    sensor_faults,
+    unhealthy_sensor_faults,
+)
 
 _FEATURES = pathlib.Path(__file__).resolve().parents[1] / "docs" / "FEATURES.md"
 _FEATURES_ROW = re.compile(
@@ -70,7 +77,7 @@ _NS = "{https://www.vdl.afrl.af.mil/programs/oam}"
 IDENTITY = SystemIdentity.named("open-vi", "open-vi")
 _CAPABILITY_ID = uuid.UUID(int=7)
 
-EXPECTED = {"EMITTED": 67, "CONDITIONAL": 9, "GAPS": 15, "INBOUND": 21}
+EXPECTED = {"EMITTED": 78, "CONDITIONAL": 11, "GAPS": 2, "INBOUND": 21}
 EXPECTED_TOTAL = 120
 
 # (message type, field): the state that makes the codec emit it. Each
@@ -96,6 +103,12 @@ CONDITIONAL = {
         "QueryDataRequestStatusMT",
         "RequestProcessingStateReason",
     ): "the query fails",
+    (
+        "MA_FaultMT",
+        "FaultData",
+    ): "the platform has key/value evidence for the fault. PX4 carries "
+    "the SYS_STATUS health bitfield; Stub injects a named code and has "
+    "no evidence to give, so the corpus does not show it",
 }
 
 # (message type, field): nothing emits it. The note names what would
@@ -103,23 +116,16 @@ CONDITIONAL = {
 GAPS = {
     (
         "MA_FaultMT",
-        "Severity",
-    ): "build_ma_fault emits FaultID, FaultState, FaultCode and "
-    "FaultDescription only. FEATURES §1.2.1.4, §1.2.1.5, §1.2.6.1",
-    ("MA_FaultMT", "DetectionTime"): "see Severity. FaultSnapshot has no "
-    "detection time. FEATURES §1.2.1.4, §1.2.1.5",
-    ("MA_FaultMT", "SubsystemID"): "see Severity. FEATURES §1.2.1.4, §1.2.1.5",
-    ("MA_FaultMT", "FaultCodeCount"): "see Severity. FEATURES §1.2.1.4, "
-    "§1.2.1.5",
-    ("MA_FaultMT", "FaultData"): "see Severity. FEATURES §1.2.1.4, §1.2.1.5",
-    ("MA_FaultMT", "AmbiguityGroup"): "see Severity. FEATURES §1.2.1.4, "
-    "§1.2.1.5",
-    (
-        "MA_FaultMT",
-        "ServiceID",
-    ): "the MA_Fault envelope carries no MessageHeader/ServiceID, though "
-    "other messages do. FEATURES §1.2.1.4, §1.2.1.5",
+        "AmbiguityGroup",
+    ): "A-GRA defines this as a fault narrowed to a set of candidate "
+    "components but not yet isolated, with optional diagnostic test "
+    "ids. open-vi performs no fault isolation: PX4 reports SYS_STATUS "
+    "health bits, which name the unhealthy sensor outright, and Stub "
+    "injects a named code. There is no candidate set, so there is "
+    "nothing truthful to report -- an empty or invented group would "
+    "be worse than the omission. FEATURES §1.2.1.4, §1.2.1.5",
 }
+
 
 # Required of messages open-vi receives. Satisfying these means the
 # codec extracts the field and the Isolator acts on it, which the
@@ -320,11 +326,10 @@ def test_rows_with_recorded_gaps_are_not_claimed_supported() -> None:
 # interaction that requires it; the other two predate the registry and
 # name a reply rather than a field, so they carry their reason here.
 PARTIAL_SEQUENCE_ROWS = {
-    "1.2.1.4": "MA_Fault carries four of the nine fields Table 1-4 requires",
+    "1.2.1.4": "MA_Fault AmbiguityGroup: open-vi does no fault isolation",
     "1.2.1.5": "MA_Fault, as §1.2.1.4",
     "1.2.5.4": "the COMPLETED-vs-FAILED reply rule while EXECUTING",
     "1.2.5.6": "the ambiguous inout leg",
-    "1.2.6.1": "MA_Fault Severity, required again by Table 1-25",
     "1.2.6.6": "the required PlanExecutionStatus/PlanExecutionState",
 }
 
@@ -458,6 +463,85 @@ def test_query_failure_carries_its_reason() -> None:
         reason_description="unsupported query type",
     )
     assert _emits(payload, "RequestProcessingStateReason")
+
+
+def test_fault_data_carries_the_evidence_px4_has() -> None:
+    """Tables 1-4 and 1-5 (§1.2.1.4, §1.2.1.5).
+
+    Stub injects a named code and has no key/value evidence, so the
+    corpus cannot show this. PX4 derives its faults from the
+    SYS_STATUS health bitfield, which is exactly the evidence A-GRA
+    describes ``FaultData`` as carrying.
+    """
+    cache = MavCache(sensors_present=32, sensors_enabled=32, sensors_health=0)
+    faults = sensor_faults(cache)
+    assert faults, "an unhealthy GPS bit produced no fault"
+    datum = faults[0].fault_data
+    assert datum, "no FaultData on a SYS_STATUS-derived fault"
+    assert datum[0].key and datum[0].value and datum[0].data_format
+
+
+def test_fault_detection_time_and_count_track_occurrences(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A-GRA: DetectionTime is when the fault was detected, not sent.
+
+    So it is stamped once and held while the code stays set, and a
+    code that clears and sets again is a second occurrence with a
+    fresh time. Re-stamping every sample would read as continuous
+    re-detection.
+
+    The clock is stepped explicitly. ``utc_now`` has millisecond
+    resolution and the whole test runs well inside one, so comparing
+    real timestamps would have made the re-stamp assertion pass or
+    fail on timing rather than on behaviour.
+    """
+    ticks = itertools.count(1)
+    monkeypatch.setattr(
+        telemetry, "utc_now", lambda: f"2026-01-02T03:04:0{next(ticks)}.000Z"
+    )
+    cache = MavCache(sensors_present=32, sensors_enabled=32, sensors_health=0)
+    first = sensor_faults(cache)[0]
+    assert first.detection_time and first.fault_code_count == 1
+    held = sensor_faults(cache)[0]
+    assert held.detection_time == first.detection_time
+    assert held.fault_code_count == 1
+
+    cache.sensors_health = 32  # healthy again
+    assert not sensor_faults(cache)
+    cache.sensors_health = 0  # and unhealthy again
+    again = sensor_faults(cache)[0]
+    assert again.fault_code_count == 2
+    assert again.detection_time != first.detection_time
+
+
+def test_asking_whether_bit_failed_does_not_count_an_occurrence() -> None:
+    """The predicate must not have the reporting path's side effects."""
+    cache = MavCache(sensors_present=32, sensors_enabled=32, sensors_health=0)
+    for _ in range(5):
+        unhealthy_sensor_faults(
+            cache.sensors_present,
+            cache.sensors_enabled,
+            cache.sensors_health,
+        )
+    assert not cache.fault_occurrences
+    assert not cache.fault_first_seen
+
+
+def test_the_cleared_sentinel_claims_nothing_it_cannot_know() -> None:
+    """A NO_FAULT entry has no detection time, count, or subsystem.
+
+    Tables 1-4 and 1-5 require those of ``MA_Fault``, but they
+    describe a fault that exists. Filling them on the sentinel would
+    satisfy the oracle by reporting a fault that never happened.
+    """
+    sentinel = FaultSnapshot(fault_id=uuid.UUID(int=1))
+    assert sentinel.severity == "NOMINAL"
+    assert sentinel.detection_time is None
+    assert sentinel.fault_code_count is None
+    assert sentinel.subsystem_id is None
+    assert sentinel.service_id is None
+    assert sentinel.fault_data == ()
 
 
 def test_every_conditional_field_has_a_proof() -> None:

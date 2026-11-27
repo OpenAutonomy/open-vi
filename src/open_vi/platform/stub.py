@@ -25,6 +25,7 @@ from open_vi.domain import (
     SubsystemStatusSnapshot,
     TspiSnapshot,
     is_live_activity,
+    utc_now,
 )
 from open_vi.platform.port import PlatformPort
 
@@ -340,6 +341,40 @@ class StubPlatform(PlatformPort):
         """Current faults. Default is a cleared sentinel."""
         return self._faults
 
+    # Severity and description per injected code. Flight-critical
+    # damage is WARNING; a failed sensor on a vehicle that still flies
+    # is CAUTION. Both are MA_FaultSeverityEnum tokens.
+    _INJECTED = {
+        "MECHANICAL_DAMAGE": ("WARNING", "Mechanical damage reported"),
+        "SENSOR_FAILURE": ("CAUTION", "Sensor failure reported"),
+    }
+
+    def _set_fault(self, code: str) -> FaultSnapshot:
+        """A SET fault carrying the nine fields Tables 1-4 and 1-5 want.
+
+        ``DetectionTime`` is stamped here, when the fault appears,
+        because A-GRA says it "does not indicate the time the fault
+        was transmitted". The count is 1: an injection is one
+        occurrence, and Stub does not model a fault that flaps.
+
+        ``FaultData`` stays empty. It is key/value evidence supporting
+        fault isolation, and an injected fault has none to give --
+        inventing a pair would be worse than omitting an optional
+        field.
+        """
+        severity, description = self._INJECTED[code]
+        return FaultSnapshot(
+            fault_id=uuid4(),
+            fault_code=code,
+            fault_state="SET",
+            fault_description=description,
+            severity=severity,
+            detection_time=utc_now(),
+            fault_code_count=1,
+            subsystem_id=self._subsystem_id,
+            service_id=self._service_id,
+        )
+
     def inject_contingency(self, kind: str) -> None:
         """Apply a Loose Direction1 contingency. Stub/harness only.
 
@@ -361,25 +396,11 @@ class StubPlatform(PlatformPort):
             self._readiness = ControlReadiness()
             return
         if kind_u == "MECHANICAL_DAMAGE":
-            self._faults = (
-                FaultSnapshot(
-                    fault_id=uuid4(),
-                    fault_code="MECHANICAL_DAMAGE",
-                    fault_state="SET",
-                    fault_description="Mechanical damage reported",
-                ),
-            )
+            self._faults = (self._set_fault("MECHANICAL_DAMAGE"),)
             return
         if kind_u == "SENSOR_FAILURE":
             self._subsystem_state = "DEGRADED"
-            self._faults = (
-                FaultSnapshot(
-                    fault_id=uuid4(),
-                    fault_code="SENSOR_FAILURE",
-                    fault_state="SET",
-                    fault_description="Sensor failure reported",
-                ),
-            )
+            self._faults = (self._set_fault("SENSOR_FAILURE"),)
             return
         if kind_u == "COLLISION_AVOIDANCE":
             self._readiness = ControlReadiness(
