@@ -98,6 +98,7 @@ the intent is flyable and how to express it to this airframe.
 ```
 src/open_vi/fa/
   envelope.py   # the command validator §1.4 requires
+  vetting.py    # checks a route before it flies
   launch.py     # sequences: vet, arm, fly, confirm airborne
   port.py       # what FA needs of a platform
 ```
@@ -165,6 +166,37 @@ vehicle-neutral shape, so that channel exists.
 `domain/airfield.py`'s runway geometry stays where it is for now.
 With takeoff selecting pre-validated data, FA has no geometry to
 compose and the only remaining caller is `AirfieldReport`.
+
+## Vetting
+
+A configured route still has to be checked before it flies, and the
+first rule is the one that catches the failure mode configuration
+actually has: the right route in the wrong place. If the vehicle is
+not near the route's start, refuse. A config shipped for one airfield
+and run at another is otherwise indistinguishable from a correct
+setup, right up to the ground roll.
+
+Shape, so that later rules cost nothing structural:
+
+```python
+Check = Callable[[Route, Facts], Reject | None]
+```
+
+Each check is pure, takes the route and the facts the port reported,
+and returns a reason or nothing. `vetting.py` runs them in order and
+stops at the first reason. One check today. The envelope limits §1.4
+asks for are another, terrain is another once there is a terrain
+source, and none of them changes the caller.
+
+This is also the seam that grows into the command validator §1.4
+describes -- same signature, applied to an `MA_FlightCommand` instead
+of a stored route. Worth getting the shape right once.
+
+A refusal has somewhere to go on the wire: the activation reply
+carries a `CommandStatus` and a `CannotComplyType`, and
+`CannotComplyEnum` has `INFEASIBLE_ROUTE` and `CONSTRAINT_ROUTE`
+among its 46 values. So vetting is not a dead end that can only log --
+MA is told why.
 
 ## Three invariants
 
@@ -241,6 +273,10 @@ than an ordinary activation. That is one of the seven inbound gaps in
 
 ## Open questions
 
+- **How near is near enough.** The location check needs a distance,
+  and the honest answer depends on the airframe and the runway. A
+  configured tolerance is the obvious start; what it defaults to is a
+  real choice.
 - **Who validates the configured route, and how that is recorded.**
   §1.2.5.2's word is "safety-validated". With the route in config
   there is no heading to guess, which is the point -- but a config
