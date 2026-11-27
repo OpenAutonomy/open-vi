@@ -97,6 +97,7 @@ the intent is flyable and how to express it to this airframe.
 
 ```
 src/open_vi/fa/
+  airfields.py  # the pre-validated airfield and TO/L route store
   envelope.py   # the command validator §1.4 requires
   vetting.py    # the check seam; approves everything for now
   launch.py     # sequences: vet, arm, fly, confirm airborne
@@ -114,7 +115,7 @@ tidy.
 | Transport | autopilot | adapter |
 | Mission encoding, arming handshake, mode machine | autopilot | adapter |
 | Frame conventions (HAE to relative-to-home) | autopilot | adapter, as `architecture.md` already requires |
-| The takeoff route itself | this airframe | config, alongside `px4-vehicle.toml` |
+| The airfield, runway and TO/L routes | where it operates | the airfield store, data shipped with the deployment |
 | Mass, thrust, stall speed, rate limits | this airframe | config, already `px4-vehicle.toml` |
 
 Two cost tests follow, and they are the acceptance criteria for this
@@ -166,6 +167,45 @@ vehicle-neutral shape, so that channel exists.
 `domain/airfield.py`'s runway geometry stays where it is for now.
 With takeoff selecting pre-validated data, FA has no geometry to
 compose and the only remaining caller is `AirfieldReport`.
+
+## The airfield store
+
+§1.2.6.3 is already built and already honest about this: its Execution
+row is Partial because "the field is synthesized from first TSPI
+(1,500 m, heading 90 degrees), not a surveyed airfield". The standard
+asks for the opposite:
+
+> MA can query Flight Autonomy (FA) for **pre-loaded and pre-validated**
+> Airfield and Take off and Landing (TO/L) route information **stored
+> within FA**. This data includes alternate airfields for emergency
+> landings as well as optional alternate TO/L routes for a given
+> airfield.
+
+And the two messages are paired rather than independent:
+
+> FA **shall** respond with MA_RoutePlanMT data structures, indicating
+> TO/L routes... MA_RoutePlanMT must have a take-off path whose
+> **AirfieldID and RunwayID match the data in AirfieldReportMT**.
+
+So it is one body of data with two projections: `AirfieldReport` for
+the runway geometry, `MA_RoutePlan` for the routes. Airfields hold
+runways, runways hold TO/L routes, and the ids tie them together.
+
+That makes the store the thing that makes the rest of `fa/` honest.
+The takeoff route §1.2.5.1 activates comes from it rather than from a
+separate config, and `domain/airfield.py`'s synthesised runway goes
+away -- which is the only reason §1.2.6.3's Execution is Partial.
+
+Not a database. "Pre-loaded and pre-validated" means data files read
+at startup and shipped with the deployment, on the same shelf as
+`px4-vehicle.toml`.
+
+Scope now versus what the standard anticipates: one airfield, one
+runway, one takeoff route is a legitimate subset. The standard
+expects alternates -- other airfields for emergency landings, and
+alternate routes per airfield -- so the store's shape should allow
+more than one of each even while the data has exactly one. Shape
+costs nothing now; retrofitting a collection onto a singleton does.
 
 ## Vetting
 
@@ -252,11 +292,11 @@ separate command. Four consequences:
    pre-flight", and a route composed at runtime is validated by
    nobody -- which defeats the property that clause exists to protect.
 
-   One configured route is the whole mechanism. There is no airfield
-   key and no selection: this vehicle has a takeoff route, the way it
-   already has a mass and a stall speed in `px4-vehicle.toml`.
-   Operating from a second airfield means a second config, which is a
-   deployment concern, not something to build now.
+   It comes from the airfield store, not from a config key of its own:
+   §1.2.6.3 holds airfield geometry and TO/L routes as one
+   pre-validated body of data, so a takeoff route living anywhere else
+   would be a second source for the same thing. One airfield with one
+   route is the data we ship; the store's shape allows more.
 
    Rejected on the way here, so they do not get re-proposed:
    deriving the route from `HomeAirfield`'s runway (assumes a fixed
@@ -285,11 +325,10 @@ than an ordinary activation. That is one of the seven inbound gaps in
   distance, the honest answer depends on airframe and runway, and a
   configured tolerance's default is a real choice rather than a
   detail.
-- **Who validates the configured route, and how that is recorded.**
-  §1.2.5.2's word is "safety-validated". With the route in config
-  there is no heading to guess, which is the point -- but a config
-  file does not make a route validated, and nothing yet says who
-  signed it off.
+- **Who validates the store's contents, and how that is recorded.**
+  §1.2.5.2 and §1.2.6.3 both say "pre-validated". Shipping data files
+  does not make them validated, and nothing yet says who signs them
+  off. This is the open question the whole design now rests on.
 - **`AirfieldReport` is derived too.** `domain/airfield.py`
   synthesises a home field and runway from current position, with
   `_DIRECTION_DEG = 90.0` hardcoded, and publishes it for §1.2.6.3.
