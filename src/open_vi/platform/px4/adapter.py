@@ -59,7 +59,9 @@ from open_vi.platform.px4.telemetry import (
     link_down_fault,
     link_fresh,
     sensor_faults,
+    track_faults,
     tspi_from_cache,
+    unhealthy_sensor_faults,
 )
 from open_vi.platform.px4_config import (
     Px4VehicleConfig,
@@ -640,21 +642,53 @@ class Px4MavlinkAdapter(PlatformPort):
         )
 
     def get_faults(self) -> tuple[FaultSnapshot, ...]:
-        """Periodic BIT from SYS_STATUS, or link-down / cleared sentinel."""
-        if not self._link_ok():
-            return (link_down_fault(),)
+        """Periodic BIT from SYS_STATUS, or link-down / cleared sentinel.
+
+        ``SubsystemID`` and ``ServiceID`` are attached here rather
+        than in ``telemetry``: A-GRA defines them as the subsystem and
+        service the fault occurred *within*, and only the adapter
+        knows its own identity. Tables 1-4 and 1-5 require both.
+
+        The cleared sentinel gets neither, nor a detection time or
+        count -- there is no fault for them to describe.
+        """
+        # _link_ok takes the lock itself and threading.Lock is not
+        # reentrant, so it is called before the lock is held.
+        link_down = not self._link_ok()
         with self._lock:
-            faults = sensor_faults(self._cache)
-        if faults:
-            return faults
-        return (FaultSnapshot(fault_id=self._fault_id),)
+            if link_down:
+                faults = track_faults(self._cache, (link_down_fault(),))
+            else:
+                faults = sensor_faults(self._cache)
+        if not faults:
+            return (FaultSnapshot(fault_id=self._fault_id),)
+        return tuple(
+            replace(
+                fault,
+                subsystem_id=self._subsystem_id,
+                service_id=self._service_id,
+            )
+            for fault in faults
+        )
 
     def _bit_failed(self) -> bool:
-        """True when the link is down or a watched sensor is unhealthy."""
+        """True when the link is down or a watched sensor is unhealthy.
+
+        Deliberately the pure helper, not ``sensor_faults``: that one
+        records a detection time and counts an occurrence, and a
+        predicate must not. Asking whether BIT has failed is not the
+        same as reporting a fault.
+        """
         if not self._link_ok():
             return True
         with self._lock:
-            return bool(sensor_faults(self._cache))
+            return bool(
+                unhealthy_sensor_faults(
+                    self._cache.sensors_present,
+                    self._cache.sensors_enabled,
+                    self._cache.sensors_health,
+                )
+            )
 
     def apply_system_management(self, *, qnh_kpa: float | None = None) -> str:
         """Write QNH to PX4 and the local TSPI snapshot."""

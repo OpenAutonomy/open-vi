@@ -8,11 +8,16 @@ from __future__ import annotations
 
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from open_vi.domain import FaultSnapshot, TspiSnapshot
+from open_vi.domain import (
+    FaultDatum,
+    FaultSnapshot,
+    TspiSnapshot,
+    utc_now,
+)
 
 _HDG_UNKNOWN_CDEG = 65535.0
 _TEMP_MIN_K = 150.0
@@ -20,17 +25,31 @@ _TEMP_MAX_K = 400.0
 _HEARTBEAT_STALE_S = 10.0
 FAULT_NS = uuid5(NAMESPACE_URL, "https://openautonomy.org/open-vi/px4")
 # MAV_SYS_STATUS_SENSOR_* bits PX4 reports on SYS_STATUS.
-_SENSOR_BITS: tuple[tuple[int, str, str], ...] = (
-    (1, "SENSOR_3D_GYRO", "3D gyro unhealthy"),
-    (2, "SENSOR_3D_ACCEL", "3D accel unhealthy"),
-    (4, "SENSOR_3D_MAG", "3D mag unhealthy"),
-    (8, "SENSOR_BARO", "Absolute pressure unhealthy"),
-    (16, "SENSOR_DIFF_PRESSURE", "Differential pressure unhealthy"),
-    (32, "SENSOR_GPS", "GPS unhealthy"),
-    (32768, "SENSOR_MOTOR_OUTPUTS", "Motor outputs unhealthy"),
-    (65536, "SENSOR_RC_RECEIVER", "RC receiver unhealthy"),
-    (2097152, "SENSOR_AHRS", "AHRS unhealthy"),
-    (33554432, "SENSOR_BATTERY", "Battery unhealthy"),
+# Bit, code, description, MA_FaultSeverityEnum severity.
+#
+# The severity is this adapter's judgement, which is where such a
+# mapping belongs -- MAVLink reports a health bit, not a severity.
+# WARNING is for what the airframe cannot fly without: attitude
+# sources and motor outputs. CAUTION is for a degraded but survivable
+# sensor. RC receiver is ADVISORY because an autonomous VI is not
+# flying on it; losing it matters to a human operator, not to the
+# vehicle's ability to continue.
+_SENSOR_BITS: tuple[tuple[int, str, str, str], ...] = (
+    (1, "SENSOR_3D_GYRO", "3D gyro unhealthy", "WARNING"),
+    (2, "SENSOR_3D_ACCEL", "3D accel unhealthy", "WARNING"),
+    (4, "SENSOR_3D_MAG", "3D mag unhealthy", "CAUTION"),
+    (8, "SENSOR_BARO", "Absolute pressure unhealthy", "CAUTION"),
+    (
+        16,
+        "SENSOR_DIFF_PRESSURE",
+        "Differential pressure unhealthy",
+        "CAUTION",
+    ),
+    (32, "SENSOR_GPS", "GPS unhealthy", "CAUTION"),
+    (32768, "SENSOR_MOTOR_OUTPUTS", "Motor outputs unhealthy", "WARNING"),
+    (65536, "SENSOR_RC_RECEIVER", "RC receiver unhealthy", "ADVISORY"),
+    (2097152, "SENSOR_AHRS", "AHRS unhealthy", "WARNING"),
+    (33554432, "SENSOR_BATTERY", "Battery unhealthy", "CAUTION"),
 )
 
 
@@ -68,6 +87,11 @@ class MavCache:
     system_status: int = 0
     armed: bool = False
     base_mode: int = 0
+    fault_first_seen: dict[str, str] = field(default_factory=dict)
+    """FaultCode -> the DateTimeType when it first went unhealthy."""
+
+    fault_occurrences: dict[str, int] = field(default_factory=dict)
+    """FaultCode -> how many times it has gone unhealthy."""
 
 
 def battery_duration_s(
@@ -130,7 +154,7 @@ def unhealthy_sensor_faults(
     """SET faults for sensors that are present, enabled, and not healthy."""
     faults: list[FaultSnapshot] = []
     watched = present & enabled
-    for bit, code, description in _SENSOR_BITS:
+    for bit, code, description, severity in _SENSOR_BITS:
         if watched & bit and health & bit == 0:
             faults.append(
                 FaultSnapshot(
@@ -138,6 +162,7 @@ def unhealthy_sensor_faults(
                     fault_code=code,
                     fault_state="SET",
                     fault_description=description,
+                    severity=severity,
                 )
             )
     return tuple(faults)
@@ -303,20 +328,86 @@ def tspi_from_cache(
     )
 
 
+def track_faults(
+    cache: MavCache,
+    faults: tuple[FaultSnapshot, ...],
+    *,
+    evidence: FaultDatum | None = None,
+) -> tuple[FaultSnapshot, ...]:
+    """Stamp *faults* with their detection time and occurrence count.
+
+    Tables 1-4 and 1-5 require ``DetectionTime`` and
+    ``FaultCodeCount``, and neither can be derived from one sample.
+    A-GRA says ``DetectionTime`` "does not indicate the time the fault
+    was transmitted", so re-stamping it every tick would read as
+    continuous re-detection; it is recorded once, when the code sets,
+    and held until the code clears. ``FaultCodeCount`` counts those
+    clear-to-set transitions for the same reason: a sensor that flaps
+    is several occurrences, one that stays unhealthy is one.
+
+    A code absent from *faults* is treated as cleared, so the next
+    time it sets it gets a fresh detection time and a higher count.
+
+    Mutates *cache*'s two tracking maps. The caller holds the lock.
+    """
+    active = {fault.fault_code for fault in faults}
+    for code in [c for c in cache.fault_first_seen if c not in active]:
+        del cache.fault_first_seen[code]
+    out: list[FaultSnapshot] = []
+    for fault in faults:
+        code = fault.fault_code
+        if code not in cache.fault_first_seen:
+            cache.fault_first_seen[code] = utc_now()
+            cache.fault_occurrences[code] = (
+                cache.fault_occurrences.get(code, 0) + 1
+            )
+        out.append(
+            replace(
+                fault,
+                detection_time=cache.fault_first_seen[code],
+                fault_code_count=cache.fault_occurrences[code],
+                fault_data=(evidence,) if evidence else fault.fault_data,
+            )
+        )
+    return tuple(out)
+
+
 def sensor_faults(cache: MavCache) -> tuple[FaultSnapshot, ...]:
-    """SET faults from the last SYS_STATUS bitfields."""
-    return unhealthy_sensor_faults(
-        cache.sensors_present,
-        cache.sensors_enabled,
-        cache.sensors_health,
+    """SET faults from the last SYS_STATUS bitfields, with history.
+
+    ``FaultData`` carries the SYS_STATUS health bitfield, which is the
+    evidence each fault was derived from and exactly what A-GRA
+    describes that field as being for: key/value data "to support
+    fault isolation and helps to minimize false alarms".
+
+    Mutates *cache* via :func:`track_faults`; caller holds the lock.
+    """
+    return track_faults(
+        cache,
+        unhealthy_sensor_faults(
+            cache.sensors_present,
+            cache.sensors_enabled,
+            cache.sensors_health,
+        ),
+        evidence=FaultDatum(
+            key="SYS_STATUS.onboard_control_sensors_health",
+            value=hex(cache.sensors_health),
+            data_format="MAVLINK_SENSOR_BITMASK_HEX",
+        ),
     )
 
 
 def link_down_fault() -> FaultSnapshot:
-    """SET fault for a stale or missing MAVLink session."""
+    """SET fault for a stale or missing MAVLink session.
+
+    ``FAILED`` rather than ``WARNING``: with no link the VI cannot
+    command or observe the airframe at all, so the interface has not
+    degraded, it has stopped.
+    """
     return FaultSnapshot(
         fault_id=uuid5(FAULT_NS, "PX4_LINK_DOWN"),
         fault_code="PX4_LINK_DOWN",
         fault_state="SET",
         fault_description="PX4 MAVLink link is down",
+        severity="FAILED",
     )

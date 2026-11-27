@@ -6,6 +6,7 @@ and PlatformPort.
 """
 
 from open_vi.domain.airfield import HomeAirfield, home_airfield_from_tspi
+from open_vi.domain.clock import utc_now
 from open_vi.domain.control import (
     AccelerationLimit,
     AirspeedLimit,
@@ -38,6 +39,7 @@ from open_vi.domain.route import (
     StoredRoutePlan,
 )
 from open_vi.domain.status import (
+    FaultDatum,
     FaultSnapshot,
     ServiceStatusSnapshot,
     SubsystemStatusSnapshot,
@@ -45,6 +47,7 @@ from open_vi.domain.status import (
 from open_vi.domain.tspi import TspiSnapshot
 
 __all__ = [
+    "utc_now",
     "AccelerationLimit",
     "AirspeedLimit",
     "CommandResult",
@@ -52,6 +55,7 @@ __all__ = [
     "CurveControlPoint",
     "CurveFollowingSetpoint",
     "ControlReadiness",
+    "FaultDatum",
     "FaultSnapshot",
     "FlightModeProfile",
     "FlightActivitySnapshot",

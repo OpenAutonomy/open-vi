@@ -143,6 +143,43 @@ def build_subsystem_status_data_request_status(
     return tostring(root)
 
 
+def _fault_information(fault: FaultSnapshot) -> list[ET.Element]:
+    """Children of one ``FaultInformation``, in A-GRA's declared order.
+
+    ``MA_SubsystemFaultType`` is an ``xs:sequence``: FaultID,
+    Severity, FaultState, FaultData, DetectionTime, FaultCode,
+    FaultCodeCount, FaultDescription, SubsystemID, ServiceID, then the
+    capability and component ids. Only ``FaultID`` and ``FaultCode``
+    are required, so the optional ones are emitted when the snapshot
+    has them -- Tables 1-4 and 1-5 require nine of these, and a
+    message carrying four of them satisfies the XSD while telling MA
+    almost nothing.
+    """
+    kids: list[ET.Element] = [id_type("FaultID", fault.fault_id)]
+    kids.append(el("Severity", text=fault.severity))
+    kids.append(el("FaultState", text=fault.fault_state))
+    for datum in fault.fault_data:
+        datum_kids = [
+            el("Key", text=datum.key),
+            el("Value", text=datum.value),
+            el("Format", text=datum.data_format),
+        ]
+        if datum.units:
+            datum_kids.append(el("Units", text=datum.units))
+        kids.append(el("FaultData", *datum_kids))
+    if fault.detection_time:
+        kids.append(el("DetectionTime", text=fault.detection_time))
+    kids.append(el("FaultCode", text=fault.fault_code))
+    if fault.fault_code_count is not None:
+        kids.append(el("FaultCodeCount", text=str(fault.fault_code_count)))
+    kids.append(el("FaultDescription", text=fault.fault_description))
+    if fault.subsystem_id is not None:
+        kids.append(id_type("SubsystemID", fault.subsystem_id))
+    if fault.service_id is not None:
+        kids.append(id_type("ServiceID", fault.service_id))
+    return kids
+
+
 def build_ma_fault(
     identity: SystemIdentity,
     faults: tuple[FaultSnapshot, ...],
@@ -154,15 +191,7 @@ def build_ma_fault(
     """Build MA_Fault with one or more FaultInformation entries."""
     infos: list[ET.Element] = []
     for fault in faults:
-        infos.append(
-            el(
-                "FaultInformation",
-                id_type("FaultID", fault.fault_id),
-                el("FaultState", text=fault.fault_state),
-                el("FaultCode", text=fault.fault_code),
-                el("FaultDescription", text=fault.fault_description),
-            )
-        )
+        infos.append(el("FaultInformation", *_fault_information(fault)))
     if not infos:
         raise ValueError("MA_Fault requires at least one FaultInformation")
     data = el("MessageData", *infos)

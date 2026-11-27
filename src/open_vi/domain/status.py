@@ -29,10 +29,51 @@ class SubsystemStatusSnapshot:
 
 
 @dataclass(frozen=True)
+class FaultDatum:
+    """One ``FaultData`` key/value pair.
+
+    A-GRA describes these as "key/value pairs with format and unit
+    indicated for the data value", supporting fault isolation and
+    minimising false alarms. ``Key``, ``Value`` and ``Format`` are
+    required by the schema; ``Units`` is optional and omitted for a
+    dimensionless value such as a bitmask.
+    """
+
+    key: str
+    value: str
+    data_format: str
+    units: str | None = None
+
+
+@dataclass(frozen=True)
 class FaultSnapshot:
-    """Single MA_Fault FaultInformation entry."""
+    """Single MA_Fault FaultInformation entry.
+
+    Tables 1-4 and 1-5 require nine fields of ``MA_Fault``, which are
+    exactly the members of A-GRA's ``MA_SubsystemFaultType``. The
+    optional ones are left unset when the platform has no truthful
+    value: a ``CLEARED`` / ``NO_FAULT`` sentinel has no detection time
+    and no occurrence count, and reporting one would be worse than
+    reporting none.
+    """
 
     fault_id: UUID
     fault_code: str = "NO_FAULT"
     fault_state: str = "CLEARED"
     fault_description: str = "No active faults"
+    severity: str = "NOMINAL"
+    """``MA_FaultSeverityEnum``: NOMINAL, ADVISORY, CAUTION, WARNING,
+    FAILED. NOMINAL suits the no-fault sentinel."""
+
+    detection_time: str | None = None
+    """When the fault was *detected*. A-GRA is explicit that this "does
+    not indicate the time the fault was transmitted", so a producer
+    records the moment the fault appeared and keeps it."""
+
+    fault_code_count: int | None = None
+    """Occurrences of this code in a set state. A sensor that flaps is
+    several occurrences; one that stays unhealthy is one."""
+
+    subsystem_id: UUID | None = None
+    service_id: UUID | None = None
+    fault_data: tuple[FaultDatum, ...] = ()

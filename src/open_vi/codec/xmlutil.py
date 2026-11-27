@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from uuid import UUID
 from xml.etree import ElementTree as ET
 
 from defusedxml.ElementTree import fromstring as _defused_fromstring
 
 from open_vi.codec.ns import NS
+from open_vi.domain.clock import utc_now
 from open_vi.identity import SystemIdentity, uuid_to_hex
+
+# Re-exported: callers and the test freeze hook bind it here.
+__all__ = ["utc_now"]
 
 
 def q(tag: str) -> str:
     return f"{{{NS}}}{tag}"
-
-
-def utc_now() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 def el(tag: str, *children: ET.Element, text: str | None = None) -> ET.Element:
