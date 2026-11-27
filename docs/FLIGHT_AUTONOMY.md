@@ -102,40 +102,89 @@ src/open_vi/fa/
   port.py       # what FA needs of a platform
 ```
 
-## What moves, and what the port becomes
+## The axes that actually vary
 
-`PlatformPort` has 11 methods today, and they mix two kinds of thing:
-facts about the airframe, and actions on it. The split is the point.
+Getting this cut wrong is expensive the first time a new integration
+appears, so it is derived from what varies rather than from what looks
+tidy.
+
+| What | Varies with | Lives |
+| --- | --- | --- |
+| Transport | autopilot | adapter |
+| Mission encoding, arming handshake, mode machine | autopilot | adapter |
+| Frame conventions (HAE to relative-to-home) | autopilot | adapter, as `architecture.md` already requires |
+| Takeoff shape, whether hovering is possible | airframe | `fa/` |
+| Mass, thrust, stall speed, rate limits | this airframe | config, already `px4-vehicle.toml` |
+
+Two cost tests follow, and they are the acceptance criteria for this
+design:
+
+1. **A new autopilot, same airframe** -- X-Plane flying the same fixed
+   wing -- must touch only the first three rows. It must not re-derive
+   a takeoff route or restate an envelope policy.
+2. **A new airframe, same autopilot** -- a multirotor on PX4 -- must
+   touch only the last two. In particular **it must not require
+   editing the PX4 adapter.**
+
+The second is the expensive one and the one to design against. It is
+also easy to fail silently: the first multirotor will work if you
+special-case it, and the cost only shows up at the second.
+
+## The rule: the port reports, FA decides, neither branches on identity
+
+- The port may **report** the airframe type. PX4 knows its `MAV_TYPE`.
+  Reporting is fine; branching on it is not.
+- `fa/` branches on **capability**, never on class or product:
+  `can_hover`, `needs_ground_roll`, `can_start_mission_directly`. A
+  VTOL both hovers *and* does a running takeoff, so class is a poor
+  discriminator and capability is exact.
+- No product name in `fa/`. No airframe policy in an adapter.
+
+A capability is also where an (autopilot x airframe) quirk goes, and
+those do exist. The point is that the adapter *declares* the quirk and
+FA sequences around the declaration -- so FA gains no branch and the
+adapter gains no policy.
+
+### What this means for `PlatformPort`
+
+Eleven methods today, mixing facts about the airframe with actions on
+it. The split is the point.
 
 | Stays a platform concern | Becomes an FA concern |
 | --- | --- |
 | Telemetry, faults, service and subsystem status | Whether a command is inside the envelope |
-| Submitting a mission to the autopilot | Composing a takeoff route from runway geometry |
-| Arming, if the airframe needs it | Deciding whether to arm, and when |
-| Unit and frame conversion (HAE → relative) | Sequencing takeoff: validate, arm, fly, confirm airborne |
+| Submitting a mission to the autopilot | Composing the takeoff shape |
+| Arming -- the mechanism | Deciding whether to arm, and when |
+| Unit and frame conversion | Sequencing: validate, arm, fly, confirm airborne |
 
-`domain/airfield.py`'s runway geometry moves behind `fa/`. Today it is
-domain code that only `AirfieldReport` uses; as soon as takeoff needs
-it, every adapter would otherwise re-derive it. X-Plane should cost a
-facts adapter, not a route generator.
+New facts the port must supply and does not today: the capability set
+above, envelope limits, and the airframe type as a reported fact.
+`ControlOffer` and `FlightModeProfile` already carry limits in a
+vehicle-neutral shape, so that channel exists.
 
-New facts the port must supply, which it does not today: runway
-heading, envelope limits, whether the airframe needs arming, and
-whether it can hold a mission.
+`domain/airfield.py`'s runway geometry moves behind `fa/`. Today only
+`AirfieldReport` uses it; once takeoff needs it, every adapter would
+otherwise re-derive it.
 
-## Two invariants, enforced
+## Three invariants
 
 1. The isolator imports no platform module.
 2. `fa/` imports no codec and no bus.
+3. No product name in `fa/`; no airframe policy in an adapter.
 
-Neither is enforced today. `isolator/executive.py` claims it "never
-imports STOMP, ActiveMQ, MAVLink, PX4, or Stub" and the only check is
-`test_isolator_module_does_not_import_stub`, which asserts one name is
-absent from one module's `__dict__`. The code happens to be clean. An
-AST walk over the package would make both real, and it is worth doing
-before `fa/` exists rather than after.
+The first two are mechanical -- an AST walk over the package. The
+third is review, and it is the one that will actually get broken, so
+it is worth a name check for the obvious cases even though a
+determined leak will slip past it.
 
-Invariant 2 is what keeps extraction a move rather than a rewrite.
+None of them is enforced today. `isolator/executive.py` claims it
+"never imports STOMP, ActiveMQ, MAVLink, PX4, or Stub" and the only
+check is `test_isolator_module_does_not_import_stub`, which asserts
+one name is absent from one module's `__dict__`. The code happens to
+be clean. Doing this before `fa/` exists is cheaper than after.
+
+Invariant 2 is what keeps a later extraction a move rather than a
+rewrite. Invariant 3 is what keeps the second integration cheap.
 
 ## First job: takeoff
 
@@ -159,8 +208,12 @@ So takeoff is an **activation of a route the VI already holds**, not a
 separate command. Four consequences:
 
 1. FA offers the stored takeoff route; it does not arrive by upload.
-   It is derived from where the vehicle actually is, so nothing is
-   pinned to one airfield.
+   It is composed from where the vehicle actually is, so nothing is
+   pinned to one airfield, and from the airframe's capability, so a
+   ground roll and a vertical climb are different *shapes* rather than
+   different numbers. The first draft of this doc got that wrong: it
+   reused `HomeAirfield`'s runway start-to-end path, which silently
+   assumes a fixed wing.
 2. It enters `RouteStore` already `READY_FOR_ACTIVATION` — there is no
    upload ladder to walk, because §1.2.5.2 forbids MA uploading it.
 3. `RouteStore` must mark it FA-owned so an MA upload cannot overwrite
@@ -181,7 +234,13 @@ than an ordinary activation. That is one of the seven inbound gaps in
   `_DIRECTION_DEG = 90.0`. A derived takeoff route therefore departs
   due east regardless of wind. The VI already publishes a wind
   estimate in `WeatherObservation`; whether FA should use it is a
-  decision, not an oversight.
+  decision, not an oversight. Only affects airframes that need a
+  ground roll.
+- **Where the capability set comes from.** PX4 can report `MAV_TYPE`,
+  but `can_start_mission_directly` is a property of the autopilot's
+  behaviour that someone has to assert. Discovered, configured, or
+  hardcoded per adapter are all defensible; it should be a deliberate
+  choice rather than whatever the first adapter happens to do.
 - **How much validator.** §1.4 asks it to shield the autopilot from
   commands that "exceed operation limits or fly into terrain". Limits
   are reachable from `MA_FlightCapability`. Terrain is not — the
