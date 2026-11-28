@@ -3,7 +3,8 @@
 This is the only component that owns inbound dispatch, the tick loop,
 and outbound advertise / status / TSPI. Handlers parse UCI XML, call
 ``RouteStore`` and/or the platform, and publish replies. Isolator
-never imports STOMP, ActiveMQ, MAVLink, PX4, or Stub.
+never imports STOMP, ActiveMQ, MAVLink, PX4, or Stub --
+``tests/test_architecture.py`` enforces that rather than trusting it.
 """
 
 from __future__ import annotations
