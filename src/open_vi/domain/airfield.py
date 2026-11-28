@@ -1,23 +1,94 @@
-"""Home airfield for Query Airfield Update (not UCI)."""
+"""Airfields, runways and their takeoff/landing routes.
+
+A-GRA calls this pre-loaded, pre-validated data: §1.2.6.3 has MA query
+Flight Autonomy for "pre-loaded and pre-validated Airfield and Take
+off and Landing (TO/L) route information stored within FA", and
+§1.2.5.2 forbids MA uploading route plans for takeoff, departure,
+approach or landing because those phases are safety critical.
+
+These are the domain shapes. :mod:`open_vi.fa.airfields` reads them
+from a store and the codec projects them onto ``AirfieldReport`` and
+``MA_RoutePlan``, which §1.2.6.3 requires to cross-reference each
+other by ``AirfieldID`` and ``RunwayID``.
+
+Degrees here, as everywhere in the domain; radians begin at the codec.
+"""
 
 from __future__ import annotations
 
-import math
 import uuid
 from dataclasses import dataclass
 
 from open_vi.domain.flight import Waypoint
-from open_vi.domain.tspi import TspiSnapshot
-from open_vi.identity import SystemIdentity
 
-_RUNWAY_LENGTH_M = 1500.0
-_DIRECTION_DEG = 90.0
-_METERS_PER_DEG_LAT = 111_320.0
+
+@dataclass(frozen=True)
+class RunwayCoordinates:
+    """A-GRA ``RunwayCoordinatesType``: Start, Threshold, Limit.
+
+    Only ``start`` is required by the schema. ``threshold`` is the
+    displaced threshold where one exists, and ``limit`` is the far end
+    beyond which the runway is unusable.
+    """
+
+    start: Waypoint
+    limit: Waypoint | None = None
+    threshold: Waypoint | None = None
+
+    @property
+    def path(self) -> tuple[Waypoint, ...]:
+        """Start to limit, skipping absent points."""
+        points = [self.start, self.threshold, self.limit]
+        return tuple(p for p in points if p is not None)
+
+
+@dataclass(frozen=True)
+class Runway:
+    """One runway, and the TO/L routes that use it."""
+
+    runway_id: uuid.UUID
+    direction_deg: float
+    available_length_m: float
+    takeoff: RunwayCoordinates
+    landing: RunwayCoordinates
+    takeoff_route_id: uuid.UUID
+    landing_route_id: uuid.UUID
+    status: str = "OPERATIONAL"
+    """A-GRA ``RunwayStatusEnum``."""
+
+    label: str = "runway"
+
+
+@dataclass(frozen=True)
+class Airfield:
+    """One airfield and its runways.
+
+    ``runways`` is a tuple rather than a single runway because
+    §1.2.6.3 expects "optional alternate TO/L routes for a given
+    airfield", and because retrofitting a collection onto a singleton
+    is the expensive direction. The shipped data may hold one.
+    """
+
+    airfield_id: uuid.UUID
+    report_id: uuid.UUID
+    runways: tuple[Runway, ...]
+    label: str = "home"
+
+    @property
+    def primary(self) -> Runway:
+        """The first runway. Used where one has to be chosen."""
+        return self.runways[0]
 
 
 @dataclass(frozen=True)
 class HomeAirfield:
-    """Self-reported home field, runway, and linked TO/L plan ids."""
+    """The single-runway view the codec projects today.
+
+    ``AirfieldReport`` and the linked TO/L plans are built from this.
+    It is a narrowing of :class:`Airfield`, kept because the codec and
+    ``IsolatorContext`` are written against one field and one runway;
+    widening them is a separate change from replacing the data source.
+    """
 
     airfield_id: uuid.UUID
     report_id: uuid.UUID
@@ -47,44 +118,26 @@ class HomeAirfield:
         return (self.takeoff_route_id, self.landing_route_id)
 
 
-def home_airfield_from_tspi(
-    identity: SystemIdentity,
-    tspi: TspiSnapshot,
-    *,
-    length_m: float = _RUNWAY_LENGTH_M,
-    direction_deg: float = _DIRECTION_DEG,
-) -> HomeAirfield:
-    """Build a home field at the current TSPI position.
+def home_view(airfield: Airfield, runway: Runway | None = None) -> HomeAirfield:
+    """Project *airfield* onto the single-runway shape the codec takes.
 
-    One runway along *direction_deg*. Takeoff is start→end; landing
-    is the reverse. Plan and runway ids are stable for *identity*.
+    *runway* defaults to the airfield's primary. The takeoff path runs
+    start to limit and the landing path is its reverse, which is what
+    the previous synthesised field did and what the codec expects.
     """
-    start = Waypoint(
-        latitude_deg=tspi.latitude_deg,
-        longitude_deg=tspi.longitude_deg,
-        altitude_m=tspi.altitude_m,
-    )
-    heading = math.radians(direction_deg)
-    dlat = (length_m * math.cos(heading)) / _METERS_PER_DEG_LAT
-    meters_per_deg_lon = _METERS_PER_DEG_LAT * math.cos(
-        math.radians(tspi.latitude_deg)
-    )
-    dlon = (length_m * math.sin(heading)) / meters_per_deg_lon
-    end = Waypoint(
-        latitude_deg=tspi.latitude_deg + dlat,
-        longitude_deg=tspi.longitude_deg + dlon,
-        altitude_m=tspi.altitude_m,
-    )
+    chosen = runway or airfield.primary
+    takeoff = chosen.takeoff
+    landing = chosen.landing
     return HomeAirfield(
-        airfield_id=identity.uuid,
-        report_id=uuid.uuid5(identity.uuid, "home-airfield-report"),
-        runway_id=uuid.uuid5(identity.uuid, "home-runway"),
-        takeoff_route_id=uuid.uuid5(identity.uuid, "home-takeoff"),
-        landing_route_id=uuid.uuid5(identity.uuid, "home-landing"),
-        direction_deg=direction_deg,
-        available_length_m=length_m,
-        takeoff_start=start,
-        takeoff_end=end,
-        landing_start=end,
-        landing_end=start,
+        airfield_id=airfield.airfield_id,
+        report_id=airfield.report_id,
+        runway_id=chosen.runway_id,
+        takeoff_route_id=chosen.takeoff_route_id,
+        landing_route_id=chosen.landing_route_id,
+        direction_deg=chosen.direction_deg,
+        available_length_m=chosen.available_length_m,
+        takeoff_start=takeoff.start,
+        takeoff_end=takeoff.limit or takeoff.start,
+        landing_start=landing.start,
+        landing_end=landing.limit or landing.start,
     )

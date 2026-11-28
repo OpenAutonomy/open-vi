@@ -7,7 +7,12 @@ from dataclasses import dataclass, field
 from open_vi.asb.port import AsbPort
 from open_vi.codec.ns import SCHEMA_VERSION
 from open_vi.config import IsolatorConfig
-from open_vi.domain import ControlOffer, HomeAirfield, redact_control_offer
+from open_vi.domain import (
+    Airfield,
+    ControlOffer,
+    HomeAirfield,
+    redact_control_offer,
+)
 from open_vi.identity import SystemIdentity
 from open_vi.isolator.execution import RouteExecution
 from open_vi.isolator.flight import FlightSession
@@ -33,6 +38,17 @@ class IsolatorContext:
     state: IsolatorState
     routes: RouteStore
     airfield: HomeAirfield
+    airfields: tuple[Airfield, ...] = ()
+    """The store as loaded, before narrowing to ``airfield``.
+
+    ``airfield`` is the single-runway view the codec builds
+    ``AirfieldReport`` from. This is everything the store held:
+    further runways, ``Status``, and the optional ``Threshold``.
+    Kept so a later consumer -- route vetting needs the runway start
+    and status -- reads the same load rather than opening the file a
+    second time and risking a different answer.
+    """
+
     flight: FlightSession = field(default_factory=FlightSession)
     execution: RouteExecution = field(default_factory=RouteExecution)
 

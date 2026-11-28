@@ -1,0 +1,50 @@
+# Pre-validated airfield and takeoff/landing route store.
+#
+# §1.2.6.3 has Mission Autonomy query Flight Autonomy for "pre-loaded
+# and pre-validated Airfield and Take off and Landing (TO/L) route
+# information stored within FA", and §1.2.5.2 forbids MA uploading
+# route plans for takeoff, departure, approach or landing because
+# those phases are safety critical. So this file is loaded, never
+# computed.
+#
+# Whoever edits this file is the one who validated its contents.
+# open-vi checks that it parses and is self-consistent; it does not
+# and cannot check that a runway is where this says it is.
+#
+# Degrees, metres, altitudes HAE. Ids may be omitted and are then
+# derived from the labels, stably across runs.
+#
+# This default describes the PX4 SIH home field used by the demo
+# stack. A deployment points VI_AIRFIELD_STORE at its own file.
+
+[[airfield]]
+label = "sih-zurich"
+
+  # Runway 09, aligned east, which is the heading the synthesised
+  # field used to assume for every location.
+  [[airfield.runway]]
+  label = "09"
+  direction_deg = 90.0
+  available_length_m = 1500.0
+  status = "OPERATIONAL"
+
+    [airfield.runway.takeoff.start]
+    latitude_deg = 47.397742
+    longitude_deg = 8.545594
+    altitude_m = 488.0
+
+    [airfield.runway.takeoff.limit]
+    latitude_deg = 47.397742
+    longitude_deg = 8.565512
+    altitude_m = 488.0
+
+    # Landing runs the other way down the same strip.
+    [airfield.runway.landing.start]
+    latitude_deg = 47.397742
+    longitude_deg = 8.565512
+    altitude_m = 488.0
+
+    [airfield.runway.landing.limit]
+    latitude_deg = 47.397742
+    longitude_deg = 8.545594
+    altitude_m = 488.0
