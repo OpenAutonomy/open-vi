@@ -259,6 +259,25 @@ Not a database. "Pre-loaded and pre-validated" means data files read
 at startup and shipped with the deployment, on the same shelf as
 `px4-vehicle.toml`.
 
+Decided:
+
+- **TOML, degrees.** A-GRA XML was considered, because an XML store
+  could be validated against the XSD directly. It loses on everything
+  else: radians are not reviewable by hand (which runway is
+  `0.827`?), parsing XML would pull the store out of `fa/` and across
+  the no-codec invariant, and the conformance job already validates
+  the emitted `AirfieldReport` against A-GRA 5.0a. So the XSD still
+  catches a bad value, one step later, on the message that actually
+  has to be conformant.
+- **It replaces `home_airfield_from_tspi`.** Not a second source
+  beside it. The domain type widens to carry what a real field has and
+  the synthesised one does not: several runways, `Status`, and the
+  optional `Threshold` in `RunwayCoordinatesType`.
+- **No store configured is a startup failure.** The alternative is
+  falling back to synthesis, which is the fabrication this removes.
+  Which means the demo needs Zurich SIH data before it boots, so that
+  data is part of the work rather than a follow-up.
+
 Validation is the supplier's responsibility: whoever puts a route in
 the store is the one who validated it. FA loads what it is given and
 checks nothing about provenance.
