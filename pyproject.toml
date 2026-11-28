@@ -58,7 +58,7 @@ open-vi = "open_vi.__main__:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/open_vi"]
 # PEP 561: the package is annotated, so consumers get the hints.
-artifacts = ["src/open_vi/py.typed"]
+artifacts = ["src/open_vi/py.typed", "src/open_vi/fa/airfields.toml"]
 
 [tool.hatch.build.targets.sdist]
 include = ["/src", "/README.md", "/LICENSE", "/docs", "/compose", "/examples"]

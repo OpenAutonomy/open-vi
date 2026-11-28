@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from open_vi.codec.query import build_airfield_report
-from open_vi.domain import TspiSnapshot, home_airfield_from_tspi
+from open_vi.domain import home_view
+from open_vi.fa import load_airfields
 from open_vi.identity import SystemIdentity
 
 
 def test_airfield_report_includes_runway_geometry() -> None:
     identity = SystemIdentity.named("open-vi")
-    field = home_airfield_from_tspi(identity, TspiSnapshot())
+    field = home_view(load_airfields()[0])
     raw = build_airfield_report(identity, airfield=field)
     body = raw.decode() if isinstance(raw, bytes) else raw
     assert "AirfieldReport" in body

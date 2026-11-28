@@ -118,6 +118,31 @@ interactions FEATURES §1.2 documents.
 It is a separate script from the schema fetch on purpose: XSD
 validation should not break because a PDF moved.
 
+## Airfield store
+
+`VI_AIRFIELD_STORE` points at the pre-validated airfield and TO/L
+route data. Unset, the store packaged at `open_vi/fa/airfields.toml`
+is used, which describes the PX4 SIH field the demo flies from.
+
+§1.2.6.3 has MA query Flight Autonomy for "pre-loaded and
+pre-validated Airfield and Take off and Landing (TO/L) route
+information stored within FA", and §1.2.5.2 forbids MA uploading route
+plans for takeoff, departure, approach or landing because those phases
+are safety critical. So this data is loaded, never computed. A
+configured path that does not exist, does not parse, or describes an
+unusable runway is a startup failure rather than a fall back to a
+synthesised field -- which is what open-vi did before, at 1,500 m on
+heading 090 wherever the vehicle happened to be.
+
+TOML and degrees rather than A-GRA XML: radians are not reviewable by
+hand, parsing XML would cross the boundary that keeps `fa/` free of
+the codec, and the conformance job already validates the emitted
+`AirfieldReport` against the schema.
+
+**Whoever edits the store is the one who validated it.** open-vi
+checks the file parses and is self-consistent. It cannot check that a
+runway is where the file says it is.
+
 CI runs this as the `conformance` job. Every published message type
 validates, so `KNOWN_NON_CONFORMANT` in that module is empty; it is
 kept, and asserted empty in both directions, so a regression has to be

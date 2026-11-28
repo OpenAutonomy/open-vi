@@ -58,6 +58,13 @@ class IsolatorConfig:
     tick_republish_status: bool = True
     publish_vehicle_state: bool = True
     publish_status_package: bool = True
+    airfield_store: str | None = None
+    """Path to the pre-validated airfield store, or the packaged default.
+
+    §1.2.6.3's airfield and TO/L route data is loaded, never computed.
+    A path that does not exist is a startup failure rather than a
+    fallback to a synthesised runway.
+    """
 
     @classmethod
     def from_env(cls) -> IsolatorConfig:
@@ -90,4 +97,5 @@ class IsolatorConfig:
                 "VI_PUBLISH_STATUS_PACKAGE", "true"
             ).lower()
             in {"1", "true", "yes"},
+            airfield_store=os.environ.get("VI_AIRFIELD_STORE") or None,
         )

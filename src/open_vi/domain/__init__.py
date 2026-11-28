@@ -5,7 +5,13 @@ status, route, airfield, and control types used by codec, Isolator,
 and PlatformPort.
 """
 
-from open_vi.domain.airfield import HomeAirfield, home_airfield_from_tspi
+from open_vi.domain.airfield import (
+    Airfield,
+    HomeAirfield,
+    Runway,
+    RunwayCoordinates,
+    home_view,
+)
 from open_vi.domain.clock import utc_now
 from open_vi.domain.control import (
     AccelerationLimit,
@@ -60,7 +66,10 @@ __all__ = [
     "FlightModeProfile",
     "FlightActivitySnapshot",
     "FlightCommandRequest",
+    "Airfield",
     "HomeAirfield",
+    "Runway",
+    "RunwayCoordinates",
     "HsaCsaSetpoint",
     "PlanExecutionSnapshot",
     "PlatformSnapshot",
@@ -73,7 +82,7 @@ __all__ = [
     "TspiSnapshot",
     "Waypoint",
     "finite_waypoint_geometry",
-    "home_airfield_from_tspi",
+    "home_view",
     "is_live_activity",
     "redact_control_offer",
     "sample_curve_waypoints",

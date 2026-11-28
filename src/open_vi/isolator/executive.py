@@ -17,7 +17,8 @@ import time
 from open_vi.asb.port import AsbPort
 from open_vi.codec.route import build_sample_route_plan
 from open_vi.config import IsolatorConfig
-from open_vi.domain import HomeAirfield, home_airfield_from_tspi
+from open_vi.domain import HomeAirfield, home_view
+from open_vi.fa import load_airfields
 from open_vi.identity import SystemIdentity
 from open_vi.isolator import publishers
 from open_vi.isolator.context import IsolatorContext
@@ -62,9 +63,10 @@ class Isolator:
             namespace_name=self.config.namespace_name,
             namespace_uuid_id=self.config.namespace_uuid,
         )
-        airfield = home_airfield_from_tspi(
-            self.identity, platform.get_vehicle_state()
-        )
+        # §1.2.6.3's airfield data is loaded, not derived. A field
+        # synthesised from wherever the vehicle happens to be is
+        # validated by nobody, and open-vi used to do exactly that.
+        airfield = home_view(load_airfields(self.config.airfield_store)[0])
         routes = RouteStore()
         _preload_home_routes(
             self.identity,
