@@ -77,8 +77,12 @@ UNPARSED = {
         "BySubPlan",
     ): "parse_route_activation_commands finds RoutePlan by walking the "
     "Command subtree, so it activates whether the plan arrived under "
-    "BySubPlan or ByMissionPlan and does not distinguish them. "
-    "FEATURES §1.2.5.4",
+    "BySubPlan or ByMissionPlan and does not distinguish them. The "
+    "RoutePlan/{RoutePlanID, CommandType} it reads is the shape "
+    "BySubPlan carries, so activation works; what is unread is the "
+    "wrapper that says which kind of activation this is. §1.2.5.1 "
+    "makes BySubPlan the way MA commands takeoff, so this is also the "
+    "seam a future launch sequence would use. FEATURES §1.2.5.4",
     (
         "MA_ResponseMT",
         "BySubPlan",

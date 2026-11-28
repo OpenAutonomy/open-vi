@@ -41,6 +41,7 @@ nav:
   - Architecture: ARCHITECTURE.md
   - Isolator: ISOLATOR.md
   - Platform: PLATFORM.md
+  - Flight Autonomy (proposed): FLIGHT_AUTONOMY.md
   - Configuration: CONFIGURATION.md
   - Platforms:
     - Overview: platforms/README.md
