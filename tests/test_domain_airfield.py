@@ -155,3 +155,103 @@ def test_default_store_path_is_inside_the_package() -> None:
     path = default_store_path()
     assert path.name == "airfields.toml"
     assert path.parent.name == "fa"
+
+
+TWO_FIELDS = (
+    MINIMAL
+    + """
+[[airfield]]
+label = "alternate"
+
+  [[airfield.runway]]
+  label = "27"
+  direction_deg = 270.0
+  available_length_m = 900.0
+
+    [airfield.runway.takeoff.start]
+    latitude_deg = 11.0
+    longitude_deg = 21.0
+
+    [airfield.runway.takeoff.limit]
+    latitude_deg = 11.0
+    longitude_deg = 20.99
+
+    [airfield.runway.landing.start]
+    latitude_deg = 11.0
+    longitude_deg = 20.99
+
+    [airfield.runway.landing.limit]
+    latitude_deg = 11.0
+    longitude_deg = 21.0
+"""
+)
+
+
+def test_the_whole_store_reaches_the_context(tmp_path: pathlib.Path) -> None:
+    """Isolator keeps the load, not just the narrowed view.
+
+    Vetting will need the runway start and status, and re-reading the
+    file would be a second load path that could disagree with the
+    first.
+    """
+    from open_vi.asb import InMemoryAsb
+    from open_vi.config import IsolatorConfig
+    from open_vi.isolator import Isolator
+    from open_vi.platform import StubPlatform
+
+    store = _write(tmp_path, MINIMAL)
+    iso = Isolator(
+        InMemoryAsb(),
+        platform=StubPlatform(),
+        config=IsolatorConfig(airfield_store=str(store)),
+    )
+    assert len(iso.ctx.airfields) == 1
+    runway = iso.ctx.airfields[0].primary
+    assert runway.status == "OPERATIONAL"
+    assert runway.takeoff.start.latitude_deg == 10.0
+    # The narrowed view stays the codec's input and agrees with it.
+    assert iso.ctx.airfield.runway_id == runway.runway_id
+
+
+def test_extra_airfields_are_reported_not_silently_dropped(
+    tmp_path: pathlib.Path, caplog
+) -> None:
+    """§1.2.6.3 asks for alternates; the codec still emits one field.
+
+    Loading several and serving one without saying so would look like
+    the alternates were being reported.
+    """
+    import logging
+
+    from open_vi.asb import InMemoryAsb
+    from open_vi.config import IsolatorConfig
+    from open_vi.isolator import Isolator
+    from open_vi.platform import StubPlatform
+
+    store = _write(tmp_path, TWO_FIELDS)
+    with caplog.at_level(logging.WARNING):
+        iso = Isolator(
+            InMemoryAsb(),
+            platform=StubPlatform(),
+            config=IsolatorConfig(airfield_store=str(store)),
+        )
+    assert len(iso.ctx.airfields) == 2
+    assert iso.ctx.airfield.runway_id == iso.ctx.airfields[0].primary.runway_id
+    assert any(
+        "holds 2 airfields" in record.message for record in caplog.records
+    ), "serving one of several airfields was not reported"
+
+
+def test_a_bad_store_stops_the_isolator(tmp_path: pathlib.Path) -> None:
+    """Never a fallback to a synthesised field."""
+    from open_vi.asb import InMemoryAsb
+    from open_vi.config import IsolatorConfig
+    from open_vi.isolator import Isolator
+    from open_vi.platform import StubPlatform
+
+    with pytest.raises(AirfieldStoreError):
+        Isolator(
+            InMemoryAsb(),
+            platform=StubPlatform(),
+            config=IsolatorConfig(airfield_store=str(tmp_path / "nope.toml")),
+        )

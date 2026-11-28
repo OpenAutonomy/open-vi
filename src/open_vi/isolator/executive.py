@@ -66,7 +66,20 @@ class Isolator:
         # §1.2.6.3's airfield data is loaded, not derived. A field
         # synthesised from wherever the vehicle happens to be is
         # validated by nobody, and open-vi used to do exactly that.
-        airfield = home_view(load_airfields(self.config.airfield_store)[0])
+        airfields = load_airfields(self.config.airfield_store)
+        if len(airfields) > 1:
+            # The store's shape allows the alternates §1.2.6.3 asks
+            # for, but the codec projects one field, so the rest would
+            # be loaded and silently unreported. Say so rather than
+            # look like they are being served.
+            LOGGER.warning(
+                "airfield store holds %d airfields; serving %s only. "
+                "AirfieldReport carries one field until the codec "
+                "emits several (FEATURES §1.2.6.3)",
+                len(airfields),
+                airfields[0].label,
+            )
+        airfield = home_view(airfields[0])
         routes = RouteStore()
         _preload_home_routes(
             self.identity,
@@ -83,6 +96,7 @@ class Isolator:
             state=IsolatorState(),
             routes=routes,
             airfield=airfield,
+            airfields=airfields,
         )
         self._handlers = default_handlers()
         self._session = threading.RLock()
